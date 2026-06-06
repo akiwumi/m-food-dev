@@ -1,7 +1,7 @@
-// Food photo analysis — simulates a vision-AI calorie/macro estimation.
-// In production this calls a multimodal endpoint (e.g. GPT-4o Vision, Gemini,
-// or a dedicated food-recognition API). The interface is identical so the swap
-// is a one-line change: replace `simulateAnalysis` with a real fetch.
+// Food photo analysis. Calls the real OpenAI vision estimate via the ai-gateway
+// when the user is signed in and the backend is configured; otherwise falls back
+// to a local simulation so the pilot keeps working. See analyzeFood below.
+import { aiAnalyzeFood } from "./ai";
 
 export type FoodPhoto = {
   id: string;
@@ -38,31 +38,64 @@ const jitter = (n: number, range = 0.12) =>
 // Simulate a ~1.8 s "AI processing" delay
 const delay = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 
+const nowLabel = () =>
+  new Date().toLocaleDateString(undefined, {
+    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+
+// Real vision estimate when the user is signed in and the AI gateway is
+// configured; otherwise we fall back to the local simulation so the pilot keeps
+// working. The return shape is identical either way.
 export async function analyzeFood(
   image: string,
   hint?: { recipeCalories?: number; recipeName?: string },
 ): Promise<FoodPhoto> {
-  await delay(1800);
+  try {
+    const a = await aiAnalyzeFood(image, hint);
+    if (a && typeof a.calories === "number" && a.calories > 0) {
+      return {
+        id: crypto.randomUUID(),
+        image,
+        dish: a.dish || (hint?.recipeName ? `Your ${hint.recipeName}` : "Your meal"),
+        calories: Math.round(a.calories),
+        protein: Math.max(0, Math.round(a.protein ?? 0)),
+        carbs: Math.max(0, Math.round(a.carbs ?? 0)),
+        fat: Math.max(0, Math.round(a.fat ?? 0)),
+        fiber: Math.max(0, Math.round(a.fiber ?? 0)),
+        confidence: Math.min(100, Math.max(1, Math.round(a.confidence ?? 80))),
+        when: nowLabel(),
+        recipeId: undefined,
+      };
+    }
+  } catch {
+    // Not signed in, AI not configured, or the call failed — use simulation.
+  }
+  return simulateAnalysis(image, hint);
+}
 
-  const preset = PRESETS[Math.floor(Math.random() * PRESETS.length)];
-  const baseCalories = hint?.recipeCalories ?? preset.calories;
-  const scale = jitter(baseCalories, 0.1) / preset.calories;
+function simulateAnalysis(
+  image: string,
+  hint?: { recipeCalories?: number; recipeName?: string },
+): Promise<FoodPhoto> {
+  return delay(1800).then(() => {
+    const preset = PRESETS[Math.floor(Math.random() * PRESETS.length)];
+    const baseCalories = hint?.recipeCalories ?? preset.calories;
+    const scale = jitter(baseCalories, 0.1) / preset.calories;
 
-  return {
-    id: crypto.randomUUID(),
-    image,
-    dish: hint?.recipeName ? `Your ${hint.recipeName}` : preset.dish,
-    calories: Math.round(baseCalories * scale),
-    protein:  Math.max(2,  Math.round(preset.protein  * scale)),
-    carbs:    Math.max(4,  Math.round(preset.carbs    * scale)),
-    fat:      Math.max(2,  Math.round(preset.fat      * scale)),
-    fiber:    Math.max(1,  Math.round(preset.fiber    * scale)),
-    confidence: Math.floor(72 + Math.random() * 22),
-    when: new Date().toLocaleDateString(undefined, {
-      month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
-    }),
-    recipeId: undefined,
-  };
+    return {
+      id: crypto.randomUUID(),
+      image,
+      dish: hint?.recipeName ? `Your ${hint.recipeName}` : preset.dish,
+      calories: Math.round(baseCalories * scale),
+      protein:  Math.max(2,  Math.round(preset.protein  * scale)),
+      carbs:    Math.max(4,  Math.round(preset.carbs    * scale)),
+      fat:      Math.max(2,  Math.round(preset.fat      * scale)),
+      fiber:    Math.max(1,  Math.round(preset.fiber    * scale)),
+      confidence: Math.floor(72 + Math.random() * 22),
+      when: nowLabel(),
+      recipeId: undefined,
+    };
+  });
 }
 
 // Totals across an array of logs (e.g. today's entries)

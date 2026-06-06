@@ -1,9 +1,26 @@
+// ai-gateway — the single server-side proxy between the browser and OpenAI.
+// The OpenAI key lives ONLY here (a Supabase secret), never in the browser, so
+// it can't be scraped. Every request must carry a valid Supabase user JWT.
+//
+// Secrets this needs:
+//   supabase secrets set OPENAI_API_KEY="sk-..."
+//   supabase secrets set ALLOWED_ORIGINS="http://localhost:5173,https://your-live-url"
+// SUPABASE_URL and SUPABASE_ANON_KEY are injected automatically.
+//
+// Deploy: supabase functions deploy ai-gateway
+//
+// Request body (JSON), one of:
+//   { "task": "chat", "message": "...", "history": [...], "context": { profile, picks } }
+//   { "task": "analyze-food", "image": "data:image/jpeg;base64,...", "hint": { recipeName, recipeCalories } }
+
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") ?? "";
 const ALLOWED_ORIGINS = new Set((Deno.env.get("ALLOWED_ORIGINS") ?? "").split(",").filter(Boolean));
-const MAX_BODY_BYTES = 16_384;
+const MAX_BODY_BYTES = 8_000_000; // generous — base64 food photos are large
+const CHAT_MODEL = "gpt-4o-mini";  // cheap, supports text + vision
 
 function headers(origin: string | null) {
   const allowed = origin && ALLOWED_ORIGINS.has(origin) ? origin : "";
@@ -13,6 +30,38 @@ function headers(origin: string | null) {
     "x-content-type-options": "nosniff",
     ...(allowed ? { "access-control-allow-origin": allowed, "vary": "Origin" } : {}),
   };
+}
+
+// Hard safety rules baked into every conversation. Allergens/diet are constraints,
+// and the assistant must never play doctor.
+function systemPrompt(context: any): string {
+  const p = context?.profile ?? {};
+  const allergies = Array.isArray(p.allergies) ? p.allergies.join(", ") : "";
+  const diet = typeof p.diet === "string" ? p.diet : "";
+  const dislikes = Array.isArray(p.dislikedIngredients) ? p.dislikedIngredients.join(", ") : "";
+  const picks = Array.isArray(context?.picks)
+    ? context.picks.map((r: any) => `- ${r.title} (${r.time} min): ${r.reason ?? ""}`).join("\n")
+    : "";
+  return [
+    "You are Moody, MoodFood's warm, concise dinner co-pilot.",
+    "You help the user choose a meal that fits how they feel, their tastes, and their safety needs.",
+    "HARD SAFETY RULES (never break):",
+    allergies ? `- NEVER suggest anything containing these allergens: ${allergies}.` : "- Respect any allergens the user mentions.",
+    diet ? `- Keep suggestions compatible with their diet: ${diet}.` : "",
+    dislikes ? `- Avoid disliked ingredients where possible: ${dislikes}.` : "",
+    "- You are not a doctor or dietitian. Do not give medical, clinical, or weight-loss prescriptions.",
+    "- If the user signals disordered eating or distress, respond gently and suggest talking to a professional.",
+    "Keep replies short (2-4 sentences), specific, and encouraging.",
+    picks ? `Tonight's safe picks already computed for this user:\n${picks}` : "",
+  ].filter(Boolean).join("\n");
+}
+
+async function callOpenAI(body: unknown): Promise<Response> {
+  return fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { authorization: `Bearer ${OPENAI_API_KEY}`, "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }
 
 Deno.serve(async (request) => {
@@ -25,17 +74,62 @@ Deno.serve(async (request) => {
   if (origin && !ALLOWED_ORIGINS.has(origin)) return Response.json({ error: "Origin not allowed" }, { status: 403, headers: headers(origin) });
   if (Number(request.headers.get("content-length") ?? 0) > MAX_BODY_BYTES) return Response.json({ error: "Request too large" }, { status: 413, headers: headers(origin) });
 
+  // Require a real authenticated Supabase user.
   const auth = request.headers.get("authorization");
   if (!auth?.startsWith("Bearer ") || !SUPABASE_URL || !SUPABASE_ANON_KEY) return Response.json({ error: "Unauthorized" }, { status: 401, headers: headers(origin) });
   const identity = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: { authorization: auth, apikey: SUPABASE_ANON_KEY } });
   if (!identity.ok) return Response.json({ error: "Unauthorized" }, { status: 401, headers: headers(origin) });
 
-  let body: unknown;
+  if (!OPENAI_API_KEY) return Response.json({ error: "AI not configured" }, { status: 503, headers: headers(origin) });
+
+  let body: any;
   try { body = await request.json(); } catch { return Response.json({ error: "Invalid JSON" }, { status: 400, headers: headers(origin) }); }
-  const context = typeof body === "object" && body && "context" in body && typeof body.context === "object" ? body.context : undefined;
-  return Response.json({
-    provider: "deterministic-fallback",
-    message: "I kept every hard safety filter in place and used the verified recipe ranking.",
-    actions: context ? [{ type: "recommend" }] : [],
-  }, { headers: headers(origin) });
+  const task = typeof body?.task === "string" ? body.task : "chat";
+
+  try {
+    if (task === "analyze-food") {
+      const image = typeof body.image === "string" ? body.image : "";
+      if (!image.startsWith("data:image/")) return Response.json({ error: "Missing image" }, { status: 400, headers: headers(origin) });
+      const hintName = body?.hint?.recipeName ? ` The user says this is their "${body.hint.recipeName}".` : "";
+      const res = await callOpenAI({
+        model: CHAT_MODEL,
+        response_format: { type: "json_object" },
+        max_tokens: 300,
+        messages: [
+          { role: "system", content: "You are a nutrition vision estimator. Look at the food photo and estimate a single serving. Reply ONLY with JSON: {\"dish\":string,\"calories\":number,\"protein\":number,\"carbs\":number,\"fat\":number,\"fiber\":number,\"confidence\":number}. Grams for macros, confidence 0-100. If unsure, give your best estimate." },
+          { role: "user", content: [
+            { type: "text", text: `Estimate the nutrition of this meal.${hintName}` },
+            { type: "image_url", image_url: { url: image } },
+          ] },
+        ],
+      });
+      if (!res.ok) return Response.json({ error: "AI request failed" }, { status: 502, headers: headers(origin) });
+      const data = await res.json();
+      let parsed: Record<string, unknown> = {};
+      try { parsed = JSON.parse(data.choices?.[0]?.message?.content ?? "{}"); } catch { /* fall through */ }
+      return Response.json({ provider: "openai", analysis: parsed }, { headers: headers(origin) });
+    }
+
+    // Default: chat / explain-a-recommendation.
+    const message = typeof body.message === "string" ? body.message.slice(0, 2000) : "";
+    if (!message) return Response.json({ error: "Missing message" }, { status: 400, headers: headers(origin) });
+    const history = Array.isArray(body.history)
+      ? body.history.filter((m: any) => (m?.role === "user" || m?.role === "assistant") && typeof m?.content === "string").slice(-8)
+      : [];
+    const res = await callOpenAI({
+      model: CHAT_MODEL,
+      max_tokens: 350,
+      temperature: 0.7,
+      messages: [
+        { role: "system", content: systemPrompt(body.context) },
+        ...history,
+        { role: "user", content: message },
+      ],
+    });
+    if (!res.ok) return Response.json({ error: "AI request failed" }, { status: 502, headers: headers(origin) });
+    const data = await res.json();
+    return Response.json({ provider: "openai", message: data.choices?.[0]?.message?.content ?? "" }, { headers: headers(origin) });
+  } catch (_err) {
+    return Response.json({ error: "AI request failed" }, { status: 502, headers: headers(origin) });
+  }
 });

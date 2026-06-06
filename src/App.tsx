@@ -14,6 +14,7 @@ import { cleanText, readSafeImage } from "./security";
 import { onboardingQuestions, onboardingSections, type OnboardingKey, type OnboardingQuestion, type ProfileValue } from "./onboarding";
 import { sendConfirmationEmail, sendWelcomeEmail, scheduleTrial, runDue, readInbox, unreadCount, markAllRead, cancelScheduled, simulateTrialEnd, type InboxItem } from "./notifications";
 import { analyzeFood, sumNutrition, type FoodPhoto } from "./foodAnalysis";
+import { aiChat, type ChatTurn } from "./ai";
 
 type Page = "home" | "search" | "diary" | "grocery" | "planner" | "detail" | "cook" | "insights" | "settings" | "favorites" | "import" | "admin" | "billing" | "psych-profile" | "account" | "community" | "health" | "health-nutrition" | "health-variety" | "health-patterns" | "family-health" | "diners" | "food-log" | "help";
 type Entry = "welcome" | "onboarding" | "account" | "verify" | "verified" | "subscription" | "app";
@@ -101,7 +102,7 @@ export default function App() {
     </main>
     {page !== "cook" && <BottomNav page={page} go={go} />}
     {page !== "cook" && <button className="moody-fab" onClick={() => setMoodyOpen(true)} aria-label="Ask Moody"><Sparkles /></button>}
-    {moodyOpen && <MoodyPanel recipe={ranked[0]} close={() => setMoodyOpen(false)} open={() => { setMoodyOpen(false); if (ranked[0]) open(ranked[0]); }} />}
+    {moodyOpen && <MoodyPanel recipe={ranked[0]} profile={profile} picks={ranked.slice(0, 3)} close={() => setMoodyOpen(false)} open={() => { setMoodyOpen(false); if (ranked[0]) open(ranked[0]); }} />}
     {notifOpen && <NotificationsPanel close={() => setNotifOpen(false)} profile={profile} save={setProfile} refresh={refreshNotifs} />}
   </div>;
 }
@@ -739,9 +740,32 @@ function EditableCues({ values, suggestions, save }: { values: string[]; suggest
   const [custom, setCustom] = useState("");
   return <><div className="choice">{suggestions.map(v => <button className={values.includes(v) ? "active" : ""} onClick={() => save(toggle(values, v))} key={v}>{v}</button>)}</div><form className="add-cue" onSubmit={e => { e.preventDefault(); if (custom.trim()) { save([...new Set([...values, custom.trim()])]); setCustom(""); } }}><input value={custom} onChange={e => setCustom(e.target.value)} placeholder="Add your own cue" /><button><Plus /></button></form>{values.filter(v => !suggestions.includes(v)).map(v => <button className="custom-cue" onClick={() => save(values.filter(x => x !== v))} key={v}>{v}<X size={13} /></button>)}</>;
 }
-function MoodyPanel({ recipe, close, open }: { recipe?: Recipe; close: () => void; open: () => void }) {
-  const [message, setMessage] = useState("");
-  return <div className="panel-bg" onClick={close}><aside className="moody-panel" onClick={e => e.stopPropagation()}><header><Moody /><div><b>Moody</b><span>Your dinner co-pilot</span></div><button onClick={close}><X /></button></header><div className="chat"><p>I can choose dinner, explain a recommendation, or help rescue the step you’re on.</p>{message && <p className="user-message">{message}</p>}{recipe && <button className="moody-pick" onClick={open}><img src={recipe.image} alt="" /><span><small>MY SAFE PICK RIGHT NOW</small><b>{recipe.title}</b><em>{recipe.time} min · {recipe.reason}</em></span></button>}</div><div className="prompt-row"><button onClick={() => setMessage("Pick the easiest safe dinner.")}>Pick the easiest</button><button onClick={() => setMessage("I only have 15 minutes.")}>Only 15 minutes</button></div><form onSubmit={e => { e.preventDefault(); setMessage(""); }}><input value={message} onChange={e => setMessage(e.target.value)} placeholder="Tell Moody what you need..." /><button><ArrowRight /></button></form></aside></div>;
+function MoodyPanel({ recipe, profile, picks, close, open }: { recipe?: Recipe; profile?: Profile; picks?: Recipe[]; close: () => void; open: () => void }) {
+  const [input, setInput] = useState("");
+  const [turns, setTurns] = useState<ChatTurn[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  const send = async (text: string) => {
+    const message = text.trim();
+    if (!message || busy) return;
+    const history = turns;
+    setTurns([...turns, { role: "user", content: message }]);
+    setInput("");
+    setBusy(true);
+    try {
+      const context = profile
+        ? { profile: { allergies: profile.allergies, diet: profile.diet, dislikedIngredients: profile.dislikedIngredients }, picks: (picks ?? []).map(r => ({ title: r.title, time: r.time, reason: r.reason })) }
+        : undefined;
+      const reply = await aiChat(message, context, history);
+      setTurns(prev => [...prev, { role: "assistant", content: reply }]);
+    } catch {
+      setTurns(prev => [...prev, { role: "assistant", content: "I can't reach my brain right now — sign in (or once AI is connected) and I'll be back. Meanwhile, your safe pick below is a solid bet." }]);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return <div className="panel-bg" onClick={close}><aside className="moody-panel" onClick={e => e.stopPropagation()}><header><Moody /><div><b>Moody</b><span>Your dinner co-pilot</span></div><button onClick={close}><X /></button></header><div className="chat"><p>I can choose dinner, explain a recommendation, or help rescue the step you’re on.</p>{turns.map((t, i) => <p key={i} className={t.role === "user" ? "user-message" : "moody-message"}>{t.content}</p>)}{busy && <p className="moody-message">…</p>}{recipe && <button className="moody-pick" onClick={open}><img src={recipe.image} alt="" /><span><small>MY SAFE PICK RIGHT NOW</small><b>{recipe.title}</b><em>{recipe.time} min · {recipe.reason}</em></span></button>}</div><div className="prompt-row"><button onClick={() => send("Pick the easiest safe dinner.")}>Pick the easiest</button><button onClick={() => send("I only have 15 minutes.")}>Only 15 minutes</button>{recipe && <button onClick={() => send(`Why are you recommending ${recipe.title}?`)}>Explain this pick</button>}</div><form onSubmit={e => { e.preventDefault(); send(input); }}><input value={input} onChange={e => setInput(e.target.value)} placeholder="Tell Moody what you need..." /><button disabled={busy}><ArrowRight /></button></form></aside></div>;
 }
 
 function NotificationsPanel({ close, profile, save, refresh }: { close: () => void; profile: Profile; save: (p: Profile) => void; refresh: () => void }) {

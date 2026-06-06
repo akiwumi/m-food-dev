@@ -13,9 +13,11 @@ steps depend on earlier ones.
 > - ✅ **Seed data: `006_seed_data.sql`** (active ranking config + 3 published recipes + your invite).
 > - ✅ **Signup → profile trigger: `007_profile_trigger.sql`**.
 > - ✅ **Subscription columns: `008_subscription_columns.sql`** (billing fields on `profiles`).
-> - ✅ AI edge function: `supabase/functions/ai-gateway/`.
+> - ✅ **AI fully wired (OpenAI):** `ai-gateway` calls OpenAI for the Moody chat assistant
+>   and food-photo vision; frontend uses it via `src/ai.ts` with graceful fallback to the
+>   local simulation when not signed in. Just set `OPENAI_API_KEY` + deploy (Step E).
 > - ✅ **Payment functions scaffolded:** `create-checkout/`, `stripe-webhook/`, `send-trial-reminders/` (+ shared `_shared/cors.ts`).
-> - ✅ **Frontend client: `src/supabase.ts`**, env typings in `src/vite-env.d.ts`, `@supabase/supabase-js` installed, `.env.example` added.
+> - ✅ **Frontend client: `src/supabase.ts`** (null-safe — won't crash the pilot if unconfigured), env typings in `src/vite-env.d.ts`, `@supabase/supabase-js` installed, `.env.example` added.
 > - ❌ Still on you: create the Supabase project, **run** the SQL, set the **secrets/variables**,
 >   **deploy** the functions, create your **Stripe products**, and swap the app's `localStorage`
 >   flows over to the client (`src/store.ts`, `src/notifications.ts`).
@@ -86,6 +88,7 @@ automatically by Supabase, so you usually only set `ALLOWED_ORIGINS` yourself:
 | Name | Example value | Notes |
 |---|---|---|
 | `ALLOWED_ORIGINS` | `http://localhost:5173,https://moodfood.vercel.app` | Comma-separated. Must include your dev URL **and** your live URL. No trailing slash. |
+| `OPENAI_API_KEY` | `sk-...` | **Powers the AI** (Moody chat + food-photo vision). Server-side only — **never** `VITE_`. |
 | `SUPABASE_URL` | *(auto-provided)* | Don't set unless overriding. |
 | `SUPABASE_ANON_KEY` | *(auto-provided)* | Don't set unless overriding. |
 
@@ -199,20 +202,33 @@ This replaces the fake `moodfood-inbox` emails in `src/notifications.ts`.
 
 ---
 
-## Step E — Deploy the AI edge function
+## Step E — Deploy the AI edge function (OpenAI)
 
-The `ai-gateway` function already enforces auth, origin allow-listing, and body-size limits.
+`ai-gateway` is now a real OpenAI proxy (model `gpt-4o-mini`) — it enforces auth, origin
+allow-listing, and body-size limits, then calls OpenAI on the user's behalf so your key
+never reaches the browser. It handles two tasks:
+- `chat` — the **Moody** assistant ([src/App.tsx](src/App.tsx) `MoodyPanel`), with the user's
+  allergies/diet baked in as hard safety rules.
+- `analyze-food` — **vision** calorie/macro estimate for photo logs ([src/foodAnalysis.ts](src/foodAnalysis.ts)).
 
 ```bash
 # from the project root, with the CLI linked (Step B option 2)
-supabase functions deploy ai-gateway
-
-# set the one secret it needs (your dev + live origins)
+supabase secrets set OPENAI_API_KEY="sk-..."                         # your key — server-side only
 supabase secrets set ALLOWED_ORIGINS="http://localhost:5173,https://YOUR-LIVE-URL"
+supabase functions deploy ai-gateway
 ```
 
-Verify: Dashboard → **Edge Functions → ai-gateway → Logs**. You should see it deployed.
-Calls from an origin not in `ALLOWED_ORIGINS` will (correctly) get a 403.
+> 🔑 **Set the key yourself via the CLI/dashboard — don't paste it into chat or any file.**
+> It must never be a `VITE_` variable (those ship to every browser).
+
+Verify: Dashboard → **Edge Functions → ai-gateway → Logs**. Calls from an origin not in
+`ALLOWED_ORIGINS` get a 403; calls without a logged-in user get a 401.
+
+> ⚠️ **The AI only activates once a user is signed in.** The gateway requires a valid
+> Supabase session token, so AI features light up after auth is wired (Step F). Until then,
+> the app **gracefully falls back**: Moody shows a friendly "can't reach my brain" note and
+> food photos use the local simulation. So you can deploy this now and it'll start working
+> the moment login is connected — no code change needed.
 
 ---
 
