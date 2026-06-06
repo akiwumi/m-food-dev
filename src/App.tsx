@@ -16,9 +16,10 @@ import { sendConfirmationEmail, sendWelcomeEmail, scheduleTrial, runDue, readInb
 import { analyzeFood, sumNutrition, type FoodPhoto } from "./foodAnalysis";
 import { aiChat, type ChatTurn } from "./ai";
 import { fetchCuratedRecipes } from "./recipes";
+import { signUp as authSignUp, signIn as authSignIn, signOut as authSignOut, isEmailConfirmed, onAuthChange, isSupabaseConfigured } from "./auth";
 
 type Page = "home" | "search" | "diary" | "grocery" | "planner" | "detail" | "cook" | "insights" | "settings" | "favorites" | "import" | "admin" | "billing" | "psych-profile" | "account" | "community" | "health" | "health-nutrition" | "health-variety" | "health-patterns" | "family-health" | "diners" | "food-log" | "help";
-type Entry = "welcome" | "onboarding" | "account" | "verify" | "verified" | "subscription" | "app";
+type Entry = "welcome" | "login" | "onboarding" | "account" | "verify" | "verified" | "subscription" | "app";
 const PLANS = [
   { id: "annual", name: "Annual", price: "$120/year", note: "Best value — about 2 months free" },
   { id: "quarterly", name: "Quarterly", price: "$36/quarter", note: "Save 20% — billed every 3 months" },
@@ -89,16 +90,26 @@ export default function App() {
   const [, setNotifTick] = useState(0);
   const refreshNotifs = () => setNotifTick(t => t + 1);
   useEffect(() => { const { charged } = runDue(); if (charged) setProfile(p => ({ ...p, subscriptionStatus: "active" })); refreshNotifs(); }, []);
+  // Real auth: if the user signs out (here or in another tab), return to welcome.
+  useEffect(() => onAuthChange(event => { if (event === "SIGNED_OUT") setEntry("welcome"); }), []);
 
   const go = (next: Page) => { setPage(next); window.scrollTo(0, 0); };
   const open = (recipe: Recipe) => { setSelected(recipe); go("detail"); };
   const openNotifs = () => { markAllRead(); setNotifOpen(true); refreshNotifs(); };
 
   if (splash) return <Splash proceed={() => setSplash(false)} />;
-  if (entry === "welcome") return <Welcome start={() => setEntry("onboarding")} preview={() => { setProfile({ ...defaultProfile, onboarded: true, accountCreated: true, emailVerified: true, subscriptionStatus: "trialing" }); setEntry("app"); }} />;
+  if (entry === "welcome") return <Welcome start={() => setEntry("onboarding")} signin={() => setEntry("login")} preview={() => { setProfile({ ...defaultProfile, onboarded: true, accountCreated: true, emailVerified: true, subscriptionStatus: "trialing" }); setEntry("app"); }} />;
+  if (entry === "login") return <LoginScreen back={() => setEntry("welcome")} onSignedIn={(email) => { setProfile({ ...profile, email, accountCreated: true, emailVerified: true }); setEntry("app"); }} />;
   if (entry === "onboarding") return <Onboarding profile={profile} save={setProfile} finish={(next) => { setProfile({ ...next, onboarded: true }); clearStored("moodfood-onboarding-step"); setEntry("account"); }} />;
-  if (entry === "account") return <AccountSetupScreen profile={profile} back={() => setEntry("onboarding")} submit={(patch) => { const next = { ...profile, ...patch, accountCreated: true, emailVerified: false }; setProfile(next); sendConfirmationEmail(next.email, next.name); refreshNotifs(); setEntry("verify"); }} />;
-  if (entry === "verify") return <VerifyEmailScreen email={profile.email} resend={() => { sendConfirmationEmail(profile.email, profile.name); refreshNotifs(); }} back={() => setEntry("account")} onVerified={() => { setProfile({ ...profile, emailVerified: true }); sendWelcomeEmail(profile.email, profile.name); refreshNotifs(); setEntry("verified"); }} />;
+  if (entry === "account") return <AccountSetupScreen profile={profile} back={() => setEntry("onboarding")} submit={(patch, opts) => {
+    const confirmed = !!opts?.hasSession; // session present = email confirmation is OFF, so they're in
+    const next = { ...profile, ...patch, accountCreated: true, emailVerified: confirmed };
+    setProfile(next);
+    if (!isSupabaseConfigured) { sendConfirmationEmail(next.email, next.name); refreshNotifs(); setEntry("verify"); return; }
+    if (confirmed) { sendWelcomeEmail(next.email, next.name); refreshNotifs(); setEntry("verified"); }
+    else { setEntry("verify"); } // Supabase sent a real confirmation email
+  }} />;
+  if (entry === "verify") return <VerifyEmailScreen email={profile.email} realAuth={isSupabaseConfigured} resend={() => { sendConfirmationEmail(profile.email, profile.name); refreshNotifs(); }} back={() => setEntry("account")} onVerified={() => { setProfile({ ...profile, emailVerified: true }); sendWelcomeEmail(profile.email, profile.name); refreshNotifs(); setEntry("verified"); }} />;
   if (entry === "verified") return <VerifiedScreen name={profile.name} proceed={() => setEntry("subscription")} />;
   if (entry === "subscription") return <SubscriptionScreen profile={profile} save={setProfile} onStarted={refreshNotifs} proceed={() => setEntry("app")} />;
   return <div className={page === "cook" ? "app cooking" : "app"}>
@@ -112,7 +123,7 @@ export default function App() {
       {page === "grocery" && <GroceryScreen items={groceries} setItems={setGroceries} />}
       {page === "planner" && <PlannerScreen open={open} />}
       {page === "insights" && <InsightsScreen diary={diary} />}
-      {page === "settings" && <SettingsScreen profile={profile} save={setProfile} go={go} logout={() => setEntry("welcome")} />}
+      {page === "settings" && <SettingsScreen profile={profile} save={setProfile} go={go} logout={() => { authSignOut(); setEntry("welcome"); }} />}
       {page === "favorites" && <LibraryScreen title="Saved recipes" source={safeRecipes.filter(r => saved.includes(r.id))} open={open} />}
       {page === "import" && <ImportScreen />}
       {page === "admin" && <AdminScreen />}
@@ -172,7 +183,7 @@ function Splash({ proceed }: { proceed: () => void }) {
   );
 }
 
-function Welcome({ start, preview }: { start: () => void; preview: () => void }) {
+function Welcome({ start, signin, preview }: { start: () => void; signin: () => void; preview: () => void }) {
   return (
     <div className="welcome-modern">
       <div className="wm-logo"><img src="/images/logo-1.png" alt="" /><span>MoodFood</span></div>
@@ -189,21 +200,33 @@ function Welcome({ start, preview }: { start: () => void; preview: () => void })
         <button className="primary" style={{ width: "100%", minHeight: 54 }} onClick={start}>
           Build my food profile <ArrowRight size={18} />
         </button>
+        <button className="ghost" onClick={signin}>I already have an account</button>
         <button className="ghost" onClick={preview}>Take a quick look around</button>
       </div>
     </div>
   );
 }
 
-function AccountSetupScreen({ profile, back, submit }: { profile: Profile; back: () => void; submit: (patch: Partial<Profile>) => void }) {
+function AccountSetupScreen({ profile, back, submit }: { profile: Profile; back: () => void; submit: (patch: Partial<Profile>, opts?: { hasSession: boolean }) => void }) {
   const [name, setName] = useState(profile.name === "Alex" ? "" : profile.name);
   const [email, setEmail] = useState(profile.email);
   const [password, setPassword] = useState("");
   const [avatar, setAvatar] = useState(profile.avatar);
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
   const upload = async (file?: File) => { if (!file) return; try { setAvatar(await readSafeImage(file)); setError(""); } catch (err) { setError((err as Error).message); } };
   const valid = cleanText(name, 80) && /.+@.+\..+/.test(email) && password.length >= 6;
-  const onSubmit = (e: React.FormEvent) => { e.preventDefault(); if (!valid) { setError("Add your name, a valid email, and a password of at least 6 characters."); return; } submit({ name: cleanText(name, 80), email: email.trim(), avatar }); };
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!valid) { setError("Add your name, a valid email, and a password of at least 6 characters."); return; }
+    const patch = { name: cleanText(name, 80), email: email.trim(), avatar };
+    if (!isSupabaseConfigured) { submit(patch); return; } // pilot mode — simulated
+    setBusy(true);
+    const res = await authSignUp(email.trim(), password, patch.name);
+    setBusy(false);
+    if (!res.ok) { setError(res.error || "Could not create your account. Try again."); return; }
+    submit(patch, { hasSession: res.hasSession });
+  };
   return <div className="auth-modern">
     <button className="back" onClick={back} aria-label="Back" style={{ marginBottom: 8 }}><ArrowLeft /></button>
     <div className="auth-logo"><img src="/images/logo-1.png" alt="" /><span>MoodFood</span></div>
@@ -216,23 +239,72 @@ function AccountSetupScreen({ profile, back, submit }: { profile: Profile; back:
       <label>Email address<input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" /></label>
       <label>Password<input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 6 characters" /></label>
       {error && <span className="err">{error}</span>}
-      <button className="primary" type="submit">Create account <ArrowRight size={18} /></button>
+      <button className="primary" type="submit" disabled={busy}>{busy ? "Creating account…" : <>Create account <ArrowRight size={18} /></>}</button>
     </form>
-    <small><Lock size={11} /> We never share your mood data. For this local pilot, your password isn't stored.</small>
+    <small><Lock size={11} /> We never share your mood data.{isSupabaseConfigured ? "" : " For this local pilot, your password isn't stored."}</small>
   </div>;
 }
 
-function VerifyEmailScreen({ email, onVerified, resend, back }: { email: string; onVerified: () => void; resend: () => void; back: () => void }) {
+function VerifyEmailScreen({ email, realAuth, onVerified, resend, back }: { email: string; realAuth?: boolean; onVerified: () => void; resend: () => void; back: () => void }) {
   const [sent, setSent] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [notYet, setNotYet] = useState(false);
+
+  // Real auth: the user confirms in the email link's tab; listen for the session
+  // appearing (or being confirmed) and advance automatically.
+  useEffect(() => {
+    if (!realAuth) return;
+    return onAuthChange((_event, session) => { if (session) onVerified(); });
+  }, [realAuth]);
+
+  const handleClick = async () => {
+    if (!realAuth) { onVerified(); return; } // pilot — simulate confirmation
+    setChecking(true);
+    const ok = await isEmailConfirmed();
+    setChecking(false);
+    if (ok) onVerified(); else setNotYet(true);
+  };
+
   return <div className="auth-modern center">
     <button className="back" onClick={back} aria-label="Back"><ArrowLeft /></button>
     <div className="verify-icon"><Mail size={34} /></div>
     <span className="eyebrow">CHECK YOUR INBOX</span>
     <h1>Confirm your email.</h1>
     <p className="lede">We sent a confirmation link to <span className="maskmail">{email}</span>. Open it to verify your account and continue.</p>
-    <button className="primary" onClick={onVerified}>I've opened the link <ArrowRight size={18} /></button>
+    <button className="primary" onClick={handleClick} disabled={checking}>{checking ? "Checking…" : <>I've opened the link <ArrowRight size={18} /></>}</button>
     <button className="ghost" onClick={() => { resend(); setSent(true); }}>{sent ? "Sent again ✓" : "Resend confirmation email"}</button>
-    <small>In a production build this button is the link inside the email. Here, tapping it simulates the confirmation.</small>
+    {notYet && <span className="err">We can't see a confirmation yet — open the link in the email, then tap again.</span>}
+    <small>{realAuth ? "Tap the link in the email we just sent, then come back here." : "In a production build this button is the link inside the email. Here, tapping it simulates the confirmation."}</small>
+  </div>;
+}
+
+function LoginScreen({ back, onSignedIn }: { back: () => void; onSignedIn: (email: string) => void }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!/.+@.+\..+/.test(email) || !password) { setError("Enter your email and password."); return; }
+    if (!isSupabaseConfigured) { setError("Sign-in needs the backend configured (see BACKEND_SETUP.md)."); return; }
+    setBusy(true);
+    const res = await authSignIn(email.trim(), password);
+    setBusy(false);
+    if (!res.ok) { setError(res.error || "Could not sign in. Check your details."); return; }
+    onSignedIn(email.trim());
+  };
+  return <div className="auth-modern center">
+    <button className="back" onClick={back} aria-label="Back"><ArrowLeft /></button>
+    <div className="auth-logo"><img src="/images/logo-1.png" alt="" /><span>MoodFood</span></div>
+    <span className="eyebrow">WELCOME BACK</span>
+    <h1>Sign in.</h1>
+    <p className="lede">Pick up where you left off — your food profile and recommendations are waiting.</p>
+    <form onSubmit={onSubmit} style={{ width: "100%" }}>
+      <label>Email address<input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" /></label>
+      <label>Password<input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Your password" /></label>
+      {error && <span className="err">{error}</span>}
+      <button className="primary" type="submit" disabled={busy}>{busy ? "Signing in…" : <>Sign in <ArrowRight size={18} /></>}</button>
+    </form>
   </div>;
 }
 

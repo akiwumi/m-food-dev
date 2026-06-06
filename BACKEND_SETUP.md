@@ -19,6 +19,9 @@ steps depend on earlier ones.
 > - ✅ **AI-curated recipe core (the app's heart):** `recipes` function = Spoonacular →
 >   hard safety filter → OpenAI ranking/explanations; frontend wired via `src/recipes.ts`
 >   into the home "Tonight's picks". Set `SPOONACULAR_API_KEY` + deploy (Step E2).
+> - ✅ **Auth fully wired (the keystone):** real Supabase signup, login, email verify, and
+>   sign-out via `src/auth.ts` + the `entry` flow. Signing in unlocks all the AI above.
+>   Pilot-safe: without `.env.local` the simulated flow still runs. (Step F)
 > - ✅ **Payment functions scaffolded:** `create-checkout/`, `stripe-webhook/`, `send-trial-reminders/` (+ shared `_shared/cors.ts`).
 > - ✅ **Frontend client: `src/supabase.ts`** (null-safe — won't crash the pilot if unconfigured), env typings in `src/vite-env.d.ts`, `@supabase/supabase-js` installed, `.env.example` added.
 > - ❌ Still on you: create the Supabase project, **run** the SQL, set the **secrets/variables**,
@@ -228,11 +231,10 @@ supabase functions deploy ai-gateway
 Verify: Dashboard → **Edge Functions → ai-gateway → Logs**. Calls from an origin not in
 `ALLOWED_ORIGINS` get a 403; calls without a logged-in user get a 401.
 
-> ⚠️ **The AI only activates once a user is signed in.** The gateway requires a valid
-> Supabase session token, so AI features light up after auth is wired (Step F). Until then,
-> the app **gracefully falls back**: Moody shows a friendly "can't reach my brain" note and
-> food photos use the local simulation. So you can deploy this now and it'll start working
-> the moment login is connected — no code change needed.
+> ✅ **Auth is wired (Step F), so the AI activates as soon as a user signs in.** The gateway
+> requires a valid Supabase session token; signup/login now provide one. If a request ever
+> arrives without a session (e.g. token expired), the app **gracefully falls back**: Moody
+> shows a friendly note and food photos use the local simulation.
 
 ### Step E2 — The AI-curated recipe core (Spoonacular + OpenAI)
 
@@ -258,8 +260,8 @@ Spoonacular's order.
 > the Spoonacular query and a server-side backstop) — the LLM only ranks/explains recipes
 > that are already safe. It never decides what's safe to eat. Keep it that way.
 
-> Same gate as the rest: this needs a signed-in user (Step F) to run. Until then the app
-> shows the 4 bundled recipes via the local ranker.
+> Same gate as the rest: it runs for a signed-in user (auth is wired — Step F). If signed
+> out, the app falls back to the bundled recipes via the local ranker.
 
 ---
 
@@ -276,31 +278,35 @@ This is the code-side work that connects the app you've built to the backend abo
 `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY`, then restart `npm run dev`. Import the client
 anywhere with `import { supabase } from "./supabase";`.
 
-### F4. Swap localStorage for Supabase — incrementally
-Don't rip out `src/store.ts` all at once. Replace one flow at a time and test:
+### F4. Auth ✅ wired (signup, login, email verify, session)
+Real Supabase Auth is now in the `entry` flow ([src/auth.ts](src/auth.ts) + `src/App.tsx`):
+- **Sign up** (`AccountSetupScreen`) → `supabase.auth.signUp` with the name in user metadata.
+- **Email verify** (`VerifyEmailScreen`) → works whether "Confirm email" is **ON** (shows the
+  verify screen, listens for confirmation, auto-advances) or **OFF** (goes straight in).
+- **Sign in** (`LoginScreen`, reached via "I already have an account" on Welcome).
+- **Sign out** (Settings) → `supabase.auth.signOut`; multi-tab sign-out returns to Welcome.
+- **Pilot-safe:** if `.env.local` is absent (`isSupabaseConfigured === false`), the original
+  simulated flow runs unchanged — nothing breaks without a backend.
 
-1. **Auth first.** In the `entry` state machine in `src/App.tsx`, where you currently flip
-   `accountCreated` / `emailVerified` on the profile, call Supabase instead:
-   ```ts
-   // sign up
-   const { error } = await supabase.auth.signUp({ email, password });
-   // sign in
-   const { error } = await supabase.auth.signInWithPassword({ email, password });
-   // current session (replaces reading accountCreated/emailVerified from localStorage)
-   const { data: { session } } = await supabase.auth.getSession();
-   ```
-   `emailVerified` becomes "does `session.user.email_confirmed_at` exist?".
-2. **Profile + onboarding.** Replace the localStorage `Profile` read/write with
-   `select` / `upsert` on `public.profiles` (the `preferences_json` column holds your big
-   onboarding object).
-3. **Recipes / recommendations.** `select` from `recipes` (only published rows return) and
-   write `mood_entries` / `diary_entries` instead of localStorage arrays.
-4. **Photo logs / community.** Upload images to the `avatars` / `community-images` buckets
-   (private — request a **signed URL** to display them), and write rows to
-   `community_posts`, `post_comments`, etc.
+**This is the keystone:** once a user signs up/in, `supabase.auth.getSession()` returns a
+token, so **the AI gateway, recipe curation, and vision all activate automatically.** No more
+"AI only works after auth" caveat — auth is here.
 
-> **Tip:** keep `useStoredState` as a fallback/cache while migrating. Migrate auth + profile
-> first; you'll immediately have real logins, and the rest can follow screen by screen.
+**Your action:** in Supabase → **Authentication → Sign In / Providers**, decide on "Confirm
+email". For the fastest first test, turn it **OFF** (signup logs you straight in). Turn it
+**ON** for production (then set SMTP per Step D).
+
+### F5. (Optional, later) Move app data into Postgres
+Auth is done; the rest of the app still uses `localStorage` and works fine. When you want
+multi-device data, migrate one flow at a time — none of this blocks the AI:
+1. **Profile + onboarding** → `upsert` on `public.profiles` (`preferences_json` holds the
+   onboarding object). *Note: the AI already gets the profile from the client request, so
+   this is for persistence, not for the AI to work.*
+2. **Diary / mood** → write `mood_entries` / `diary_entries` instead of localStorage arrays.
+3. **Photo logs / community** → upload to the private `avatars` / `community-images` buckets
+   (display via short-lived **signed URLs**), write rows to `community_posts`, etc.
+
+> **Tip:** keep `useStoredState` as a cache while migrating.
 
 ---
 
@@ -403,7 +409,7 @@ Code marked ✅ is already in the repo; the checkboxes are the setup actions sti
 - [ ] **C** — ✅ files exist — run `006`/`007`/`008`; confirm a published recipe + active ranking config.
 - [ ] **D** — Email auth on; Site/Redirect URLs set (trigger ✅ via `007`); SMTP set before launch.
 - [ ] **E** — `ai-gateway` deployed; `ALLOWED_ORIGINS` includes dev + live URLs.
-- [ ] **F** — ✅ client/typings/dep done — copy `.env.example`→`.env.local`, fill it, then migrate auth + profile off localStorage.
+- [ ] **F** — ✅ auth wired (signup/login/verify/signout) — copy `.env.example`→`.env.local`, fill it, set "Confirm email" OFF for first test. (Moving app data to Postgres = optional F5.)
 - [ ] **G** — ✅ functions scaffolded — create Stripe products/prices; set secrets; deploy; test in **test mode**.
 - [ ] **H** — ✅ function scaffolded — enable `pg_cron`+`pg_net`; set email secrets; deploy; schedule the cron.
 
