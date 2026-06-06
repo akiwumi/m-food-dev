@@ -1,0 +1,12 @@
+{
+  "name": "MoodFood",
+  "short_name": "MoodFood",
+  "description": "Food that fits your mood.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8f4e8",
+  "theme_color": "#315b08",
+  "icons": [
+    { "src": "/images/logo-1.png", "sizes": "any", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

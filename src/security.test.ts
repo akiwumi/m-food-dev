@@ -1,0 +1,38 @@
+import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { cleanText, validateImage } from "./security";
+
+describe("client security controls", () => {
+  it("bounds and strips control characters from public text", () => {
+    expect(cleanText(" hello\u0000world ", 20)).toBe("helloworld");
+    expect(cleanText("x".repeat(100), 12)).toHaveLength(12);
+  });
+
+  it("rejects executable and oversized image uploads", () => {
+    expect(() => validateImage(new File(["<svg/>"], "attack.svg", { type: "image/svg+xml" }))).toThrow();
+    expect(() => validateImage(new File([new Uint8Array(4 * 1024 * 1024 + 1)], "large.png", { type: "image/png" }))).toThrow();
+  });
+
+  it("keeps the service worker away from cross-origin and API responses", () => {
+    const worker = readFileSync("public/sw.js", "utf8");
+    expect(worker).toContain("url.origin !== self.location.origin");
+    expect(worker).toContain('url.pathname.startsWith("/api/")');
+  });
+
+  it("enables RLS on privileged global tables", () => {
+    const migration = readFileSync("supabase/migrations/004_security_hardening.sql", "utf8");
+    expect(migration).toContain("alter table public.recipes enable row level security");
+    expect(migration).toContain("alter table public.invites enable row level security");
+    expect(migration).toContain("revoke insert, update, delete on public.recipes");
+    expect(migration).toContain("auth.uid() = requester_id and status = 'pending'");
+    expect(migration).toContain("grant update(status) on public.connections to authenticated");
+    expect(migration).toContain("posts_image_owner_path");
+  });
+
+  it("keeps user-uploaded images private and owner-scoped", () => {
+    const migration = readFileSync("supabase/migrations/005_private_image_storage.sql", "utf8");
+    expect(migration).toContain("'avatars', 'avatars', false");
+    expect(migration).toContain("'community-images', 'community-images', false");
+    expect(migration).toContain("(storage.foldername(name))[1] = auth.uid()::text");
+  });
+});

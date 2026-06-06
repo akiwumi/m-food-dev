@@ -1,0 +1,22 @@
+import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App";
+import "./styles.css";
+
+class ErrorBoundary extends React.Component<React.PropsWithChildren, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() {
+    return this.state.failed
+      ? <main style={{ padding: 24 }}><h1>MoodFood needs a fresh start.</h1><p>Your data has not been sent anywhere. Reload to continue.</p><button onClick={() => location.reload()}>Reload</button></main>
+      : this.props.children;
+  }
+}
+
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode><ErrorBoundary><App /></ErrorBoundary></React.StrictMode>,
+);
+
+if ("serviceWorker" in navigator && import.meta.env.PROD) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js"));
+}
