@@ -16,6 +16,9 @@ steps depend on earlier ones.
 > - ✅ **AI fully wired (OpenAI):** `ai-gateway` calls OpenAI for the Moody chat assistant
 >   and food-photo vision; frontend uses it via `src/ai.ts` with graceful fallback to the
 >   local simulation when not signed in. Just set `OPENAI_API_KEY` + deploy (Step E).
+> - ✅ **AI-curated recipe core (the app's heart):** `recipes` function = Spoonacular →
+>   hard safety filter → OpenAI ranking/explanations; frontend wired via `src/recipes.ts`
+>   into the home "Tonight's picks". Set `SPOONACULAR_API_KEY` + deploy (Step E2).
 > - ✅ **Payment functions scaffolded:** `create-checkout/`, `stripe-webhook/`, `send-trial-reminders/` (+ shared `_shared/cors.ts`).
 > - ✅ **Frontend client: `src/supabase.ts`** (null-safe — won't crash the pilot if unconfigured), env typings in `src/vite-env.d.ts`, `@supabase/supabase-js` installed, `.env.example` added.
 > - ❌ Still on you: create the Supabase project, **run** the SQL, set the **secrets/variables**,
@@ -88,7 +91,8 @@ automatically by Supabase, so you usually only set `ALLOWED_ORIGINS` yourself:
 | Name | Example value | Notes |
 |---|---|---|
 | `ALLOWED_ORIGINS` | `http://localhost:5173,https://moodfood.vercel.app` | Comma-separated. Must include your dev URL **and** your live URL. No trailing slash. |
-| `OPENAI_API_KEY` | `sk-...` | **Powers the AI** (Moody chat + food-photo vision). Server-side only — **never** `VITE_`. |
+| `OPENAI_API_KEY` | `sk-...` | **Powers the AI** (Moody chat, food-photo vision, recipe curation). Server-side only — **never** `VITE_`. |
+| `SPOONACULAR_API_KEY` | `abc123...` | **The recipe source** for the AI-curated core (`recipes` function). Server-side only — **never** `VITE_`. |
 | `SUPABASE_URL` | *(auto-provided)* | Don't set unless overriding. |
 | `SUPABASE_ANON_KEY` | *(auto-provided)* | Don't set unless overriding. |
 
@@ -229,6 +233,33 @@ Verify: Dashboard → **Edge Functions → ai-gateway → Logs**. Calls from an 
 > the app **gracefully falls back**: Moody shows a friendly "can't reach my brain" note and
 > food photos use the local simulation. So you can deploy this now and it'll start working
 > the moment login is connected — no code change needed.
+
+### Step E2 — The AI-curated recipe core (Spoonacular + OpenAI)
+
+This is the heart of the app: turn the user's profile + mood into real meal options.
+The `recipes` edge function runs a 3-stage pipeline — **Spoonacular** fetches real
+candidates (filtered by diet + intolerances), a **hard safety filter** drops anything
+mentioning an allergen, then **OpenAI** ranks them for the profile/mood and writes the
+"why this fits you" reason. If OpenAI is unset it still returns real, safe recipes in
+Spoonacular's order.
+
+1. Get a free key at <https://spoonacular.com/food-api> (≈150 points/day free).
+2. Set secrets + deploy:
+   ```bash
+   supabase secrets set SPOONACULAR_API_KEY="your-key"
+   # OPENAI_API_KEY + ALLOWED_ORIGINS already set in Step E
+   supabase functions deploy recipes
+   ```
+3. The frontend already calls it ([src/recipes.ts](src/recipes.ts)): the home screen's
+   "Tonight's picks" fetches curated recipes when you ask for recommendations, and falls
+   back to the bundled recipes + local ranking when not signed in.
+
+> **Safety note:** allergen and diet filtering is enforced **deterministically** (both in
+> the Spoonacular query and a server-side backstop) — the LLM only ranks/explains recipes
+> that are already safe. It never decides what's safe to eat. Keep it that way.
+
+> Same gate as the rest: this needs a signed-in user (Step F) to run. Until then the app
+> shows the 4 bundled recipes via the local ranker.
 
 ---
 
