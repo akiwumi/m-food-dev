@@ -314,6 +314,17 @@ body,.app{background:linear-gradient(180deg,#dceef2 0%,#eaf4f3 30%,#f5fbfa 100%)
 .welcome-modern .copy p{margin:0;color:var(--muted);line-height:1.6;font-size:14px}
 .welcome-modern .actions{display:grid;gap:10px}
 .ghost,.auth-modern .ghost,.welcome-modern .ghost{border:0;background:transparent;color:var(--muted);font-weight:700;padding:10px;text-align:center;width:100%}
+.welcome-modern .hero{flex:none;min-height:240px;height:34vh}
+.welcome-modern .wm-explain{background:var(--glass,rgba(255,255,255,.7));border:1px solid rgba(0,0,0,.06);border-radius:24px;padding:20px;margin:4px 0 16px;display:grid;gap:12px;box-shadow:var(--shadow)}
+.welcome-modern .wm-explain h2{display:flex;align-items:center;gap:8px;font-size:18px;font-weight:800;margin:0;letter-spacing:-.01em}
+.welcome-modern .wm-explain h2 svg{color:var(--blue-deep)}
+.welcome-modern .wm-explain>p{margin:0;color:var(--muted);line-height:1.6;font-size:14px}
+.welcome-modern .wm-explain ul{list-style:none;margin:2px 0;padding:0;display:grid;gap:14px}
+.welcome-modern .wm-explain li{display:flex;gap:12px;align-items:flex-start}
+.welcome-modern .wm-explain .wm-dot{flex:none;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:var(--blue-soft,rgba(90,175,215,.18));color:var(--blue-deep)}
+.welcome-modern .wm-explain li b{display:block;font-size:14px;font-weight:700;margin-bottom:1px}
+.welcome-modern .wm-explain li p{margin:0;color:var(--muted);line-height:1.5;font-size:13px}
+.welcome-modern .wm-explain .wm-note{font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid rgba(0,0,0,.06);padding-top:12px;margin:0}
 
 /* ── Auth / account screens ──────────────────────────────────────── */
 .auth-modern{min-height:100vh;max-width:480px;margin:auto;padding:26px 24px;display:flex;flex-direction:column;gap:8px;background:transparent}

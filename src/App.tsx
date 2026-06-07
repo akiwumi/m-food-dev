@@ -287,15 +287,27 @@ function Welcome({ start, signin, preview }: { start: () => void; signin: () => 
       </div>
       <div className="copy">
         <span className="wm-eye">WELCOME TO MOODFOOD</span>
-        <h1>Food that meets your mood.</h1>
-        <p>Tell us how you feel and what you love. We match you to one safe, doable meal — so dinner feels like care, not another decision.</p>
+        <h1>Hello, and welcome.</h1>
+        <p>MoodFood is your personal food companion. Tell us how you feel and what you love, and we'll match you to one safe, doable meal — so dinner feels like care, not another decision.</p>
       </div>
+
+      <div className="wm-explain">
+        <h2><Sparkles size={18} /> A few quick questions first</h2>
+        <p>The next part may feel a little long — and that's on purpose. Every answer helps us truly understand your tastes, your needs, and the way you eat.</p>
+        <ul>
+          <li><span className="wm-dot"><Heart size={14} /></span><div><b>It learns what matters to you</b><p>Allergies, cravings, comfort foods, the time you have — nothing one-size-fits-all.</p></div></li>
+          <li><span className="wm-dot"><ChefHat size={14} /></span><div><b>It trains your MoodFood</b><p>The more it knows, the smarter and more personal every suggestion becomes.</p></div></li>
+          <li><span className="wm-dot"><Check size={14} /></span><div><b>You start in a great place</b><p>From day one you get picks that genuinely fit you — not generic guesses.</p></div></li>
+        </ul>
+        <p className="wm-note">In a hurry? You can skip ahead at any time. Just know that the more you share, the better MoodFood gets — skipping means a more general starting point you can always improve later.</p>
+      </div>
+
       <div className="actions">
         <button className="primary" style={{ width: "100%", minHeight: 54 }} onClick={start}>
-          Build my food profile <ArrowRight size={18} />
+          Let's build my food profile <ArrowRight size={18} />
         </button>
         <button className="ghost" onClick={signin}>I already have an account</button>
-        <button className="ghost" onClick={preview}>Take a quick look around</button>
+        <button className="ghost" onClick={preview}>Skip for now and look around</button>
       </div>
     </div>
   );
