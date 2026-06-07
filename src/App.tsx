@@ -58,7 +58,7 @@ async function syncSubscriptionFromDB(): Promise<{ status: string; plan: string;
   return null;
 }
 
-type Page = "home" | "search" | "diary" | "grocery" | "planner" | "detail" | "cook" | "insights" | "settings" | "favorites" | "import" | "admin" | "billing" | "psych-profile" | "account" | "community" | "health" | "health-nutrition" | "health-variety" | "health-patterns" | "family-health" | "diners" | "food-log" | "help";
+type Page = "home" | "search" | "diary" | "grocery" | "planner" | "detail" | "cook" | "insights" | "settings" | "favorites" | "import" | "admin" | "billing" | "psych-profile" | "food-profile" | "account" | "community" | "health" | "health-nutrition" | "health-variety" | "health-patterns" | "family-health" | "diners" | "food-log" | "help";
 type Entry = "welcome" | "login" | "onboarding" | "account" | "verify" | "verified" | "subscription" | "app";
 const PLANS = [
   { id: "annual", name: "Annual", price: "$120/year", note: "Best value — about 2 months free" },
@@ -152,8 +152,16 @@ export default function App() {
   const [, setNotifTick] = useState(0);
   const refreshNotifs = () => setNotifTick(t => t + 1);
   useEffect(() => { const { charged } = runDue(); if (charged) setProfile(p => ({ ...p, subscriptionStatus: "active" })); refreshNotifs(); }, []);
-  // Real auth: if the user signs out (here or in another tab), return to welcome.
-  useEffect(() => onAuthChange(event => { if (event === "SIGNED_OUT") setEntry("welcome"); }), []);
+  // Real auth: keep the entry flow in sync with the session.
+  //  • Sign out anywhere → back to welcome.
+  //  • A returning user with a live session and a finished profile should never
+  //    be sent back through onboarding — drop them straight into the app.
+  useEffect(() => onAuthChange((event, session) => {
+    if (event === "SIGNED_OUT") { setEntry("welcome"); return; }
+    if (session && storedProfile.onboarded && storedProfile.accountCreated) {
+      setEntry(prev => (prev === "welcome" || prev === "login") ? "app" : prev);
+    }
+  }), [storedProfile.onboarded, storedProfile.accountCreated]);
 
   // Handle Stripe redirect back after Checkout (?checkout=success|canceled).
   useEffect(() => {
@@ -190,7 +198,7 @@ export default function App() {
   const openNotifs = () => { markAllRead(); setNotifOpen(true); refreshNotifs(); };
 
   if (splash) return <Splash proceed={() => setSplash(false)} />;
-  if (entry === "welcome") return <Welcome start={() => setEntry("onboarding")} signin={() => setEntry("login")} preview={() => { setProfile({ ...defaultProfile, onboarded: true, accountCreated: true, emailVerified: true, subscriptionStatus: "trialing" }); setEntry("app"); }} />;
+  if (entry === "welcome") return <Welcome start={() => setEntry("onboarding")} signin={() => setEntry("login")} />;
   if (entry === "login") return <LoginScreen back={() => setEntry("welcome")} onSignedIn={(email) => { setProfile({ ...profile, email, accountCreated: true, emailVerified: true }); setEntry("app"); }} />;
   if (entry === "onboarding") return <Onboarding profile={profile} save={setProfile} finish={(next) => { setProfile({ ...next, onboarded: true }); clearStored("moodfood-onboarding-step"); setEntry("account"); }} />;
   if (entry === "account") return <AccountSetupScreen profile={profile} back={() => setEntry("onboarding")} submit={(patch, opts) => {
@@ -221,6 +229,7 @@ export default function App() {
       {page === "admin" && <AdminScreen />}
       {page === "billing" && <BillingScreen profile={profile} save={setProfile} />}
       {page === "psych-profile" && <PsychProfileScreen profile={profile} save={setProfile} back={() => go("settings")} />}
+      {page === "food-profile" && <FoodProfileScreen profile={profile} save={setProfile} back={() => go("settings")} />}
       {page === "account" && <AccountScreen profile={profile} save={setProfile} posts={posts.filter(p => p.author === profile.name)} back={() => go("settings")} />}
       {page === "community" && <CommunityScreen profile={profile} posts={posts} setPosts={setPosts} connections={connections} setConnections={setConnections} openRecipe={open} catalog={catalog} initialRecipeId={pendingShare} clearInitial={() => setPendingShare(undefined)} />}
       {page === "health" && <HealthHub diary={diary} go={go} />}
@@ -277,7 +286,7 @@ function Splash({ proceed }: { proceed: () => void }) {
   );
 }
 
-function Welcome({ start, signin, preview }: { start: () => void; signin: () => void; preview: () => void }) {
+function Welcome({ start, signin }: { start: () => void; signin: () => void }) {
   return (
     <div className="welcome-modern">
       <div className="wm-logo"><img src="/images/logo-1.png" alt="" /><span>MoodFood</span></div>
@@ -299,7 +308,7 @@ function Welcome({ start, signin, preview }: { start: () => void; signin: () => 
           <li><span className="wm-dot"><ChefHat size={14} /></span><div><b>It trains your MoodFood</b><p>The more it knows, the smarter and more personal every suggestion becomes.</p></div></li>
           <li><span className="wm-dot"><Check size={14} /></span><div><b>You start in a great place</b><p>From day one you get picks that genuinely fit you — not generic guesses.</p></div></li>
         </ul>
-        <p className="wm-note">In a hurry? You can skip ahead at any time. Just know that the more you share, the better MoodFood gets — skipping means a more general starting point you can always improve later.</p>
+        <p className="wm-note">Short on time? Answer what you can — the more you share, the better MoodFood gets, but nothing is set in stone. You can revisit and refine everything any time from your Food Profile.</p>
       </div>
 
       <div className="actions">
@@ -307,7 +316,6 @@ function Welcome({ start, signin, preview }: { start: () => void; signin: () => 
           Let's build my food profile <ArrowRight size={18} />
         </button>
         <button className="ghost" onClick={signin}>I already have an account</button>
-        <button className="ghost" onClick={preview}>Skip for now and look around</button>
       </div>
     </div>
   );
@@ -1056,7 +1064,7 @@ function LibraryScreen({ title, source, open }: { title: string; source: Recipe[
   return <div className="screen"><TopBar title={title} /><div className="search-grid">{source.length ? source.map(r => <article key={r.id}><img src={r.image} alt="" /><div><h2>{r.title}</h2><p>{r.reason}</p><button className="primary" onClick={() => open(r)}>View recipe</button></div></article>) : <div className="empty-state"><Heart /><h2>No saved recipes yet</h2><p>Save recipes that feel like good future answers.</p></div>}</div></div>;
 }
 function SettingsScreen({ profile, save, go, logout }: { profile: Profile; save: (p: Profile) => void; go: (p: Page) => void; logout: () => void }) {
-  return <div className="screen"><TopBar title="Profile & settings" /><section className="profile-card">{profile.avatar ? <img src={profile.avatar} alt={profile.name} /> : <div>{profile.name.slice(0, 2).toUpperCase()}</div>}<h2>{profile.name}</h2><p>{profile.email || "Pilot preview profile"}</p><span>{profile.diet} · {profile.skill}</span></section><SettingsGroup title="ACCOUNT & COMMUNITY"><button onClick={() => go("account")}><UserRound />Account and public profile<ChevronRight /></button><button onClick={() => go("community")}><Users />Community and connections<ChevronRight /></button><button onClick={() => go("diners")}><UserPlus />Household diners<ChevronRight /></button></SettingsGroup><SettingsGroup title="HEALTH & FOOD PROFILE"><button onClick={() => go("health")}><Activity />Health trends<ChevronRight /></button><button onClick={() => go("food-log")}><Camera />Food photo log<ChevronRight /></button><button onClick={() => go("psych-profile")}><Sparkles />Psychological food profile<ChevronRight /></button><button onClick={() => go("favorites")}><Heart />Saved recipes<ChevronRight /></button><button onClick={() => go("insights")}><BarChart3 />Weekly reflections<ChevronRight /></button><button><ShieldCheck />Safety filters<span>{profile.allergies.join(", ") || "None"}</span></button></SettingsGroup><SettingsGroup title="PREFERENCES"><label>Usual servings<input type="number" min="1" max="10" value={profile.servings} onChange={e => save({ ...profile, servings: +e.target.value })} /></label><button onClick={() => go("billing")}><Star />Subscription &amp; billing<ChevronRight /></button><button onClick={() => go("import")}><Upload />Import a recipe<ChevronRight /></button><button onClick={() => go("admin")}><LayoutDashboard />Editorial console<ChevronRight /></button><button onClick={() => go("help")}><HelpCircle />Help, tutorial &amp; FAQ<ChevronRight /></button></SettingsGroup><button className="danger" onClick={logout}><LogOut />Sign out and replay first launch</button></div>;
+  return <div className="screen"><TopBar title="Profile & settings" /><section className="profile-card">{profile.avatar ? <img src={profile.avatar} alt={profile.name} /> : <div>{profile.name.slice(0, 2).toUpperCase()}</div>}<h2>{profile.name}</h2><p>{profile.email || "Pilot preview profile"}</p><span>{profile.diet} · {profile.skill}</span></section><SettingsGroup title="ACCOUNT & COMMUNITY"><button onClick={() => go("account")}><UserRound />Account and public profile<ChevronRight /></button><button onClick={() => go("community")}><Users />Community and connections<ChevronRight /></button><button onClick={() => go("diners")}><UserPlus />Household diners<ChevronRight /></button></SettingsGroup><SettingsGroup title="HEALTH & FOOD PROFILE"><button onClick={() => go("food-profile")}><ClipboardCheck />Food profile &amp; preferences<ChevronRight /></button><button onClick={() => go("health")}><Activity />Health trends<ChevronRight /></button><button onClick={() => go("food-log")}><Camera />Food photo log<ChevronRight /></button><button onClick={() => go("psych-profile")}><Sparkles />Psychological food profile<ChevronRight /></button><button onClick={() => go("favorites")}><Heart />Saved recipes<ChevronRight /></button><button onClick={() => go("insights")}><BarChart3 />Weekly reflections<ChevronRight /></button><button><ShieldCheck />Safety filters<span>{profile.allergies.join(", ") || "None"}</span></button></SettingsGroup><SettingsGroup title="PREFERENCES"><label>Usual servings<input type="number" min="1" max="10" value={profile.servings} onChange={e => save({ ...profile, servings: +e.target.value })} /></label><button onClick={() => go("billing")}><Star />Subscription &amp; billing<ChevronRight /></button><button onClick={() => go("import")}><Upload />Import a recipe<ChevronRight /></button><button onClick={() => go("admin")}><LayoutDashboard />Editorial console<ChevronRight /></button><button onClick={() => go("help")}><HelpCircle />Help, tutorial &amp; FAQ<ChevronRight /></button></SettingsGroup><button className="danger" onClick={logout}><LogOut />Sign out and replay first launch</button></div>;
 }
 function SettingsGroup({ title, children }: { title: string; children: React.ReactNode }) { return <section className="settings-group"><small>{title}</small>{children}</section>; }
 function ImportScreen() {
@@ -1362,6 +1370,33 @@ function ProfileEditor({ title, text, children }: { title: string; text: string;
 function EditableCues({ values, suggestions, save }: { values: string[]; suggestions: string[]; save: (v: string[]) => void }) {
   const [custom, setCustom] = useState("");
   return <><div className="choice">{suggestions.map(v => <button className={values.includes(v) ? "active" : ""} onClick={() => save(toggle(values, v))} key={v}>{v}</button>)}</div><form className="add-cue" onSubmit={e => { e.preventDefault(); if (custom.trim()) { save([...new Set([...values, custom.trim()])]); setCustom(""); } }}><input value={custom} onChange={e => setCustom(e.target.value)} placeholder="Add your own cue" /><button><Plus /></button></form>{values.filter(v => !suggestions.includes(v)).map(v => <button className="custom-cue" onClick={() => save(values.filter(x => x !== v))} key={v}>{v}<X size={13} /></button>)}</>;
+}
+// Editable view of every onboarding answer, grouped by section. This is the same
+// set of questions the user saw at first launch — they can refine anything here
+// any time, which is why returning users never have to repeat onboarding.
+function FoodProfileScreen({ profile, save, back }: { profile: Profile; save: (p: Profile) => void; back: () => void }) {
+  const update = (key: OnboardingKey, value: ProfileValue) => save({ ...profile, [key]: value });
+  const visible = onboardingQuestions.filter(q => !q.showIf || q.showIf(profile));
+  return <div className="screen food-profile">
+    <TopBar title="Food profile" back={back} />
+    <section className="fp-intro">
+      <span>YOUR FOOD PROFILE</span>
+      <h1>Fine-tune what MoodFood knows.</h1>
+      <p>These are the same questions from onboarding — change anything, any time, and your recommendations update to match. Everything saves automatically.</p>
+    </section>
+    {onboardingSections.map(section => {
+      const qs = visible.filter(q => q.section === section);
+      if (!qs.length) return null;
+      return <section className="fp-section" key={section}>
+        <h2 className="fp-section-title">{section}</h2>
+        {qs.map(q => <div className="fp-q" key={q.id}>
+          <SetupStep eyebrow={q.eyebrow} title={q.title} text={q.text}>
+            <QuestionField q={q} profile={profile} update={update} />
+          </SetupStep>
+        </div>)}
+      </section>;
+    })}
+  </div>;
 }
 function MoodyPanel({ recipe, profile, picks, close, open }: { recipe?: Recipe; profile?: Profile; picks?: Recipe[]; close: () => void; open: () => void }) {
   const [input, setInput] = useState("");

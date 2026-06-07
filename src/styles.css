@@ -287,6 +287,16 @@ body,.app{background:linear-gradient(180deg,#dceef2 0%,#eaf4f3 30%,#f5fbfa 100%)
 .onboarding-review p:last-child{border:0;padding-bottom:0}
 .onboarding-review span{color:var(--muted);text-align:right;font-size:13px}
 .onboarding-review b{font-size:13px}
+/* ── Food profile (edit onboarding answers) ──────────────────────── */
+.food-profile .fp-intro{margin:4px 0 6px}
+.food-profile .fp-intro>span{font-size:10px;letter-spacing:.2em;font-weight:700;color:var(--blue-deep)}
+.food-profile .fp-intro h1{font-size:30px;font-weight:800;margin:6px 0 8px;letter-spacing:-.02em}
+.food-profile .fp-intro p{margin:0;color:var(--muted);line-height:1.6;font-size:14px}
+.food-profile .fp-section{margin-top:22px}
+.food-profile .fp-section-title{font-size:13px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--blue-deep);margin:0 2px 10px}
+.food-profile .fp-q{background:var(--white,#fff);border:1px solid rgba(0,0,0,.06);border-radius:22px;padding:18px;margin-bottom:12px;box-shadow:var(--shadow)}
+.food-profile .fp-q .setup-step h1{font-size:19px!important;margin:4px 0 6px!important}
+.food-profile .fp-q .setup-step>p{margin:0 0 12px;font-size:12px}
 
 /* choice pills in onboarding sheet */
 .choice{display:flex;flex-wrap:wrap;gap:8px}
