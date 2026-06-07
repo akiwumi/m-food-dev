@@ -59,6 +59,8 @@ export type Profile = {
   trialStartedAt: string;          // ISO date, "" when no trial
   trialEndsAt: string;             // ISO date
   subscriptionStatus: "none" | "trialing" | "active" | "canceled";
+  inviteCode: string;              // code that was redeemed, "" if none
+  inviteSubEnd: string;            // ISO date the invite subscription ends, "" if none
   avatar: string;
   bio: string;
   location: string;
@@ -122,6 +124,8 @@ export const defaultProfile: Profile = {
   trialStartedAt: "",
   trialEndsAt: "",
   subscriptionStatus: "none",
+  inviteCode: "",
+  inviteSubEnd: "",
   avatar: "",
   bio: "Learning what dinner looks like when it feels good.",
   location: "",
@@ -140,8 +144,6 @@ export type Diner = {
 
 export const defaultDiners: Diner[] = [
   { id: "self", name: "Just me", relationship: "You", diet: "Everything", allergies: [] },
-  { id: "maya", name: "Maya", relationship: "Partner", diet: "Vegetarian", allergies: ["Shellfish"] },
-  { id: "leo", name: "Leo", relationship: "Child", diet: "Everything", allergies: ["Peanuts"] },
 ];
 
 export function readStored<T>(key: string, initial: T): T {

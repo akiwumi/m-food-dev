@@ -18,6 +18,26 @@ import { analyzeFood, sumNutrition, flaggedAllergens, type FoodPhoto } from "./f
 import { aiChat, type ChatTurn } from "./ai";
 import { fetchCuratedRecipes, buildFoodHistory } from "./recipes";
 import { signUp as authSignUp, signIn as authSignIn, signOut as authSignOut, isEmailConfirmed, onAuthChange, isSupabaseConfigured } from "./auth";
+import { supabase } from "./supabase";
+
+const REDEEM_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/redeem-invite`;
+
+async function redeemInviteCode(code: string): Promise<{ ok: boolean; subscriptionEnd?: string; error?: string }> {
+  if (!supabase) return { ok: false, error: "Backend not configured." };
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return { ok: false, error: "You must be signed in to redeem a code." };
+    const res = await fetch(REDEEM_URL, {
+      method: "POST",
+      headers: { authorization: `Bearer ${session.access_token}`, "content-type": "application/json" },
+      body: JSON.stringify({ code: code.trim().toUpperCase() }),
+    });
+    const data = await res.json();
+    return data;
+  } catch {
+    return { ok: false, error: "Could not reach the server. Please try again." };
+  }
+}
 
 type Page = "home" | "search" | "diary" | "grocery" | "planner" | "detail" | "cook" | "insights" | "settings" | "favorites" | "import" | "admin" | "billing" | "psych-profile" | "account" | "community" | "health" | "health-nutrition" | "health-variety" | "health-patterns" | "family-health" | "diners" | "food-log" | "help";
 type Entry = "welcome" | "login" | "onboarding" | "account" | "verify" | "verified" | "subscription" | "app";
@@ -30,11 +50,6 @@ const nav = [
   ["home", "Home", Home], ["search", "Search", Search], ["diary", "Diary", BookOpen],
   ["grocery", "Grocery", ShoppingCart], ["planner", "Planner", CalendarDays],
 ] as const;
-const seedPosts: SocialPost[] = [
-  { id: "p1", author: "Maya Chen", avatar: "", text: "Added lemon zest at the end and it made the whole bowl sing. My tip: toast the quinoa for a minute first.", image: recipes[1].image, recipeId: "chicken-bowl", createdAt: "18 min ago", likes: ["Alex", "Jon"], comments: [{ author: "Jon Bell", text: "Trying the toasted quinoa tip tonight." }] },
-  { id: "p2", author: "Jon Bell", avatar: "", text: "A very tired-night tomato soup. Used oat yogurt and it worked beautifully.", image: recipes[2].image, recipeId: "tomato-soup", createdAt: "Yesterday", likes: ["Maya"], comments: [] },
-];
-
 export default function App() {
   const [splash, setSplash] = useState(true);
   const [entry, setEntry] = useStoredState<Entry>("moodfood-entry", "welcome");
@@ -48,11 +63,11 @@ export default function App() {
   const [results, setResults] = useState(false);
   const [moodyOpen, setMoodyOpen] = useState(false);
   const [pendingShare, setPendingShare] = useState<string | undefined>(undefined);
-  const [saved, setSaved] = useStoredState<string[]>("moodfood-saved", ["green-pasta"]);
-  const [diary, setDiary] = useStoredState("moodfood-diary", [{ recipe: recipes[1], rating: 5, when: "Yesterday" }]);
-  const [groceries, setGroceries] = useStoredState("moodfood-groceries", ["Baby spinach", "Lemon", "Garlic", "Greek yogurt"]);
-  const [posts, setPosts] = useStoredState<SocialPost[]>("moodfood-posts", seedPosts);
-  const [connections, setConnections] = useStoredState<string[]>("moodfood-connections", ["Maya Chen"]);
+  const [saved, setSaved] = useStoredState<string[]>("moodfood-saved", []);
+  const [diary, setDiary] = useStoredState("moodfood-diary", [] as { recipe: Recipe; rating: number; when: string }[]);
+  const [groceries, setGroceries] = useStoredState("moodfood-groceries", [] as string[]);
+  const [posts, setPosts] = useStoredState<SocialPost[]>("moodfood-posts", []);
+  const [connections, setConnections] = useStoredState<string[]>("moodfood-connections", []);
   const [diners, setDiners] = useStoredState<Diner[]>("moodfood-diners", defaultDiners);
   const [selectedDiners, setSelectedDiners] = useState<string[]>(["self"]);
   const [eaterCount, setEaterCount] = useStoredState<number>("moodfood-eater-count", 1);
@@ -965,13 +980,23 @@ function GroceryScreen({ items, setItems }: { items: string[]; setItems: (v: str
   const [checked, setChecked] = useState<string[]>([]);
   return <div className="screen"><TopBar title="Grocery" /><div className="grocery-hero"><ShoppingCart /><div><b>{items.length - checked.length} items left</b><p>One calm lap around the store.</p></div></div><div className="grocery-list"><small>PRODUCE & FRIDGE</small>{items.map(i => <button className={checked.includes(i) ? "checked" : ""} onClick={() => setChecked(toggle(checked, i))} key={i}><span><Check /></span><p>{i}</p></button>)}</div><button className="secondary" onClick={() => setItems([...items, "Fresh basil"])}>+ Add an item</button></div>;
 }
-function PlannerScreen({ open }: { open: (r: Recipe) => void }) {
-  return <div className="screen"><TopBar title="This week" /><p className="quiet">Enough structure to help, enough room to change your mind.</p><div className="planner">{["Mon", "Tue", "Wed", "Thu", "Fri"].map((day, n) => <article key={day}><b>{day}<span>{n + 1}</span></b>{n % 2 ? <button onClick={() => open(recipes[n % recipes.length])}><img src={recipes[n % recipes.length].image} alt="" /><div><small>DINNER</small><h2>{recipes[n % recipes.length].title}</h2><p>{recipes[n % recipes.length].time} min</p></div></button> : <button className="empty">+ Add dinner</button>}</article>)}</div></div>;
+function PlannerScreen(_: { open: (r: Recipe) => void }) {
+  return <div className="screen"><TopBar title="This week" /><p className="quiet">Enough structure to help, enough room to change your mind.</p><div className="planner">{["Mon", "Tue", "Wed", "Thu", "Fri"].map((day, n) => <article key={day}><b>{day}<span>{n + 1}</span></b><button className="empty">+ Add dinner</button></article>)}</div></div>;
 }
 
 function InsightsScreen({ diary }: { diary: { recipe: Recipe; rating: number; when: string }[] }) {
   const cuisines = new Set(diary.map(d => d.recipe.cuisine)).size;
-  return <div className="screen"><TopBar title="Weekly reflection" /><section className="insight-lead"><span>VARIETY SCORE</span><b>{Math.min(96, 62 + diary.length * 8)}</b><em>Looking balanced</em><p>You cooked {diary.length} meals across {cuisines || 1} cuisines. Short, nourishing meals are your strongest rhythm.</p></section><div className="insight-cards"><article><Sparkles /><b>A quiet win</b><h2>More plants, naturally</h2><p>Your recent meals included a broader mix of vegetables, without adding much cooking time.</p></article><article><Clock3 /><b>Your sweet spot</b><h2>Under 30 minutes</h2><p>You finish quick recipes most often. Moody will protect that on low-energy nights.</p></article><article><ShieldCheck /><b>Informational only</b><h2>Nutrition, without judgment</h2><p>These reflections use recipe snapshots and are not medical advice.</p></article></div></div>;
+  const varietyScore = Math.min(96, diary.length * 12 + cuisines * 8);
+  const avgTime = diary.length ? Math.round(diary.reduce((a, d) => a + d.recipe.time, 0) / diary.length) : 0;
+  if (!diary.length) return (
+    <div className="screen"><TopBar title="Weekly reflection" />
+      <div className="empty-state" style={{ margin: "40px 16px" }}>
+        <BarChart3 /><h2>No cooks logged yet</h2>
+        <p>Once you log your first meal, Moody will show patterns, variety scores, and personalised reflections here.</p>
+      </div>
+    </div>
+  );
+  return <div className="screen"><TopBar title="Weekly reflection" /><section className="insight-lead"><span>VARIETY SCORE</span><b>{varietyScore}</b><em>Looking balanced</em><p>You cooked {diary.length} meal{diary.length !== 1 ? "s" : ""} across {cuisines} cuisine{cuisines !== 1 ? "s" : ""}. {avgTime ? `Average cook time: ${avgTime} min.` : ""}</p></section><div className="insight-cards"><article><Sparkles /><b>Your profile</b><h2>Personalised picks</h2><p>Every recommendation is ranked against your food-psychology profile. The more you cook, the sharper it gets.</p></article><article><Clock3 /><b>Your rhythm</b><h2>{avgTime ? `~${avgTime} min average` : "Build your rhythm"}</h2><p>{avgTime < 30 ? "Quick meals are your sweet spot. Moody will protect that on low-energy nights." : avgTime < 45 ? "You strike a good balance between speed and depth." : "You invest real time in cooking — Moody will keep surfacing recipes worth it."}</p></article><article><ShieldCheck /><b>Informational only</b><h2>Nutrition, without judgment</h2><p>These reflections use recipe snapshots and are not medical advice.</p></article></div></div>;
 }
 function LibraryScreen({ title, source, open }: { title: string; source: Recipe[]; open: (r: Recipe) => void }) {
   return <div className="screen"><TopBar title={title} /><div className="search-grid">{source.length ? source.map(r => <article key={r.id}><img src={r.image} alt="" /><div><h2>{r.title}</h2><p>{r.reason}</p><button className="primary" onClick={() => open(r)}>View recipe</button></div></article>) : <div className="empty-state"><Heart /><h2>No saved recipes yet</h2><p>Save recipes that feel like good future answers.</p></div>}</div></div>;
@@ -993,7 +1018,12 @@ function PlanPicker({ plan, setPlan }: { plan: string; setPlan: (p: string) => v
 }
 function SubscriptionScreen({ profile, save, proceed, onStarted }: { profile: Profile; save: (p: Profile) => void; proceed: () => void; onStarted?: () => void }) {
   const [plan, setPlan] = useState(profile.plan || "annual");
+  const [mode, setMode] = useState<"trial" | "invite">("trial");
+  const [inviteInput, setInviteInput] = useState("");
+  const [inviteError, setInviteError] = useState("");
+  const [inviteLoading, setInviteLoading] = useState(false);
   const chosen = PLANS.find(p => p.id === plan);
+
   const start = () => {
     const now = new Date();
     const endsAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -1002,12 +1032,128 @@ function SubscriptionScreen({ profile, save, proceed, onStarted }: { profile: Pr
     onStarted?.();
     proceed();
   };
-  return <div className="subscription"><div className="sub-logo"><img src="/images/logo-1.png" alt="MoodFood" /><span>MoodFood</span></div><section className="billing"><span>YOUR FOOD PROFILE IS READY</span><h1>Start your 7-day free trial.</h1><p>Personalized, safe recommendations tuned to the profile you just built, plus cook mode, mood check-ins, and weekly reflections.</p><PlanPicker plan={plan} setPlan={setPlan} /><button className="primary" onClick={start}>Start free trial <ArrowRight /></button><small>7 days free, then {chosen?.price}. We'll remind you the day before. Cancel anytime — for this local pilot, no card is charged.</small><button className="skip" onClick={proceed}>Maybe later</button></section></div>;
+
+  const redeem = async () => {
+    const code = inviteInput.trim().toUpperCase();
+    if (!code) { setInviteError("Please enter your invite code."); return; }
+    setInviteLoading(true);
+    setInviteError("");
+    const result = await redeemInviteCode(code);
+    setInviteLoading(false);
+    if (!result.ok) { setInviteError(result.error ?? "Invalid code."); return; }
+    save({ ...profile, subscriptionStatus: "active", inviteCode: code, inviteSubEnd: result.subscriptionEnd ?? "" });
+    onStarted?.();
+    proceed();
+  };
+
+  return (
+    <div className="subscription">
+      <div className="sub-logo"><img src="/images/logo-1.png" alt="MoodFood" /><span>MoodFood</span></div>
+      <section className="billing">
+        <span>YOUR FOOD PROFILE IS READY</span>
+        <h1>{mode === "invite" ? "Redeem your invite." : "Start your 7-day free trial."}</h1>
+        <div className="sub-mode-toggle">
+          <button className={mode === "trial" ? "active" : ""} onClick={() => setMode("trial")}>Free trial</button>
+          <button className={mode === "invite" ? "active" : ""} onClick={() => setMode("invite")}>Invite code</button>
+        </div>
+        {mode === "trial" ? (
+          <>
+            <p>Personalized, safe recommendations tuned to the profile you just built, plus cook mode, mood check-ins, and weekly reflections.</p>
+            <PlanPicker plan={plan} setPlan={setPlan} />
+            <button className="primary" onClick={start}>Start free trial <ArrowRight /></button>
+            <small>7 days free, then {chosen?.price}. Cancel anytime.</small>
+          </>
+        ) : (
+          <>
+            <p>If you received an invite code, enter it below to unlock a full year of MoodFood — no payment required.</p>
+            <input
+              className="invite-code-input"
+              value={inviteInput}
+              onChange={e => { setInviteInput(e.target.value.toUpperCase()); setInviteError(""); }}
+              placeholder="e.g. LAUNCH2026"
+              maxLength={40}
+              autoCapitalize="characters"
+              spellCheck={false}
+            />
+            {inviteError && <p className="invite-error">{inviteError}</p>}
+            <button className="primary" onClick={redeem} disabled={inviteLoading}>
+              {inviteLoading ? "Checking…" : <>Redeem code <ArrowRight /></>}
+            </button>
+            <small>Valid codes grant 1 year of full access, tracked in Stripe.</small>
+          </>
+        )}
+        <button className="skip" onClick={proceed}>Maybe later</button>
+      </section>
+    </div>
+  );
 }
 function BillingScreen({ profile, save }: { profile: Profile; save: (p: Profile) => void }) {
   const [plan, setPlan] = useState(profile.plan || "annual");
+  const [mode, setMode] = useState<"plan" | "invite">("plan");
+  const [inviteInput, setInviteInput] = useState("");
+  const [inviteError, setInviteError] = useState("");
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [inviteSuccess, setInviteSuccess] = useState(false);
   const chosen = PLANS.find(p => p.id === plan);
-  return <div className="screen"><TopBar title="Subscription" /><section className="billing"><span>7-DAY FULL ACCESS</span><h1>Keep dinner feeling lighter.</h1><p>Personalized decisions, safe recommendations, cook mode, and weekly reflections.</p><PlanPicker plan={plan} setPlan={setPlan} /><button className="primary" onClick={() => save({ ...profile, plan })}>{profile.plan === plan ? "Current plan" : `Switch to ${chosen?.name}`}</button><small>After cancellation, your recipes and diary remain readable for 7 days.</small></section></div>;
+
+  const redeem = async () => {
+    const code = inviteInput.trim().toUpperCase();
+    if (!code) { setInviteError("Please enter your invite code."); return; }
+    setInviteLoading(true);
+    setInviteError("");
+    const result = await redeemInviteCode(code);
+    setInviteLoading(false);
+    if (!result.ok) { setInviteError(result.error ?? "Invalid code."); return; }
+    save({ ...profile, subscriptionStatus: "active", inviteCode: code, inviteSubEnd: result.subscriptionEnd ?? "" });
+    setInviteSuccess(true);
+  };
+
+  return (
+    <div className="screen">
+      <TopBar title="Subscription" />
+      <section className="billing">
+        <span>{profile.inviteCode ? "INVITE — 1 YEAR ACCESS" : "7-DAY FULL ACCESS"}</span>
+        <h1>Keep dinner feeling lighter.</h1>
+        {profile.inviteCode ? (
+          <p>Your invite code <b>{profile.inviteCode}</b> is active. Access expires {profile.inviteSubEnd ? new Date(profile.inviteSubEnd).toLocaleDateString() : "in 1 year"}.</p>
+        ) : (
+          <>
+            <div className="sub-mode-toggle">
+              <button className={mode === "plan" ? "active" : ""} onClick={() => setMode("plan")}>Subscription</button>
+              <button className={mode === "invite" ? "active" : ""} onClick={() => setMode("invite")}>Invite code</button>
+            </div>
+            {mode === "plan" ? (
+              <>
+                <p>Personalized decisions, safe recommendations, cook mode, and weekly reflections.</p>
+                <PlanPicker plan={plan} setPlan={setPlan} />
+                <button className="primary" onClick={() => save({ ...profile, plan })}>{profile.plan === plan ? "Current plan" : `Switch to ${chosen?.name}`}</button>
+                <small>After cancellation, your recipes and diary remain readable for 7 days.</small>
+              </>
+            ) : inviteSuccess ? (
+              <p className="invite-success"><Check size={18} /> Code redeemed — you now have 1 year of full access.</p>
+            ) : (
+              <>
+                <p>Enter an invite code to unlock a full year of MoodFood — no payment required.</p>
+                <input
+                  className="invite-code-input"
+                  value={inviteInput}
+                  onChange={e => { setInviteInput(e.target.value.toUpperCase()); setInviteError(""); }}
+                  placeholder="e.g. FOUNDER-A"
+                  maxLength={40}
+                  autoCapitalize="characters"
+                  spellCheck={false}
+                />
+                {inviteError && <p className="invite-error">{inviteError}</p>}
+                <button className="primary" onClick={redeem} disabled={inviteLoading}>
+                  {inviteLoading ? "Checking…" : <>Redeem code <ArrowRight /></>}
+                </button>
+              </>
+            )}
+          </>
+        )}
+      </section>
+    </div>
+  );
 }
 function AccountScreen({ profile, save, posts, back }: { profile: Profile; save: (p: Profile) => void; posts: SocialPost[]; back: () => void }) {
   const update = (patch: Partial<Profile>) => save({ ...profile, ...patch });
@@ -1032,7 +1178,7 @@ function CommunityScreen({ profile, posts, setPosts, connections, setConnections
   const upload = async (file?: File) => { if (!file) return; try { setImage(await readSafeImage(file)); setUploadError(""); } catch (error) { setUploadError((error as Error).message); } };
   const publish = () => { const safeText = cleanText(text, 1000); if (!safeText && !image && !recipeId) return; setPosts([{ id: crypto.randomUUID(), author: cleanText(profile.name, 80), avatar: profile.avatar, text: safeText, image: image || findRecipe(recipeId)?.image || "", recipeId: recipeId || undefined, createdAt: "Just now", likes: [], comments: [] }, ...posts.slice(0, 99)]); setText(""); setImage(""); setRecipeId(""); setComposer(false); };
   const updatePost = (id: string, change: (p: SocialPost) => SocialPost) => setPosts(posts.map(p => p.id === id ? change(p) : p));
-  return <div className="screen community"><TopBar title="Community" action={<Users />} /><section className="community-intro"><div><b>Cook together, from wherever.</b><p>Share recipes, photos, and useful tips. Your private mood and psychological profile stay private.</p></div><button className="primary" onClick={() => setComposer(!composer)}><Plus />Post</button></section><div className="people-row">{["Maya Chen", "Jon Bell", "Sam Rivera"].map(name => <button onClick={() => setConnections(toggle(connections, name))} key={name}><Avatar name={name} /><b>{name.split(" ")[0]}</b><span>{connections.includes(name) ? "Connected" : "Connect"}</span></button>)}</div>{composer && <section className="composer"><div><Avatar name={profile.name} image={profile.avatar} /><textarea maxLength={1000} value={text} onChange={e => setText(e.target.value)} placeholder="Share a cook, recipe, or tip..." /></div>{image && <img src={image} alt="Post preview" />}{recipeId && findRecipe(recipeId) && <div className="composer-recipe"><ChefHat size={15} /><span>Linking <b>{findRecipe(recipeId)!.title}</b></span><button onClick={() => setRecipeId("")} aria-label="Remove linked recipe"><X size={14} /></button></div>}<select value={recipeId} onChange={e => setRecipeId(e.target.value)}><option value="">Link a recipe (optional)</option>{catalog.map(r => <option value={r.id} key={r.id}>{r.title}</option>)}</select>{uploadError && <p className="upload-error">{uploadError}</p>}<footer><label><Camera />Add photo<input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => upload(e.target.files?.[0])} /></label><button className="primary" onClick={publish}><Send />Share</button></footer></section>}<div className="feed">{posts.map(post => <article className="social-post" key={post.id}><header><Avatar name={post.author} image={post.avatar} /><div><b>{post.author}</b><span>{post.createdAt}</span></div><MoreVertical /></header><p>{post.text}</p>{post.image && <img src={post.image} alt="Cooked meal" />}{post.recipeId && findRecipe(post.recipeId) && <button className="linked-recipe" onClick={() => { const r = findRecipe(post.recipeId); if (r) openRecipe(r); }}><ChefHat /><span><small>LINKED RECIPE</small><b>{findRecipe(post.recipeId)?.title}</b></span><ChevronRight /></button>}<div className="social-actions"><button onClick={() => updatePost(post.id, p => ({ ...p, likes: toggle(p.likes, profile.name) }))}><Heart fill={post.likes.includes(profile.name) ? "currentColor" : "none"} />{post.likes.length}</button><button><MessageCircle />{post.comments.length}</button></div>{post.comments.map((c, n) => <p className="comment" key={n}><b>{c.author}</b> {c.text}</p>)}<form className="comment-form" onSubmit={e => { e.preventDefault(); if (!comment[post.id]?.trim()) return; updatePost(post.id, p => ({ ...p, comments: [...p.comments, { author: profile.name, text: cleanText(comment[post.id], 500) }] })); setComment({ ...comment, [post.id]: "" }); }}><input maxLength={500} value={comment[post.id] || ""} onChange={e => setComment({ ...comment, [post.id]: cleanText(e.target.value, 500) })} placeholder="Add a helpful comment..." /><button><Send /></button></form></article>)}</div></div>;
+  return <div className="screen community"><TopBar title="Community" action={<Users />} /><section className="community-intro"><div><b>Cook together, from wherever.</b><p>Share recipes, photos, and useful tips. Your private mood and psychological profile stay private.</p></div><button className="primary" onClick={() => setComposer(!composer)}><Plus />Post</button></section>{composer && <section className="composer"><div><Avatar name={profile.name} image={profile.avatar} /><textarea maxLength={1000} value={text} onChange={e => setText(e.target.value)} placeholder="Share a cook, recipe, or tip..." /></div>{image && <img src={image} alt="Post preview" />}{recipeId && findRecipe(recipeId) && <div className="composer-recipe"><ChefHat size={15} /><span>Linking <b>{findRecipe(recipeId)!.title}</b></span><button onClick={() => setRecipeId("")} aria-label="Remove linked recipe"><X size={14} /></button></div>}<select value={recipeId} onChange={e => setRecipeId(e.target.value)}><option value="">Link a recipe (optional)</option>{catalog.map(r => <option value={r.id} key={r.id}>{r.title}</option>)}</select>{uploadError && <p className="upload-error">{uploadError}</p>}<footer><label><Camera />Add photo<input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => upload(e.target.files?.[0])} /></label><button className="primary" onClick={publish}><Send />Share</button></footer></section>}<div className="feed">{posts.length === 0 && !composer && <div className="empty-state" style={{ margin: "24px 16px" }}><Users /><h2>Be the first to post</h2><p>Share a cook, tip, or recipe. Your psychological profile and diary stay completely private.</p></div>}{posts.map(post => <article className="social-post" key={post.id}><header><Avatar name={post.author} image={post.avatar} /><div><b>{post.author}</b><span>{post.createdAt}</span></div><MoreVertical /></header><p>{post.text}</p>{post.image && <img src={post.image} alt="Cooked meal" />}{post.recipeId && findRecipe(post.recipeId) && <button className="linked-recipe" onClick={() => { const r = findRecipe(post.recipeId); if (r) openRecipe(r); }}><ChefHat /><span><small>LINKED RECIPE</small><b>{findRecipe(post.recipeId)?.title}</b></span><ChevronRight /></button>}<div className="social-actions"><button onClick={() => updatePost(post.id, p => ({ ...p, likes: toggle(p.likes, profile.name) }))}><Heart fill={post.likes.includes(profile.name) ? "currentColor" : "none"} />{post.likes.length}</button><button><MessageCircle />{post.comments.length}</button></div>{post.comments.map((c, n) => <p className="comment" key={n}><b>{c.author}</b> {c.text}</p>)}<form className="comment-form" onSubmit={e => { e.preventDefault(); if (!comment[post.id]?.trim()) return; updatePost(post.id, p => ({ ...p, comments: [...p.comments, { author: profile.name, text: cleanText(comment[post.id], 500) }] })); setComment({ ...comment, [post.id]: "" }); }}><input maxLength={500} value={comment[post.id] || ""} onChange={e => setComment({ ...comment, [post.id]: cleanText(e.target.value, 500) })} placeholder="Add a helpful comment..." /><button><Send /></button></form></article>)}</div></div>;
 }
 function Avatar({ name, image }: { name: string; image?: string }) { return image ? <img className="avatar-img" src={image} alt={name} /> : <span className="avatar-fallback">{name.split(" ").map(v => v[0]).join("").slice(0, 2)}</span>; }
 function HealthHub({ diary, go }: { diary: { recipe: Recipe; rating: number; when: string }[]; go: (p: Page) => void }) {
@@ -1041,8 +1187,47 @@ function HealthHub({ diary, go }: { diary: { recipe: Recipe; rating: number; whe
 }
 function Trend({ label, value }: { label: string; value: number }) { return <div className="trend"><span><b>{label}</b><em>{value}%</em></span><i><b style={{ width: `${value}%` }} /></i></div>; }
 function HealthDetail({ kind, diary, back }: { kind: "nutrition" | "variety" | "patterns"; diary: { recipe: Recipe; rating: number; when: string }[]; back: () => void }) {
-  const content = kind === "nutrition" ? { title: "Nutrition balance", intro: "A source-labeled view of your logged recipes.", cards: [["Average energy", `${Math.round(diary.reduce((a,d)=>a+d.recipe.calories,0)/Math.max(1,diary.length))} cal`],["Protein pattern","Steady"],["Fiber-rich meals","3 this week"],["Plant ingredients","Trending up"]] } : kind === "variety" ? { title: "Dietary variety", intro: "How broad your recent food rhythm has been.", cards: [["Variety score","82 / 100"],["Cuisines",`${new Set(diary.map(d=>d.recipe.cuisine)).size}`],["Repeated recipe","1"],["New flavors","2 this month"]] } : { title: "Eating patterns", intro: "Patterns from completed cooks, without judgment.", cards: [["Meals cooked",`${diary.length}`],["Typical cook time","Under 30 min"],["Best completion day","Tuesday"],["Average rating","4.8 / 5"]] };
-  return <div className="screen"><TopBar title={content.title} back={back} /><p className="quiet">{content.intro}</p><div className="metric-grid">{content.cards.map(([a,b]) => <article key={a}><span>{a}</span><b>{b}</b></article>)}</div><section className="health-note"><ShieldCheck /><div><b>How this is calculated</b><p>From nutrition snapshots and metadata attached to recipes you completed. It does not diagnose conditions or replace professional advice.</p></div></section></div>;
+  const n = diary.length;
+  const avgCal   = n ? Math.round(diary.reduce((a, d) => a + d.recipe.calories, 0) / n) : 0;
+  const avgTime  = n ? Math.round(diary.reduce((a, d) => a + d.recipe.time, 0) / n) : 0;
+  const avgRating = n ? (diary.reduce((a, d) => a + d.rating, 0) / n).toFixed(1) : "—";
+  const cuisineCount = new Set(diary.map(d => d.recipe.cuisine)).size;
+  const uniqueRecipes = new Set(diary.map(d => d.recipe.id)).size;
+  const repeated = n - uniqueRecipes;
+  const fiberRich = diary.filter(d => ((d.recipe as any).fiber ?? 0) >= 5).length;
+  const plantForward = diary.filter(d => d.recipe.diets?.some(x => ["Vegetarian","Vegan"].includes(x))).length;
+  const varietyScore = n ? Math.min(100, Math.round((cuisineCount / Math.max(n, 1)) * 60 + (uniqueRecipes / Math.max(n, 1)) * 40)) : 0;
+
+  const content = kind === "nutrition"
+    ? { title: "Nutrition balance", intro: "A source-labeled view of your logged recipes.", cards: [
+        ["Average energy",   n ? `${avgCal} cal` : "No data yet"],
+        ["Fiber-rich meals",  n ? `${fiberRich} of ${n}` : "No data yet"],
+        ["Plant-forward",     n ? `${plantForward} of ${n}` : "No data yet"],
+        ["Meals logged",      `${n}`],
+      ]}
+    : kind === "variety"
+    ? { title: "Dietary variety", intro: "How broad your recent food rhythm has been.", cards: [
+        ["Variety score",   n ? `${varietyScore} / 100` : "No data yet"],
+        ["Cuisines",        n ? `${cuisineCount}` : "0"],
+        ["Unique recipes",  `${uniqueRecipes}`],
+        ["Repeated",        `${repeated}`],
+      ]}
+    : { title: "Eating patterns", intro: "Patterns from completed cooks, without judgment.", cards: [
+        ["Meals cooked",    `${n}`],
+        ["Avg cook time",   n ? `${avgTime} min` : "No data yet"],
+        ["Average rating",  n ? `${avgRating} / 5` : "No data yet"],
+        ["Cuisines tried",  `${cuisineCount}`],
+      ]};
+
+  if (!n) return (
+    <div className="screen"><TopBar title={content.title} back={back} />
+      <div className="empty-state" style={{ margin: "40px 16px" }}>
+        <BarChart3 /><h2>No meals logged yet</h2>
+        <p>Cook a recipe and log it to your diary — your real patterns will appear here.</p>
+      </div>
+    </div>
+  );
+  return <div className="screen"><TopBar title={content.title} back={back} /><p className="quiet">{content.intro}</p><div className="metric-grid">{content.cards.map(([a, b]) => <article key={a}><span>{a}</span><b>{b}</b></article>)}</div><section className="health-note"><ShieldCheck /><div><b>How this is calculated</b><p>From nutrition snapshots and metadata attached to recipes you completed. It does not diagnose conditions or replace professional advice.</p></div></section></div>;
 }
 function FamilyHealth({ diary, diners, back }: { diary: { recipe: Recipe; rating: number; when: string }[]; diners: Diner[]; back: () => void }) {
   const familySize = Math.max(1, diners.length);
