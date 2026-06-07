@@ -22,6 +22,14 @@ import { supabase } from "./supabase";
 
 const SUPABASE_FN = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 
+// Capture Chrome/Android's install prompt as early as possible so the welcome
+// screen can offer a one-tap "Add to Home Screen". On browsers that don't fire
+// this (notably iOS Safari) we fall back to short instructions instead.
+let deferredInstallPrompt: (Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> }) | null = null;
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); deferredInstallPrompt = e as typeof deferredInstallPrompt; });
+}
+
 async function callFn<T>(fn: string, body: unknown): Promise<T> {
   if (!supabase) throw new Error("Backend not configured.");
   const { data: { session } } = await supabase.auth.getSession();
@@ -286,9 +294,55 @@ function Splash({ proceed }: { proceed: () => void }) {
   );
 }
 
+// Gentle nudge on the welcome screen: this is a PWA, so invite the user to add
+// it to their home screen. Uses Chrome's install prompt when available, and
+// shows iOS Safari instructions otherwise. Dismissible and remembered.
+function AddToHomeScreenHint() {
+  const standalone = typeof window !== "undefined" &&
+    (window.matchMedia?.("(display-mode: standalone)").matches || (navigator as { standalone?: boolean }).standalone === true);
+  const isIOS = typeof navigator !== "undefined" && /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const [dismissed, setDismissed] = useStoredState("moodfood-a2hs-dismissed", false);
+  const [show, setShow] = useState(false);
+  const [canPrompt, setCanPrompt] = useState(!!deferredInstallPrompt);
+
+  useEffect(() => {
+    if (standalone || dismissed) return;
+    const onPrompt = () => setCanPrompt(true);
+    const onInstalled = () => setDismissed(true);
+    window.addEventListener("beforeinstallprompt", onPrompt);
+    window.addEventListener("appinstalled", onInstalled);
+    const t = setTimeout(() => setShow(true), 700); // let the welcome screen settle first
+    return () => { clearTimeout(t); window.removeEventListener("beforeinstallprompt", onPrompt); window.removeEventListener("appinstalled", onInstalled); };
+  }, [standalone, dismissed]);
+
+  if (standalone || dismissed || !show) return null;
+
+  const install = async () => {
+    if (!deferredInstallPrompt) return;
+    await deferredInstallPrompt.prompt();
+    try { await deferredInstallPrompt.userChoice; } catch { /* user dismissed */ }
+    deferredInstallPrompt = null;
+    setDismissed(true);
+  };
+
+  return (
+    <div className="a2hs" role="status">
+      <div className="a2hs-icon"><img src="/images/logo-1.png" alt="" /></div>
+      <div className="a2hs-body">
+        <b>Add MoodFood to your home screen</b>
+        {isIOS
+          ? <p>Tap <Share2 size={13} /> Share, then <b>Add to Home Screen</b> for one-tap access.</p>
+          : <p>Install it for a faster, full-screen experience — no app store needed.</p>}
+      </div>
+      {canPrompt && !isIOS && <button className="a2hs-cta" onClick={install}>Add</button>}
+      <button className="a2hs-x" onClick={() => setDismissed(true)} aria-label="Dismiss"><X size={16} /></button>
+    </div>
+  );
+}
 function Welcome({ start, signin }: { start: () => void; signin: () => void }) {
   return (
     <div className="welcome-modern">
+      <AddToHomeScreenHint />
       <div className="wm-logo"><img src="/images/logo-1.png" alt="" /><span>MoodFood</span></div>
       <div className="hero">
         <img src={WELCOME_PHOTO} alt="A fresh, colourful meal" />

@@ -191,7 +191,8 @@ body,.app{background:linear-gradient(180deg,#dceef2 0%,#eaf4f3 30%,#f5fbfa 100%)
 .splash .splash-eyebrow{font-size:10px;letter-spacing:.22em;font-weight:700;color:#b6dde6;text-transform:uppercase}
 .splash .splash-copy strong{font:800 44px/1.02 "Plus Jakarta Sans",sans-serif!important;color:#fff;margin:0}
 .splash .splash-copy p{margin:0;color:rgba(255,255,255,.75);font-size:14px;line-height:1.55;max-width:30ch}
-.splash .splash-cta{display:inline-flex;align-items:center;gap:10px;background:#fff;color:#171a1c;font-weight:800;padding:15px 24px;border-radius:99px;box-shadow:0 12px 36px rgba(0,0,0,.4);width:fit-content}
+.splash .splash-copy .splash-cta{display:inline-flex;align-items:center;gap:10px;background:#fff;color:#171a1c;font-weight:800;padding:15px 24px;border-radius:99px;box-shadow:0 12px 36px rgba(0,0,0,.4);width:fit-content}
+.splash .splash-copy .splash-cta svg{color:#171a1c}
 
 /* ── App header: logo-ring + name + bell ─────────────────────────── */
 .app-header{display:flex;align-items:center;padding:18px 20px 0;gap:12px;background:transparent;border:0;margin:0}
@@ -325,6 +326,16 @@ body,.app{background:linear-gradient(180deg,#dceef2 0%,#eaf4f3 30%,#f5fbfa 100%)
 .welcome-modern .actions{display:grid;gap:10px}
 .ghost,.auth-modern .ghost,.welcome-modern .ghost{border:0;background:transparent;color:var(--muted);font-weight:700;padding:10px;text-align:center;width:100%}
 .welcome-modern .hero{flex:none;min-height:240px;height:34vh}
+.a2hs{display:flex;align-items:center;gap:12px;background:var(--ink);color:#fff;border-radius:18px;padding:11px 12px;margin-bottom:14px;box-shadow:var(--shadow);animation:a2hsIn .35s ease}
+.a2hs-icon img{width:36px;height:36px;object-fit:contain;background:#fff;border-radius:10px;padding:3px;display:block}
+.a2hs-body{flex:1;min-width:0}
+.a2hs-body>b{display:block;font-size:13px;font-weight:800;line-height:1.2}
+.a2hs-body p{margin:3px 0 0;font-size:12px;line-height:1.4;color:rgba(255,255,255,.85);display:inline}
+.a2hs-body p svg{vertical-align:-2px;margin:0 1px}
+.a2hs-body p b{font-weight:800;color:#fff}
+.a2hs-cta{flex:none;border:0;background:#fff;color:var(--ink);font-weight:800;border-radius:99px;padding:9px 18px;font-size:13px}
+.a2hs-x{flex:none;border:0;background:transparent;color:#fff;opacity:.75;padding:4px;display:grid;place-items:center}
+@keyframes a2hsIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
 .welcome-modern .wm-explain{background:var(--glass,rgba(255,255,255,.7));border:1px solid rgba(0,0,0,.06);border-radius:24px;padding:20px;margin:4px 0 16px;display:grid;gap:12px;box-shadow:var(--shadow)}
 .welcome-modern .wm-explain h2{display:flex;align-items:center;gap:8px;font-size:18px;font-weight:800;margin:0;letter-spacing:-.01em}
 .welcome-modern .wm-explain h2 svg{color:var(--blue-deep)}
