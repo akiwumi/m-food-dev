@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, createContext, useContext } from "react";
 import {
   ArrowLeft, ArrowRight, Bell, BookOpen, CalendarDays, Check, ChefHat, ChevronRight,
-  Clock3, Heart, Home, ListChecks, MoreVertical, Pause, Play, RotateCcw, Search,
+  Clock3, Heart, Home, ListChecks, Menu, MoreVertical, Pause, Play, RotateCcw, Search,
   Settings2, ShoppingCart, Sparkles, Star, Timer, X, ShieldCheck, UserRound, BarChart3,
   Upload, LogOut, Plus, ClipboardCheck, LayoutDashboard, Camera, Users, MessageCircle,
   Send, UserPlus, Lock, Globe2, Activity, Salad, Wheat, Droplets, TrendingUp, Mail, CreditCard,
@@ -79,6 +79,10 @@ async function syncSubscriptionFromDB(): Promise<{ status: string; plan: string;
   }
   return null;
 }
+
+// Lets any header (AppHeader, TopBar) open the global hamburger menu without
+// every screen threading a callback through its props.
+const MenuCtx = createContext<() => void>(() => {});
 
 type Page = "home" | "search" | "diary" | "grocery" | "planner" | "detail" | "cook" | "insights" | "settings" | "favorites" | "import" | "admin" | "billing" | "psych-profile" | "food-profile" | "account" | "community" | "health" | "health-nutrition" | "health-variety" | "health-patterns" | "family-health" | "diners" | "food-log" | "help";
 type Entry = "welcome" | "login" | "onboarding" | "account" | "verify" | "verified" | "subscription" | "app";
@@ -171,6 +175,7 @@ export default function App() {
   };
 
   const [notifOpen, setNotifOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [, setNotifTick] = useState(0);
   const refreshNotifs = () => setNotifTick(t => t + 1);
   useEffect(() => { const { charged } = runDue(); if (charged) setProfile(p => ({ ...p, subscriptionStatus: "active" })); refreshNotifs(); }, []);
@@ -249,7 +254,7 @@ export default function App() {
   if (entry === "verify") return <VerifyEmailScreen email={profile.email} realAuth={isSupabaseConfigured} resend={() => { sendConfirmationEmail(profile.email, profile.name); refreshNotifs(); }} back={() => setEntry("account")} onVerified={() => { setProfile({ ...profile, emailVerified: true }); sendWelcomeEmail(profile.email, profile.name); refreshNotifs(); setEntry("verified"); }} />;
   if (entry === "verified") return <VerifiedScreen name={profile.name} proceed={() => setEntry("subscription")} />;
   if (entry === "subscription") return <SubscriptionScreen profile={profile} save={setProfile} onStarted={refreshNotifs} proceed={() => setEntry("app")} />;
-  return <div className={page === "cook" ? "app cooking" : "app"}>
+  return <MenuCtx.Provider value={() => setMenuOpen(true)}><div className={page === "cook" ? "app cooking" : "app"}>
     {page !== "cook" && <DesktopNav page={page} go={go} />}
     <main>
       {page === "home" && <HomeScreen profile={profile} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} results={results} setResults={setResults} ranked={ranked} curating={curating} loadMore={loadMore} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} />}
@@ -282,7 +287,8 @@ export default function App() {
     {page !== "cook" && <button className="moody-fab" onClick={() => setMoodyOpen(true)} aria-label="Ask Moody"><Sparkles /></button>}
     {moodyOpen && <MoodyPanel recipe={ranked[0]} profile={profile} picks={ranked.slice(0, 3)} close={() => setMoodyOpen(false)} open={() => { setMoodyOpen(false); if (ranked[0]) open(ranked[0]); }} />}
     {notifOpen && <NotificationsPanel close={() => setNotifOpen(false)} profile={profile} save={setProfile} refresh={refreshNotifs} />}
-  </div>;
+    {menuOpen && <MainMenu profile={profile} page={page} go={go} close={() => setMenuOpen(false)} openNotifs={openNotifs} unread={unreadCount()} logout={() => { authSignOut(); setEntry("welcome"); }} />}
+  </div></MenuCtx.Provider>;
 }
 
 function toggle(values: string[], value: string) { return values.includes(value) ? values.filter(v => v !== value) : [...values, value]; }
@@ -405,7 +411,7 @@ function Welcome({ start, signin }: { start: () => void; signin: () => void }) {
 }
 
 function AccountSetupScreen({ profile, back, submit }: { profile: Profile; back: () => void; submit: (patch: Partial<Profile>, opts?: { hasSession: boolean }) => void }) {
-  const [name, setName] = useState(profile.name === "Alex" ? "" : profile.name);
+  const [name, setName] = useState(profile.name);
   const [email, setEmail] = useState(profile.email);
   const [password, setPassword] = useState("");
   const [avatar, setAvatar] = useState(profile.avatar);
@@ -509,7 +515,7 @@ function VerifiedScreen({ name, proceed }: { name: string; proceed: () => void }
   return <div className="auth-modern center">
     <div className="verify-icon verified-icon"><Check size={36} /></div>
     <span className="eyebrow">YOU'RE ALL SET</span>
-    <h1>Welcome aboard{name && name !== "Alex" ? `, ${name}` : ""}.</h1>
+    <h1>Welcome aboard{name ? `, ${name}` : ""}.</h1>
     <p className="lede">Your email is confirmed and your food profile is saved. One last step before we start cooking.</p>
     <button className="primary" onClick={proceed}>Continue <ArrowRight size={18} /></button>
   </div>;
@@ -712,7 +718,33 @@ function DesktopNav({ page, go }: { page: Page; go: (p: Page) => void }) {
 function BottomNav({ page, go }: { page: Page; go: (p: Page) => void }) {
   return <nav className="bottom-nav">{nav.map(([id, label, Icon]) => <button className={page === id ? "active" : ""} onClick={() => go(id)} key={id}><Icon size={19} /><span>{label}</span></button>)}</nav>;
 }
+// Full-height slide-in drawer surfacing every part of the app — the single
+// place to reach settings, food profile, camera log, health, billing, and more.
+function MainMenu({ profile, page, go, close, openNotifs, unread, logout }: { profile: Profile; page: Page; go: (p: Page) => void; close: () => void; openNotifs: () => void; unread: number; logout: () => void }) {
+  const nav = (p: Page) => { go(p); close(); };
+  const groups: { title: string; items: [Page, string, typeof Home][] }[] = [
+    { title: "COOK & PLAN", items: [["home", "Home", Home], ["search", "Ask Moody", Sparkles], ["diary", "Diary", BookOpen], ["grocery", "Grocery", ShoppingCart], ["planner", "Planner", CalendarDays]] },
+    { title: "DISCOVER", items: [["community", "Community", Users], ["favorites", "Saved recipes", Heart], ["import", "Import a recipe", Upload]] },
+    { title: "TRACK", items: [["food-log", "Food photo log (camera)", Camera], ["insights", "Weekly reflections", BarChart3], ["health", "Health trends", Activity]] },
+    { title: "YOUR PROFILE", items: [["food-profile", "Food profile & preferences", ClipboardCheck], ["psych-profile", "Psychological food profile", Sparkles], ["diners", "Household diners", UserPlus], ["account", "Account & public profile", UserRound]] },
+    { title: "ACCOUNT & APP", items: [["billing", "Subscription & billing", Star], ["admin", "Editorial console", LayoutDashboard], ["help", "Help & FAQ", HelpCircle], ["settings", "Settings", Settings2]] },
+  ];
+  return <div className="panel-bg menu-bg" onClick={close}>
+    <aside className="main-menu" onClick={e => e.stopPropagation()}>
+      <header className="mm-head">
+        <div className="mm-id">{profile.avatar ? <img src={profile.avatar} alt="" /> : <span>{(profile.name || "Y").slice(0, 1).toUpperCase()}</span>}<div><b>{profile.name || "Your profile"}</b><small>{profile.email || "MoodFood"}</small></div></div>
+        <button onClick={close} aria-label="Close menu"><X /></button>
+      </header>
+      <button className="mm-notifs" onClick={() => { openNotifs(); close(); }}><Bell size={18} />Notifications{!!unread && <span className="mm-badge">{unread}</span>}</button>
+      <div className="mm-scroll">
+        {groups.map(g => <section className="mm-group" key={g.title}><small>{g.title}</small>{g.items.map(([id, label, Icon]) => <button className={page === id ? "active" : ""} onClick={() => nav(id)} key={id}><Icon size={18} /><span>{label}</span><ChevronRight size={16} /></button>)}</section>)}
+      </div>
+      <button className="mm-logout" onClick={() => { logout(); close(); }}><LogOut size={18} />Sign out</button>
+    </aside>
+  </div>;
+}
 function AppHeader({ openNotifs, unread, profile }: { openNotifs?: () => void; unread?: number; profile?: Profile }) {
+  const openMenu = useContext(MenuCtx);
   return (
     <header className="app-header">
       {profile?.avatar
@@ -725,6 +757,7 @@ function AppHeader({ openNotifs, unread, profile }: { openNotifs?: () => void; u
       <button className="icon-btn notif-bell" aria-label="Notifications" onClick={openNotifs}>
         <Bell size={20} />{!!unread && <span className="notif-dot">{unread}</span>}
       </button>
+      <button className="icon-btn" aria-label="Open menu" onClick={openMenu}><Menu size={20} /></button>
     </header>
   );
 }
@@ -908,8 +941,9 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
   );
 }
 function Moody() { return <div className="moody"><Sparkles size={25} /></div>; }
-function TopBar({ title, back, action }: { title: string; back?: () => void; action?: React.ReactNode }) {
-  return <header className="top-bar"><button onClick={back} disabled={!back}><ArrowLeft /></button><h1>{title}</h1><button>{action || <MoreVertical />}</button></header>;
+function TopBar({ title, back }: { title: string; back?: () => void }) {
+  const openMenu = useContext(MenuCtx);
+  return <header className="top-bar"><button onClick={back} disabled={!back}><ArrowLeft /></button><h1>{title}</h1><button onClick={openMenu} aria-label="Open menu"><Menu /></button></header>;
 }
 function PickCard({ recipe, servings, open, reject }: { recipe: Recipe; servings: number; open: () => void; reject: () => void }) {
   return <article className="pick-card"><img src={recipe.image} alt="" /><div><h2>{recipe.title}</h2><span><Clock3 size={13} />{recipe.time} min</span><span><Users size={13} />Scaled for {servings}</span><span><Check size={13} />safe for everyone</span><button onClick={open}>View recipe</button><button className="reject" onClick={reject}>Not tonight</button></div><button className="save-mini"><Heart size={17} /></button></article>;
@@ -979,7 +1013,7 @@ function SearchScreen({ source, profile, mood, history, open, saved, setSaved }:
   const shown = results ?? (searched ? local : source);
 
   return <div className="screen">
-    <TopBar title="Ask Moody" action={<Sparkles />} />
+    <TopBar title="Ask Moody" />
     <div className="ai-search-intro"><Sparkles size={15} /><p>Describe what you want in your own words. Moody reads your food psychology profile and history on every search.</p></div>
     <form className="search-box" onSubmit={e => { e.preventDefault(); run(); }}>
       <Search />
@@ -1123,7 +1157,9 @@ function DiaryScreen({ diary, open, photoLogs, addPhoto, goFoodLog, allergies }:
 }
 function GroceryScreen({ items, setItems }: { items: string[]; setItems: (v: string[]) => void }) {
   const [checked, setChecked] = useState<string[]>([]);
-  return <div className="screen"><TopBar title="Grocery" /><div className="grocery-hero"><ShoppingCart /><div><b>{items.length - checked.length} items left</b><p>One calm lap around the store.</p></div></div><div className="grocery-list"><small>PRODUCE & FRIDGE</small>{items.map(i => <button className={checked.includes(i) ? "checked" : ""} onClick={() => setChecked(toggle(checked, i))} key={i}><span><Check /></span><p>{i}</p></button>)}</div><button className="secondary" onClick={() => setItems([...items, "Fresh basil"])}>+ Add an item</button></div>;
+  const [entry, setEntry] = useState("");
+  const add = (e: React.FormEvent) => { e.preventDefault(); const item = cleanText(entry, 80); if (item && !items.includes(item)) setItems([...items, item]); setEntry(""); };
+  return <div className="screen"><TopBar title="Grocery" /><div className="grocery-hero"><ShoppingCart /><div><b>{items.length - checked.length} items left</b><p>One calm lap around the store.</p></div></div>{items.length ? <div className="grocery-list"><small>YOUR LIST</small>{items.map(i => <button className={checked.includes(i) ? "checked" : ""} onClick={() => setChecked(toggle(checked, i))} key={i}><span><Check /></span><p>{i}</p></button>)}</div> : <div className="empty-state" style={{ margin: "18px 0" }}><ShoppingCart /><h2>Your list is empty</h2><p>Add ingredients here, or send them straight from any recipe.</p></div>}<form className="add-cue" onSubmit={add}><input value={entry} onChange={e => setEntry(e.target.value)} placeholder="Add an item" /><button aria-label="Add item"><Plus /></button></form></div>;
 }
 function PlannerScreen(_: { open: (r: Recipe) => void }) {
   return <div className="screen"><TopBar title="This week" /><p className="quiet">Enough structure to help, enough room to change your mind.</p><div className="planner">{["Mon", "Tue", "Wed", "Thu", "Fri"].map((day, n) => <article key={day}><b>{day}<span>{n + 1}</span></b><button className="empty">+ Add dinner</button></article>)}</div></div>;
@@ -1378,12 +1414,12 @@ function CommunityScreen({ profile, posts, setPosts, connections, setConnections
   const upload = async (file?: File) => { if (!file) return; try { setImage(await readSafeImage(file)); setUploadError(""); } catch (error) { setUploadError((error as Error).message); } };
   const publish = () => { const safeText = cleanText(text, 1000); if (!safeText && !image && !recipeId) return; setPosts([{ id: crypto.randomUUID(), author: cleanText(profile.name, 80), avatar: profile.avatar, text: safeText, image: image || findRecipe(recipeId)?.image || "", recipeId: recipeId || undefined, createdAt: "Just now", likes: [], comments: [] }, ...posts.slice(0, 99)]); setText(""); setImage(""); setRecipeId(""); setComposer(false); };
   const updatePost = (id: string, change: (p: SocialPost) => SocialPost) => setPosts(posts.map(p => p.id === id ? change(p) : p));
-  return <div className="screen community"><TopBar title="Community" action={<Users />} /><section className="community-intro"><div><b>Cook together, from wherever.</b><p>Share recipes, photos, and useful tips. Your private mood and psychological profile stay private.</p></div><button className="primary" onClick={() => setComposer(!composer)}><Plus />Post</button></section>{composer && <section className="composer"><div><Avatar name={profile.name} image={profile.avatar} /><textarea maxLength={1000} value={text} onChange={e => setText(e.target.value)} placeholder="Share a cook, recipe, or tip..." /></div>{image && <img src={image} alt="Post preview" />}{recipeId && findRecipe(recipeId) && <div className="composer-recipe"><ChefHat size={15} /><span>Linking <b>{findRecipe(recipeId)!.title}</b></span><button onClick={() => setRecipeId("")} aria-label="Remove linked recipe"><X size={14} /></button></div>}<select value={recipeId} onChange={e => setRecipeId(e.target.value)}><option value="">Link a recipe (optional)</option>{catalog.map(r => <option value={r.id} key={r.id}>{r.title}</option>)}</select>{uploadError && <p className="upload-error">{uploadError}</p>}<footer><label><Camera />Add photo<input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => upload(e.target.files?.[0])} /></label><button className="primary" onClick={publish}><Send />Share</button></footer></section>}<div className="feed">{posts.length === 0 && !composer && <div className="empty-state" style={{ margin: "24px 16px" }}><Users /><h2>Be the first to post</h2><p>Share a cook, tip, or recipe. Your psychological profile and diary stay completely private.</p></div>}{posts.map(post => <article className="social-post" key={post.id}><header><Avatar name={post.author} image={post.avatar} /><div><b>{post.author}</b><span>{post.createdAt}</span></div><MoreVertical /></header><p>{post.text}</p>{post.image && <img src={post.image} alt="Cooked meal" />}{post.recipeId && findRecipe(post.recipeId) && <button className="linked-recipe" onClick={() => { const r = findRecipe(post.recipeId); if (r) openRecipe(r); }}><ChefHat /><span><small>LINKED RECIPE</small><b>{findRecipe(post.recipeId)?.title}</b></span><ChevronRight /></button>}<div className="social-actions"><button onClick={() => updatePost(post.id, p => ({ ...p, likes: toggle(p.likes, profile.name) }))}><Heart fill={post.likes.includes(profile.name) ? "currentColor" : "none"} />{post.likes.length}</button><button><MessageCircle />{post.comments.length}</button></div>{post.comments.map((c, n) => <p className="comment" key={n}><b>{c.author}</b> {c.text}</p>)}<form className="comment-form" onSubmit={e => { e.preventDefault(); if (!comment[post.id]?.trim()) return; updatePost(post.id, p => ({ ...p, comments: [...p.comments, { author: profile.name, text: cleanText(comment[post.id], 500) }] })); setComment({ ...comment, [post.id]: "" }); }}><input maxLength={500} value={comment[post.id] || ""} onChange={e => setComment({ ...comment, [post.id]: cleanText(e.target.value, 500) })} placeholder="Add a helpful comment..." /><button><Send /></button></form></article>)}</div></div>;
+  return <div className="screen community"><TopBar title="Community" /><section className="community-intro"><div><b>Cook together, from wherever.</b><p>Share recipes, photos, and useful tips. Your private mood and psychological profile stay private.</p></div><button className="primary" onClick={() => setComposer(!composer)}><Plus />Post</button></section>{composer && <section className="composer"><div><Avatar name={profile.name} image={profile.avatar} /><textarea maxLength={1000} value={text} onChange={e => setText(e.target.value)} placeholder="Share a cook, recipe, or tip..." /></div>{image && <img src={image} alt="Post preview" />}{recipeId && findRecipe(recipeId) && <div className="composer-recipe"><ChefHat size={15} /><span>Linking <b>{findRecipe(recipeId)!.title}</b></span><button onClick={() => setRecipeId("")} aria-label="Remove linked recipe"><X size={14} /></button></div>}<select value={recipeId} onChange={e => setRecipeId(e.target.value)}><option value="">Link a recipe (optional)</option>{catalog.map(r => <option value={r.id} key={r.id}>{r.title}</option>)}</select>{uploadError && <p className="upload-error">{uploadError}</p>}<footer><label><Camera />Add photo<input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => upload(e.target.files?.[0])} /></label><button className="primary" onClick={publish}><Send />Share</button></footer></section>}<div className="feed">{posts.length === 0 && !composer && <div className="empty-state" style={{ margin: "24px 16px" }}><Users /><h2>Be the first to post</h2><p>Share a cook, tip, or recipe. Your psychological profile and diary stay completely private.</p></div>}{posts.map(post => <article className="social-post" key={post.id}><header><Avatar name={post.author} image={post.avatar} /><div><b>{post.author}</b><span>{post.createdAt}</span></div><MoreVertical /></header><p>{post.text}</p>{post.image && <img src={post.image} alt="Cooked meal" />}{post.recipeId && findRecipe(post.recipeId) && <button className="linked-recipe" onClick={() => { const r = findRecipe(post.recipeId); if (r) openRecipe(r); }}><ChefHat /><span><small>LINKED RECIPE</small><b>{findRecipe(post.recipeId)?.title}</b></span><ChevronRight /></button>}<div className="social-actions"><button onClick={() => updatePost(post.id, p => ({ ...p, likes: toggle(p.likes, profile.name) }))}><Heart fill={post.likes.includes(profile.name) ? "currentColor" : "none"} />{post.likes.length}</button><button><MessageCircle />{post.comments.length}</button></div>{post.comments.map((c, n) => <p className="comment" key={n}><b>{c.author}</b> {c.text}</p>)}<form className="comment-form" onSubmit={e => { e.preventDefault(); if (!comment[post.id]?.trim()) return; updatePost(post.id, p => ({ ...p, comments: [...p.comments, { author: profile.name, text: cleanText(comment[post.id], 500) }] })); setComment({ ...comment, [post.id]: "" }); }}><input maxLength={500} value={comment[post.id] || ""} onChange={e => setComment({ ...comment, [post.id]: cleanText(e.target.value, 500) })} placeholder="Add a helpful comment..." /><button><Send /></button></form></article>)}</div></div>;
 }
 function Avatar({ name, image }: { name: string; image?: string }) { return image ? <img className="avatar-img" src={image} alt={name} /> : <span className="avatar-fallback">{name.split(" ").map(v => v[0]).join("").slice(0, 2)}</span>; }
 function HealthHub({ diary, go }: { diary: { recipe: Recipe; rating: number; when: string }[]; go: (p: Page) => void }) {
   const vegetarian = diary.filter(d => d.recipe.diets.includes("Vegetarian")).length;
-  return <div className="screen health"><TopBar title="Your health" action={<Activity />} /><section className="health-hero"><span>LAST 30 DAYS</span><h1>Your dietary trends.</h1><p>A calm breakdown based on meals you logged. Informational only, never medical advice.</p><div><b>{diary.length}</b><small>meals logged</small><b>{new Set(diary.map(d => d.recipe.cuisine)).size}</b><small>cuisines</small><b>{vegetarian}</b><small>plant-forward</small></div></section><button className="family-health-link" onClick={() => go("family-health")}><Users /><span><b>Family health profile</b><small>Overall analytics for family meals only</small></span><ChevronRight /></button><div className="health-links"><button onClick={() => go("health-nutrition")}><Salad /><span><b>Nutrition balance</b><small>Calories, protein, fiber, and meal balance</small></span><ChevronRight /></button><button onClick={() => go("health-variety")}><TrendingUp /><span><b>Dietary variety</b><small>Cuisines, proteins, vegetables, and repetition</small></span><ChevronRight /></button><button onClick={() => go("health-patterns")}><Clock3 /><span><b>Eating patterns</b><small>Cook frequency, timing, and completion habits</small></span><ChevronRight /></button></div><section className="trend-preview"><h2>This month at a glance</h2><Trend label="Plant-forward meals" value={Math.min(100, vegetarian * 25 + 25)} /><Trend label="Recipe variety" value={Math.min(100, new Set(diary.map(d => d.recipe.id)).size * 28)} /><Trend label="Home-cooked rhythm" value={Math.min(100, diary.length * 18)} /></section></div>;
+  return <div className="screen health"><TopBar title="Your health" /><section className="health-hero"><span>LAST 30 DAYS</span><h1>Your dietary trends.</h1><p>A calm breakdown based on meals you logged. Informational only, never medical advice.</p><div><b>{diary.length}</b><small>meals logged</small><b>{new Set(diary.map(d => d.recipe.cuisine)).size}</b><small>cuisines</small><b>{vegetarian}</b><small>plant-forward</small></div></section><button className="family-health-link" onClick={() => go("family-health")}><Users /><span><b>Family health profile</b><small>Overall analytics for family meals only</small></span><ChevronRight /></button><div className="health-links"><button onClick={() => go("health-nutrition")}><Salad /><span><b>Nutrition balance</b><small>Calories, protein, fiber, and meal balance</small></span><ChevronRight /></button><button onClick={() => go("health-variety")}><TrendingUp /><span><b>Dietary variety</b><small>Cuisines, proteins, vegetables, and repetition</small></span><ChevronRight /></button><button onClick={() => go("health-patterns")}><Clock3 /><span><b>Eating patterns</b><small>Cook frequency, timing, and completion habits</small></span><ChevronRight /></button></div><section className="trend-preview"><h2>This month at a glance</h2><Trend label="Plant-forward meals" value={Math.min(100, vegetarian * 25 + 25)} /><Trend label="Recipe variety" value={Math.min(100, new Set(diary.map(d => d.recipe.id)).size * 28)} /><Trend label="Home-cooked rhythm" value={Math.min(100, diary.length * 18)} /></section></div>;
 }
 function Trend({ label, value }: { label: string; value: number }) { return <div className="trend"><span><b>{label}</b><em>{value}%</em></span><i><b style={{ width: `${value}%` }} /></i></div>; }
 function HealthDetail({ kind, diary, back }: { kind: "nutrition" | "variety" | "patterns"; diary: { recipe: Recipe; rating: number; when: string }[]; back: () => void }) {
@@ -1432,7 +1468,14 @@ function HealthDetail({ kind, diary, back }: { kind: "nutrition" | "variety" | "
 function FamilyHealth({ diary, diners, back }: { diary: { recipe: Recipe; rating: number; when: string }[]; diners: Diner[]; back: () => void }) {
   const familySize = Math.max(1, diners.length);
   const safeCoverage = Math.round((diners.filter(d => d.allergies.length || d.diet !== "Anything").length / familySize) * 100);
-  return <div className="screen family-health"><TopBar title="Family health" back={back} /><section className="family-hero"><Users /><span>HOUSEHOLD PROFILE</span><h1>How family meals are trending.</h1><p>Aggregate analytics only. Individual moods, psychological profiles, and private diaries are not shown here.</p><div><b>{familySize}</b><small>registered diners</small><b>{diary.length}</b><small>family meals logged</small></div></section><div className="metric-grid"><article><span>Shared meal variety</span><b>Good</b></article><article><span>Plant-forward meals</span><b>58%</b></article><article><span>Average family cook</span><b>28 min</b></article><article><span>Safety profiles complete</span><b>{safeCoverage}%</b></article></div><section className="trend-preview"><h2>Family meal balance</h2><Trend label="Vegetable variety" value={74} /><Trend label="Protein variety" value={68} /><Trend label="Home-cooked rhythm" value={Math.min(100, diary.length * 18)} /><Trend label="Shared appeal" value={82} /></section><section className="family-members"><h2>Household coverage</h2>{diners.map(d => <div key={d.id}><Avatar name={d.name} /><span><b>{d.name}</b><small>{d.relationship} · {d.diet}</small></span><em>{d.allergies.length ? `${d.allergies.length} safety rule${d.allergies.length > 1 ? "s" : ""}` : "Basic profile"}</em></div>)}</section></div>;
+  // All metrics below are derived from real logged meals — no placeholder data.
+  const n = diary.length;
+  const uniqueRecipes = new Set(diary.map(d => d.recipe.id)).size;
+  const plantForward = n ? Math.round(diary.filter(d => d.recipe.diets?.some(x => ["Vegetarian", "Vegan"].includes(x))).length / n * 100) : 0;
+  const avgTime = n ? Math.round(diary.reduce((a, d) => a + d.recipe.time, 0) / n) : 0;
+  const avgRating = n ? diary.reduce((a, d) => a + d.rating, 0) / n : 0;
+  const varietyLabel = !n ? "—" : uniqueRecipes >= 8 ? "Excellent" : uniqueRecipes >= 4 ? "Good" : "Building";
+  return <div className="screen family-health"><TopBar title="Family health" back={back} /><section className="family-hero"><Users /><span>HOUSEHOLD PROFILE</span><h1>How family meals are trending.</h1><p>Aggregate analytics only. Individual moods, psychological profiles, and private diaries are not shown here.</p><div><b>{familySize}</b><small>registered diners</small><b>{diary.length}</b><small>family meals logged</small></div></section>{n ? <><div className="metric-grid"><article><span>Shared meal variety</span><b>{varietyLabel}</b></article><article><span>Plant-forward meals</span><b>{plantForward}%</b></article><article><span>Average family cook</span><b>{avgTime} min</b></article><article><span>Safety profiles complete</span><b>{safeCoverage}%</b></article></div><section className="trend-preview"><h2>Family meal balance</h2><Trend label="Plant-forward meals" value={plantForward} /><Trend label="Recipe variety" value={Math.min(100, uniqueRecipes * 12)} /><Trend label="Home-cooked rhythm" value={Math.min(100, n * 18)} /><Trend label="Shared appeal" value={Math.round(avgRating * 20)} /></section></> : <div className="empty-state" style={{ margin: "18px 0" }}><Users /><h2>No family meals logged yet</h2><p>Cook and log meals with household diners selected, and their trends will appear here.</p></div>}<section className="family-members"><h2>Household coverage</h2>{diners.map(d => <div key={d.id}><Avatar name={d.name} /><span><b>{d.name}</b><small>{d.relationship} · {d.diet}</small></span><em>{d.allergies.length ? `${d.allergies.length} safety rule${d.allergies.length > 1 ? "s" : ""}` : "Basic profile"}</em></div>)}</section></div>;
 }
 function DinersScreen({ diners, save, back }: { diners: Diner[]; save: (d: Diner[]) => void; back: () => void }) {
   const [adding, setAdding] = useState(false); const [name, setName] = useState("");

@@ -69,7 +69,7 @@ export type Profile = {
 };
 
 export const defaultProfile: Profile = {
-  name: "Alex", email: "", onboarded: false, path: "standard", diet: "Everything",
+  name: "", email: "", onboarded: false, path: "standard", diet: "Everything",
   allergies: [], skill: "Comfortable", cuisines: ["Italian", "Mediterranean"],
   equipment: ["Stovetop", "Oven"], moodNeeds: {}, servings: 2,
   foodRelationship: "I want dinner to feel supportive, not like another task.",
@@ -127,7 +127,7 @@ export const defaultProfile: Profile = {
   inviteCode: "",
   inviteSubEnd: "",
   avatar: "",
-  bio: "Learning what dinner looks like when it feels good.",
+  bio: "",
   location: "",
   profileVisibility: "connections",
   shareCookedMeals: true,
