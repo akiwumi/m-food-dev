@@ -20,23 +20,42 @@ import { fetchCuratedRecipes, buildFoodHistory } from "./recipes";
 import { signUp as authSignUp, signIn as authSignIn, signOut as authSignOut, isEmailConfirmed, onAuthChange, isSupabaseConfigured } from "./auth";
 import { supabase } from "./supabase";
 
-const REDEEM_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/redeem-invite`;
+const SUPABASE_FN = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
+
+async function callFn<T>(fn: string, body: unknown): Promise<T> {
+  if (!supabase) throw new Error("Backend not configured.");
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error("Not signed in.");
+  const res = await fetch(`${SUPABASE_FN}/${fn}`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${session.access_token}`, "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return res.json() as Promise<T>;
+}
 
 async function redeemInviteCode(code: string): Promise<{ ok: boolean; subscriptionEnd?: string; error?: string }> {
-  if (!supabase) return { ok: false, error: "Backend not configured." };
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return { ok: false, error: "You must be signed in to redeem a code." };
-    const res = await fetch(REDEEM_URL, {
-      method: "POST",
-      headers: { authorization: `Bearer ${session.access_token}`, "content-type": "application/json" },
-      body: JSON.stringify({ code: code.trim().toUpperCase() }),
-    });
-    const data = await res.json();
-    return data;
-  } catch {
-    return { ok: false, error: "Could not reach the server. Please try again." };
+  try { return await callFn("redeem-invite", { code: code.trim().toUpperCase() }); }
+  catch (e) { return { ok: false, error: (e as Error).message }; }
+}
+
+async function startCheckout(plan: string): Promise<{ url?: string; error?: string }> {
+  try { return await callFn("create-checkout", { plan }); }
+  catch (e) { return { error: (e as Error).message }; }
+}
+
+// After Stripe redirects back with ?checkout=success, poll the subscriptions
+// table for up to 10 s to get the confirmed status.
+async function syncSubscriptionFromDB(): Promise<{ status: string; plan: string; currentPeriodEnd: string } | null> {
+  if (!supabase) return null;
+  for (let i = 0; i < 5; i++) {
+    await new Promise(r => setTimeout(r, i === 0 ? 500 : 2000));
+    const { data } = await supabase.from("subscriptions").select("*").maybeSingle();
+    if (data?.status && data.status !== "none") {
+      return { status: data.status, plan: data.plan ?? "annual", currentPeriodEnd: data.current_period_end ?? "" };
+    }
   }
+  return null;
 }
 
 type Page = "home" | "search" | "diary" | "grocery" | "planner" | "detail" | "cook" | "insights" | "settings" | "favorites" | "import" | "admin" | "billing" | "psych-profile" | "account" | "community" | "health" | "health-nutrition" | "health-variety" | "health-patterns" | "family-health" | "diners" | "food-log" | "help";
@@ -135,6 +154,29 @@ export default function App() {
   useEffect(() => { const { charged } = runDue(); if (charged) setProfile(p => ({ ...p, subscriptionStatus: "active" })); refreshNotifs(); }, []);
   // Real auth: if the user signs out (here or in another tab), return to welcome.
   useEffect(() => onAuthChange(event => { if (event === "SIGNED_OUT") setEntry("welcome"); }), []);
+
+  // Handle Stripe redirect back after Checkout (?checkout=success|canceled).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const checkout = params.get("checkout");
+    if (!checkout) return;
+    // Clean the URL immediately so a refresh doesn't re-trigger.
+    window.history.replaceState({}, "", window.location.pathname);
+    if (checkout === "success") {
+      // Poll the subscriptions table until the webhook has written the record.
+      syncSubscriptionFromDB().then(sub => {
+        if (sub) {
+          setProfile(p => ({ ...p, subscriptionStatus: sub.status as any, plan: sub.plan, trialEndsAt: sub.currentPeriodEnd }));
+          setEntry("app");
+        } else {
+          // Webhook hasn't fired yet — optimistically mark as trialing and enter.
+          setProfile(p => ({ ...p, subscriptionStatus: "trialing" }));
+          setEntry("app");
+        }
+      });
+    }
+    // canceled: do nothing, stay on subscription screen
+  }, []);
 
   const go = (next: Page) => { setPage(next); window.scrollTo(0, 0); };
   const open = (recipe: Recipe) => { setSelected(recipe); go("detail"); };
@@ -1022,15 +1064,31 @@ function SubscriptionScreen({ profile, save, proceed, onStarted }: { profile: Pr
   const [inviteInput, setInviteInput] = useState("");
   const [inviteError, setInviteError] = useState("");
   const [inviteLoading, setInviteLoading] = useState(false);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [checkoutError, setCheckoutError] = useState("");
   const chosen = PLANS.find(p => p.id === plan);
 
-  const start = () => {
-    const now = new Date();
-    const endsAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
-    save({ ...profile, plan, trialStartedAt: now.toISOString(), trialEndsAt: endsAt, subscriptionStatus: "trialing" });
-    scheduleTrial(profile.email, chosen?.name || plan, chosen?.price || "", endsAt);
-    onStarted?.();
-    proceed();
+  const start = async () => {
+    setCheckoutLoading(true);
+    setCheckoutError("");
+    if (isSupabaseConfigured) {
+      // Real Stripe Checkout — redirects user to Stripe's hosted page.
+      const result = await startCheckout(plan);
+      if (result.url) {
+        window.location.href = result.url;
+        return; // page will navigate away
+      }
+      setCheckoutError(result.error ?? "Could not start checkout. Please try again.");
+      setCheckoutLoading(false);
+    } else {
+      // No backend — local pilot simulation.
+      const now = new Date();
+      const endsAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      save({ ...profile, plan, trialStartedAt: now.toISOString(), trialEndsAt: endsAt, subscriptionStatus: "trialing" });
+      scheduleTrial(profile.email, chosen?.name || plan, chosen?.price || "", endsAt);
+      onStarted?.();
+      proceed();
+    }
   };
 
   const redeem = async () => {
@@ -1060,8 +1118,11 @@ function SubscriptionScreen({ profile, save, proceed, onStarted }: { profile: Pr
           <>
             <p>Personalized, safe recommendations tuned to the profile you just built, plus cook mode, mood check-ins, and weekly reflections.</p>
             <PlanPicker plan={plan} setPlan={setPlan} />
-            <button className="primary" onClick={start}>Start free trial <ArrowRight /></button>
-            <small>7 days free, then {chosen?.price}. Cancel anytime.</small>
+            {checkoutError && <p className="invite-error">{checkoutError}</p>}
+            <button className="primary" onClick={start} disabled={checkoutLoading}>
+              {checkoutLoading ? "Opening checkout…" : <>Start free trial <ArrowRight /></>}
+            </button>
+            <small>7 days free, then {chosen?.price}. Card required — cancel anytime before trial ends.</small>
           </>
         ) : (
           <>
@@ -1126,8 +1187,19 @@ function BillingScreen({ profile, save }: { profile: Profile; save: (p: Profile)
               <>
                 <p>Personalized decisions, safe recommendations, cook mode, and weekly reflections.</p>
                 <PlanPicker plan={plan} setPlan={setPlan} />
-                <button className="primary" onClick={() => save({ ...profile, plan })}>{profile.plan === plan ? "Current plan" : `Switch to ${chosen?.name}`}</button>
-                <small>After cancellation, your recipes and diary remain readable for 7 days.</small>
+                <button className="primary" onClick={async () => {
+                  if (isSupabaseConfigured) {
+                    const result = await startCheckout(plan);
+                    if (result.url) window.location.href = result.url;
+                  } else {
+                    save({ ...profile, plan });
+                  }
+                }}>
+                  {profile.subscriptionStatus === "active" || profile.subscriptionStatus === "trialing"
+                    ? "Manage subscription on Stripe"
+                    : `Start free trial — ${chosen?.name}`}
+                </button>
+                <small>Managed securely by Stripe. Cancel anytime.</small>
               </>
             ) : inviteSuccess ? (
               <p className="invite-success"><Check size={18} /> Code redeemed — you now have 1 year of full access.</p>
