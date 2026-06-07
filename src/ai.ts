@@ -37,13 +37,17 @@ export async function aiChat(message: string, context?: ChatContext, history?: C
   return data.message;
 }
 
+export type VitaminEstimate = { name: string; amount?: number; unit?: string; percentDV?: number };
 export type FoodMacros = {
   dish?: string; calories?: number; protein?: number; carbs?: number;
   fat?: number; fiber?: number; confidence?: number;
+  vitamins?: VitaminEstimate[];
+  allergens?: string[];
 };
 
-// Real vision estimate for a food photo (base64 data URL).
-export async function aiAnalyzeFood(image: string, hint?: { recipeName?: string; recipeCalories?: number }): Promise<FoodMacros> {
+// Real vision estimate for a food photo (base64 data URL). `allergies` lets the
+// model check the dish against the user's specific allergens.
+export async function aiAnalyzeFood(image: string, hint?: { recipeName?: string; recipeCalories?: number; allergies?: string[] }): Promise<FoodMacros> {
   const data = await callGateway<{ analysis: FoodMacros }>({ task: "analyze-food", image, hint });
   return data.analysis ?? {};
 }

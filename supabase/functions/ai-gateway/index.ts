@@ -91,14 +91,28 @@ Deno.serve(async (request) => {
       const image = typeof body.image === "string" ? body.image : "";
       if (!image.startsWith("data:image/")) return Response.json({ error: "Missing image" }, { status: 400, headers: headers(origin) });
       const hintName = body?.hint?.recipeName ? ` The user says this is their "${body.hint.recipeName}".` : "";
+      const userAllergens = Array.isArray(body?.hint?.allergies)
+        ? body.hint.allergies.filter((a: unknown) => typeof a === "string").slice(0, 30)
+        : [];
+      const allergenLine = userAllergens.length
+        ? ` The user must avoid these allergens — check the dish especially carefully and list any that are present or likely: ${userAllergens.join(", ")}.`
+        : "";
       const res = await callOpenAI({
         model: CHAT_MODEL,
         response_format: { type: "json_object" },
-        max_tokens: 300,
+        max_tokens: 600,
         messages: [
-          { role: "system", content: "You are a nutrition vision estimator. Look at the food photo and estimate a single serving. Reply ONLY with JSON: {\"dish\":string,\"calories\":number,\"protein\":number,\"carbs\":number,\"fat\":number,\"fiber\":number,\"confidence\":number}. Grams for macros, confidence 0-100. If unsure, give your best estimate." },
+          { role: "system", content: [
+            "You are a nutrition vision estimator. Look at the food photo and estimate ONE single serving.",
+            "Reply ONLY with JSON of this exact shape:",
+            "{\"dish\":string,\"calories\":number,\"protein\":number,\"carbs\":number,\"fat\":number,\"fiber\":number,\"confidence\":number,\"vitamins\":[{\"name\":string,\"amount\":number,\"unit\":string,\"percentDV\":number}],\"allergens\":[string]}.",
+            "Macros in grams. confidence and percentDV are 0-100. unit is like 'mg' or 'mcg'.",
+            "For vitamins, list the 4-6 most notable micronutrients (vitamins AND minerals, e.g. Vitamin C, Vitamin A, Iron, Calcium, Potassium, Vitamin D, Folate, Sodium).",
+            "For allergens, list major food allergens visibly present or highly likely, using common names (Dairy, Gluten, Wheat, Eggs, Peanuts, Tree nuts, Soy, Fish, Shellfish, Sesame, Mustard, Celery). Empty array if none.",
+            "If unsure, give your best estimate rather than refusing.",
+          ].join(" ") },
           { role: "user", content: [
-            { type: "text", text: `Estimate the nutrition of this meal.${hintName}` },
+            { type: "text", text: `Estimate the nutrition, key vitamins/minerals, and allergens of this meal.${hintName}${allergenLine}` },
             { type: "image_url", image_url: { url: image } },
           ] },
         ],

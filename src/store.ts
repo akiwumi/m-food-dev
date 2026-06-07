@@ -29,6 +29,28 @@ export type Profile = {
   weeknightTime: string;           // typical time budget
   planningStyle: string[];         // how they plan/shop
   nutritionGoals: string[];        // what they're working toward
+  // --- Deep profiler: mood, palate depth, kitchen, habits & values ---
+  cookingMoods: string[];          // the cooking headspaces that resonate
+  moodContext: Record<string, string>;  // answers to mood-psychology questions
+  dietReligious: string[];         // religious / ethical food practice (hard rules)
+  spiceTypes: string[];            // which kinds of heat are enjoyed
+  ingredientPhilosophy: string[];  // quality-vs-pantry, fresh, fermentation...
+  pantryStaples: string[];         // what's reliably in the cupboard
+  confidenceBlockers: string[];    // what makes cooking feel hard
+  cookingMethods: string[];        // how they like to cook (vs equipment owned)
+  typicalTime: string[];           // habitual time bands (multi)
+  eatingPattern: string;           // three-meals, IF, grazing...
+  eatingSpeed: string;             // fast / mindful eater
+  mealTypes: string[];             // which meals they want help with
+  occasions: string[];             // everyday, dinner-party, BBQ, holiday...
+  diningStyle: string[];           // solo, family-table, desk, sofa...
+  leftoverHabits: string[];        // love-leftovers, reinvent, freeze...
+  wasteApproach: string[];         // root-to-tip, stock-scraps, compost...
+  budget: string;                  // per-meal budget band
+  inspirationSources: string[];    // where cooking inspiration comes from
+  sustainability: string[];        // local, seasonal, reducing-meat...
+  presentation: string;            // rustic, restaurant-quality...
+  rankingPreference: string;       // what to optimise picks for -> Spoonacular sort
   plan: string;                    // chosen subscription: annual | quarterly | monthly
   photoLogs: import("./foodAnalysis").FoodPhoto[];  // meal photo + nutrition logs
   // --- Account + subscription lifecycle ---
@@ -72,6 +94,27 @@ export const defaultProfile: Profile = {
   weeknightTime: "30 min",
   planningStyle: ["Decide same day"],
   nutritionGoals: ["Balanced meals", "More vegetables"],
+  cookingMoods: ["Comfort", "Tired", "Nourish"],
+  moodContext: {},
+  dietReligious: [],
+  spiceTypes: [],
+  ingredientPhilosophy: [],
+  pantryStaples: [],
+  confidenceBlockers: [],
+  cookingMethods: ["Stovetop", "Oven baking"],
+  typicalTime: ["15–30 min"],
+  eatingPattern: "Three meals a day",
+  eatingSpeed: "Moderate pace",
+  mealTypes: ["Dinner"],
+  occasions: ["Everyday weeknight"],
+  diningStyle: [],
+  leftoverHabits: [],
+  wasteApproach: [],
+  budget: "Moderate",
+  inspirationSources: [],
+  sustainability: [],
+  presentation: "Homely & generous",
+  rankingPreference: "Most popular",
   plan: "annual",
   photoLogs: [],
   accountCreated: false,
