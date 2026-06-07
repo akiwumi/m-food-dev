@@ -5,7 +5,7 @@ import {
   Settings2, ShoppingCart, Sparkles, Star, Timer, X, ShieldCheck, UserRound, BarChart3,
   Upload, LogOut, Plus, ClipboardCheck, LayoutDashboard, Camera, Users, MessageCircle,
   Send, UserPlus, Lock, Globe2, Activity, Salad, Wheat, Droplets, TrendingUp, Mail, CreditCard,
-  HelpCircle, FlameKindling, Dna, BookMarked, Share2,
+  HelpCircle, FlameKindling, Dna, BookMarked, Share2, Trash2,
 } from "lucide-react";
 import { moods, recipes, cookingMoods, skillLevels, type Recipe } from "./data";
 import { clearStored, defaultDiners, defaultProfile, readStored, useStoredState, writeStored, type Diner, type Profile, type SocialPost } from "./store";
@@ -51,6 +51,20 @@ async function startCheckout(plan: string): Promise<{ url?: string; error?: stri
   try { return await callFn("create-checkout", { plan }); }
   catch (e) { return { error: (e as Error).message }; }
 }
+
+// Permanently delete the signed-in user: cancels any Stripe subscription,
+// removes their rows, and deletes the auth account server-side.
+async function deleteAccount(): Promise<{ ok: boolean; error?: string }> {
+  try { return await callFn("delete-account", {}); }
+  catch (e) { return { ok: false, error: (e as Error).message }; }
+}
+
+// Every localStorage key MoodFood owns — wiped when an account is cancelled.
+const MOODFOOD_KEYS = [
+  "moodfood-entry", "moodfood-profile", "moodfood-saved", "moodfood-diary",
+  "moodfood-groceries", "moodfood-posts", "moodfood-connections", "moodfood-diners",
+  "moodfood-eater-count", "moodfood-onboarding-step", "moodfood-a2hs-dismissed",
+];
 
 // After Stripe redirects back with ?checkout=success, poll the subscriptions
 // table for up to 10 s to get the confirmed status.
@@ -205,6 +219,21 @@ export default function App() {
   };
   const openNotifs = () => { markAllRead(); setNotifOpen(true); refreshNotifs(); };
 
+  // Cancel (permanently delete) the account. With a backend, delete server-side
+  // first and bail on failure. Then sign out, wipe every local key, and reload
+  // to a guaranteed-clean first-launch state.
+  const cancelAccount = async (): Promise<{ ok: boolean; error?: string }> => {
+    if (isSupabaseConfigured) {
+      const res = await deleteAccount();
+      if (!res.ok) return res;
+    }
+    try { await authSignOut(); } catch { /* already signed out */ }
+    cancelScheduled();
+    MOODFOOD_KEYS.forEach(clearStored);
+    window.location.reload();
+    return { ok: true };
+  };
+
   if (splash) return <Splash proceed={() => setSplash(false)} />;
   if (entry === "welcome") return <Welcome start={() => setEntry("onboarding")} signin={() => setEntry("login")} />;
   if (entry === "login") return <LoginScreen back={() => setEntry("welcome")} onSignedIn={(email) => { setProfile({ ...profile, email, accountCreated: true, emailVerified: true }); setEntry("app"); }} />;
@@ -238,7 +267,7 @@ export default function App() {
       {page === "billing" && <BillingScreen profile={profile} save={setProfile} />}
       {page === "psych-profile" && <PsychProfileScreen profile={profile} save={setProfile} back={() => go("settings")} />}
       {page === "food-profile" && <FoodProfileScreen profile={profile} save={setProfile} back={() => go("settings")} />}
-      {page === "account" && <AccountScreen profile={profile} save={setProfile} posts={posts.filter(p => p.author === profile.name)} back={() => go("settings")} />}
+      {page === "account" && <AccountScreen profile={profile} save={setProfile} posts={posts.filter(p => p.author === profile.name)} back={() => go("settings")} cancelAccount={cancelAccount} />}
       {page === "community" && <CommunityScreen profile={profile} posts={posts} setPosts={setPosts} connections={connections} setConnections={setConnections} openRecipe={open} catalog={catalog} initialRecipeId={pendingShare} clearInitial={() => setPendingShare(undefined)} />}
       {page === "health" && <HealthHub diary={diary} go={go} />}
       {page === "health-nutrition" && <HealthDetail kind="nutrition" diary={diary} back={() => go("health")} />}
@@ -1301,11 +1330,36 @@ function BillingScreen({ profile, save }: { profile: Profile; save: (p: Profile)
     </div>
   );
 }
-function AccountScreen({ profile, save, posts, back }: { profile: Profile; save: (p: Profile) => void; posts: SocialPost[]; back: () => void }) {
+function AccountScreen({ profile, save, posts, back, cancelAccount }: { profile: Profile; save: (p: Profile) => void; posts: SocialPost[]; back: () => void; cancelAccount: () => Promise<{ ok: boolean; error?: string }> }) {
   const update = (patch: Partial<Profile>) => save({ ...profile, ...patch });
   const [uploadError, setUploadError] = useState("");
   const upload = async (file?: File) => { if (!file) return; try { update({ avatar: await readSafeImage(file) }); setUploadError(""); } catch (error) { setUploadError((error as Error).message); } };
-  return <div className="screen account"><TopBar title="Your account" back={back} /><section className="account-hero"><label>{profile.avatar ? <img src={profile.avatar} alt={profile.name} /> : <span>{profile.name.slice(0, 2).toUpperCase()}</span>}<i><Camera size={16} /></i><input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => upload(e.target.files?.[0])} /></label>{uploadError && <em>{uploadError}</em>}<h1>{profile.name}</h1><p>{profile.bio}</p><small>{posts.length} posts · Profile linked to your shared cooks</small></section><ProfileEditor title="Public profile" text="This is what people you connect with can see."><label className="account-field">Display name<input maxLength={80} value={profile.name} onChange={e => update({ name: cleanText(e.target.value, 80) })} /></label><label className="account-field">Bio<textarea maxLength={300} value={profile.bio} onChange={e => update({ bio: cleanText(e.target.value, 300) })} /></label><label className="account-field">Location<input maxLength={100} value={profile.location} onChange={e => update({ location: cleanText(e.target.value, 100) })} placeholder="Optional" /></label></ProfileEditor><ProfileEditor title="Privacy and sharing" text="Your psychological profile, raw mood entries, and private diary are never shown here."><Choice values={["connections", "public", "private"]} active={profile.profileVisibility} pick={v => update({ profileVisibility: v as Profile["profileVisibility"] })} /><label className="toggle-row"><span><b>Offer to share completed cooks</b><small>You always confirm before anything is posted.</small></span><input type="checkbox" checked={profile.shareCookedMeals} onChange={e => update({ shareCookedMeals: e.target.checked })} /></label></ProfileEditor>{posts.length > 0 && <ProfileEditor title="Posts linked to your profile" text="Images and tips you chose to share."><div className="profile-gallery">{posts.map(p => <img src={p.image} alt="" key={p.id} />)}</div></ProfileEditor>}</div>;
+  return <div className="screen account"><TopBar title="Your account" back={back} /><section className="account-hero"><label>{profile.avatar ? <img src={profile.avatar} alt={profile.name} /> : <span>{profile.name.slice(0, 2).toUpperCase()}</span>}<i><Camera size={16} /></i><input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => upload(e.target.files?.[0])} /></label>{uploadError && <em>{uploadError}</em>}<h1>{profile.name}</h1><p>{profile.bio}</p><small>{posts.length} posts · Profile linked to your shared cooks</small></section><ProfileEditor title="Public profile" text="This is what people you connect with can see."><label className="account-field">Display name<input maxLength={80} value={profile.name} onChange={e => update({ name: cleanText(e.target.value, 80) })} /></label><label className="account-field">Bio<textarea maxLength={300} value={profile.bio} onChange={e => update({ bio: cleanText(e.target.value, 300) })} /></label><label className="account-field">Location<input maxLength={100} value={profile.location} onChange={e => update({ location: cleanText(e.target.value, 100) })} placeholder="Optional" /></label></ProfileEditor><ProfileEditor title="Privacy and sharing" text="Your psychological profile, raw mood entries, and private diary are never shown here."><Choice values={["connections", "public", "private"]} active={profile.profileVisibility} pick={v => update({ profileVisibility: v as Profile["profileVisibility"] })} /><label className="toggle-row"><span><b>Offer to share completed cooks</b><small>You always confirm before anything is posted.</small></span><input type="checkbox" checked={profile.shareCookedMeals} onChange={e => update({ shareCookedMeals: e.target.checked })} /></label></ProfileEditor>{posts.length > 0 && <ProfileEditor title="Posts linked to your profile" text="Images and tips you chose to share."><div className="profile-gallery">{posts.map(p => <img src={p.image} alt="" key={p.id} />)}</div></ProfileEditor>}<CancelAccount cancelAccount={cancelAccount} /></div>;
+}
+function CancelAccount({ cancelAccount }: { cancelAccount: () => Promise<{ ok: boolean; error?: string }> }) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const run = async () => {
+    setBusy(true); setError("");
+    const res = await cancelAccount();
+    if (!res.ok) { setBusy(false); setError(res.error || "We couldn't cancel your account. Please try again."); }
+    // On success the app reloads, so no need to reset state here.
+  };
+  return <section className="cancel-account">
+    <h2>Cancel account</h2>
+    <p>Permanently delete your MoodFood account, food profile, diary, and saved recipes. Any active subscription is cancelled. This can't be undone.</p>
+    {!confirming
+      ? <button className="cancel-account-btn" onClick={() => setConfirming(true)}><Trash2 size={16} /> Cancel my account</button>
+      : <div className="cancel-account-confirm">
+          <b>Are you sure? This is permanent.</b>
+          {error && <span className="err">{error}</span>}
+          <div className="cancel-account-actions">
+            <button className="secondary" onClick={() => { setConfirming(false); setError(""); }} disabled={busy}>Keep my account</button>
+            <button className="cancel-account-btn" onClick={run} disabled={busy}>{busy ? "Cancelling…" : "Yes, delete everything"}</button>
+          </div>
+        </div>}
+  </section>;
 }
 function CommunityScreen({ profile, posts, setPosts, connections, setConnections, openRecipe, catalog, initialRecipeId, clearInitial }: { profile: Profile; posts: SocialPost[]; setPosts: (p: SocialPost[]) => void; connections: string[]; setConnections: (p: string[]) => void; openRecipe: (r: Recipe) => void; catalog: Recipe[]; initialRecipeId?: string; clearInitial?: () => void }) {
   const [composer, setComposer] = useState(false); const [text, setText] = useState(""); const [image, setImage] = useState(""); const [recipeId, setRecipeId] = useState("");
