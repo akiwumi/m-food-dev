@@ -30,7 +30,7 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { enrichSteps } from "./enrich.ts";
-import { fetchTheMealDbRecipes, normalizeSpoonacularRecipe } from "./provider.ts";
+import { fetchTheMealDbRecipes, filterRecipesForProfile, normalizeSpoonacularRecipe } from "./provider.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
@@ -225,10 +225,19 @@ async function curate(recipes: any[], profile: any, mood: string, history: any):
     profile?.diet ? `Diet: ${profile.diet}.` : "",
     list("Firm religious/ethical rules (never break)", profile?.dietReligious),
     list("Dislikes (avoid)", profile?.dislikedIngredients),
+    profile?.foodRelationship ? `Relationship with food: ${profile.foodRelationship}.` : "",
+    profile?.cookingMotivation ? `Primary cooking motivation: ${profile.cookingMotivation}.` : "",
+    list("Comfort cues", profile?.comfortCues),
+    list("Avoid cues", profile?.avoidCues),
+    list("Sensory cues", profile?.sensoryCues),
     list("Prefers cuisines", profile?.cuisines, 10),
     list("Loves flavours", profile?.flavorLikes),
     list("Avoid flavours", profile?.flavorAvoids),
     list("Loves textures", profile?.textureLikes),
+    list("Avoid textures", profile?.textureAvoids),
+    list("Food-choice values", profile?.foodValues),
+    list("Eating habits", profile?.eatingHabits),
+    list("Emotional food triggers", profile?.emotionalTriggers),
     list("Favourite proteins", profile?.proteins),
     list("Comfort foods", profile?.comfortFoods),
     list("Working toward", profile?.nutritionGoals),
@@ -380,7 +389,7 @@ Deno.serve(async (request) => {
     if (res.ok) {
       const data = await res.json();
       const normalized = (data.results ?? []).map((r: any) => normalizeSpoonacularRecipe(r, mood));
-      const safe = safetyFilter(normalized, profile.allergies ?? []);
+      const safe = filterRecipesForProfile(safetyFilter(normalized, profile.allergies ?? []), profile);
       if (safe.length) {
         const curated = await curate(safe, profile, mood, history);
         const withVideos = await attachVideos(curated, query, cuisines[0] ?? mood);
@@ -388,11 +397,11 @@ Deno.serve(async (request) => {
       }
     }
 
-    const fallback = safetyFilter(await fetchTheMealDbRecipes(query, mood), profile.allergies ?? []);
+    const fallback = filterRecipesForProfile(safetyFilter(await fetchTheMealDbRecipes(query, mood), profile.allergies ?? []), profile);
     if (fallback.length) return Response.json({ provider: "themealdb", recipes: await enrichRecipeInstructions(fallback) }, { headers: headers(origin) });
     return Response.json({ error: "Recipe sources failed" }, { status: 502, headers: headers(origin) });
   } catch {
-    const fallback = safetyFilter(await fetchTheMealDbRecipes(query, mood), profile.allergies ?? []);
+    const fallback = filterRecipesForProfile(safetyFilter(await fetchTheMealDbRecipes(query, mood), profile.allergies ?? []), profile);
     if (fallback.length) return Response.json({ provider: "themealdb", recipes: await enrichRecipeInstructions(fallback) }, { headers: headers(origin) });
     return Response.json({ error: "Recipe sources failed" }, { status: 502, headers: headers(origin) });
   }

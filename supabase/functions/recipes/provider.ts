@@ -1,6 +1,8 @@
 type Fetcher = typeof fetch;
 
 const MEALDB = "https://www.themealdb.com/api/json/v1/1";
+const LAND_MEAT = /\b(beef|steak|veal|chicken|turkey|duck|pork|bacon|ham|sausage|lamb|mutton|goat|venison|rabbit)\b/i;
+const FISH = /\b(fish|salmon|tuna|cod|haddock|trout|sardine|anchov|prawn|shrimp|crab|lobster|mussel|clam|oyster|scallop|seafood)\b/i;
 
 function youtubeEmbed(url: string): string {
   const id = url.match(/[?&]v=([^&]+)/)?.[1] ?? "";
@@ -17,6 +19,8 @@ function normalizeMeal(meal: Record<string, unknown>, mood: string) {
   }
 
   const instructions = String(meal.strInstructions ?? "").trim();
+  const mealText = `${String(meal.strMeal ?? "")} ${String(meal.strCategory ?? "")} ${ingredients.join(" ")}`;
+  const diets = LAND_MEAT.test(mealText) ? [] : FISH.test(mealText) ? ["Pescatarian"] : ["Vegetarian"];
   const steps = instructions
     .split(/\r?\n+|(?<=[.!?])\s+/)
     .map(text => text.trim())
@@ -35,7 +39,7 @@ function normalizeMeal(meal: Record<string, unknown>, mood: string) {
     ingredients,
     steps: steps.length ? steps : [{ text: "See the original recipe for instructions." }],
     cuisine: String(meal.strArea ?? ""),
-    diets: [],
+    diets,
     allergens: [],
     equipment: [],
     status: "published",
@@ -45,6 +49,28 @@ function normalizeMeal(meal: Record<string, unknown>, mood: string) {
 }
 
 const stripHtml = (value: string) => (value ?? "").replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+const spoonacularImage = (recipe: any) => {
+  const image = String(recipe.image ?? "").trim();
+  if (/^https?:\/\//.test(image)) return image;
+  if (image) return `https://img.spoonacular.com/recipes/${image}`;
+  return recipe.id && recipe.imageType ? `https://img.spoonacular.com/recipes/${recipe.id}-636x393.${recipe.imageType}` : "";
+};
+
+export function filterRecipesForProfile(recipes: any[], profile: any): any[] {
+  const diet = String(profile?.diet ?? "").toLowerCase();
+  const allergies = (profile?.allergies ?? []).map((value: string) => value.toLowerCase().replace(/s$/, "")).filter(Boolean);
+  const religious = (profile?.dietReligious ?? []).join(" ").toLowerCase();
+
+  return recipes.filter(recipe => {
+    const text = `${recipe.title ?? ""} ${(recipe.ingredients ?? []).join(" ")}`.toLowerCase();
+    if (allergies.some((term: string) => text.includes(term))) return false;
+    if ((diet.includes("pesc") || diet.includes("vegetarian") || diet.includes("vegan")) && LAND_MEAT.test(text)) return false;
+    if ((diet.includes("vegetarian") || diet.includes("vegan")) && FISH.test(text)) return false;
+    if (/no pork|halal|kosher|jewish|muslim|islam|seventh-day/.test(religious) && /\b(pork|bacon|ham)\b/i.test(text)) return false;
+    if (/no beef|hindu/.test(religious) && /\b(beef|steak|veal)\b/i.test(text)) return false;
+    return true;
+  });
+}
 
 export function normalizeSpoonacularRecipe(recipe: any, mood: string) {
   const nutrients = recipe.nutrition?.nutrients ?? [];
@@ -66,7 +92,7 @@ export function normalizeSpoonacularRecipe(recipe: any, mood: string) {
   return {
     id: String(recipe.id),
     title: recipe.title ?? "Recipe",
-    image: recipe.image ?? "",
+    image: spoonacularImage(recipe),
     time,
     difficulty: time <= 30 ? "Easy" : "Medium",
     calories,

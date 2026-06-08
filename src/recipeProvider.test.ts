@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fetchTheMealDbRecipes, normalizeSpoonacularRecipe } from "../supabase/functions/recipes/provider";
+import { fetchTheMealDbRecipes, filterRecipesForProfile, normalizeSpoonacularRecipe } from "../supabase/functions/recipes/provider";
 
 describe("fetchTheMealDbRecipes", () => {
   it("returns normalized real recipes when the primary provider is unavailable", async () => {
@@ -92,5 +92,43 @@ describe("fetchTheMealDbRecipes", () => {
     }, "Cozy");
 
     expect(recipe.steps[0].image).toBe("https://img.spoonacular.com/recipes/simmer.jpg");
+  });
+
+  it("builds a Spoonacular recipe image when the provider omits the full URL", () => {
+    const recipe = normalizeSpoonacularRecipe({
+      id: 716429,
+      title: "Pasta",
+      imageType: "jpg",
+      analyzedInstructions: [{ steps: [{ step: "Cook." }] }],
+    }, "Cozy");
+
+    expect(recipe.image).toBe("https://img.spoonacular.com/recipes/716429-636x393.jpg");
+  });
+
+  it("never returns land meat to a pescatarian from an unlabeled fallback provider", () => {
+    const safe = filterRecipesForProfile([
+      { title: "Chicken casserole", ingredients: ["500g chicken"], diets: [], allergens: [] },
+      { title: "Salmon bowl", ingredients: ["salmon", "rice"], diets: [], allergens: [] },
+      { title: "Tomato pasta", ingredients: ["tomato", "pasta"], diets: [], allergens: [] },
+    ], { diet: "Pescatarian", allergies: [], dietReligious: [] });
+
+    expect(safe.map(recipe => recipe.title)).toEqual(["Salmon bowl", "Tomato pasta"]);
+  });
+
+  it("tags fallback seafood recipes as pescatarian", async () => {
+    const fetcher: typeof fetch = async () => new Response(JSON.stringify({
+      meals: [{
+        idMeal: "2",
+        strMeal: "Salmon Rice Bowl",
+        strCategory: "Seafood",
+        strInstructions: "Cook the salmon.",
+        strIngredient1: "Salmon",
+        strMeasure1: "2 fillets",
+      }],
+    }), { status: 200 });
+
+    const [recipe] = await fetchTheMealDbRecipes("salmon", "Cozy", 1, fetcher);
+
+    expect(recipe.diets).toContain("Pescatarian");
   });
 });

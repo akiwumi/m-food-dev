@@ -17,6 +17,42 @@ export type FoodHistory = {
   topCuisines?: string[];   // most-cooked cuisines
 };
 
+export function recipeProfilePayload(profile: Profile) {
+  return {
+    diet: profile.diet,
+    dietReligious: profile.dietReligious,
+    allergies: profile.allergies,
+    dislikedIngredients: profile.dislikedIngredients,
+    foodRelationship: profile.foodRelationship,
+    comfortCues: profile.comfortCues,
+    avoidCues: profile.avoidCues,
+    sensoryCues: profile.sensoryCues,
+    cookingMotivation: profile.cookingMotivation,
+    cuisines: profile.cuisines,
+    mealTypes: profile.mealTypes,
+    flavorLikes: profile.flavorLikes,
+    flavorAvoids: profile.flavorAvoids,
+    textureLikes: profile.textureLikes,
+    textureAvoids: profile.textureAvoids,
+    spiceTolerance: profile.spiceTolerance,
+    spiceTypes: profile.spiceTypes,
+    comfortFoods: profile.comfortFoods,
+    proteins: profile.proteins,
+    vegetables: profile.vegetables,
+    carbs: profile.carbs,
+    foodValues: profile.foodValues,
+    eatingHabits: profile.eatingHabits,
+    emotionalTriggers: profile.emotionalTriggers,
+    ingredientPhilosophy: profile.ingredientPhilosophy,
+    skill: profile.skill,
+    weeknightTime: profile.weeknightTime,
+    nutritionGoals: profile.nutritionGoals,
+    rankingPreference: profile.rankingPreference,
+    moodSignals: cookingMoods.filter(m => profile.cookingMoods.includes(m.label)).map(m => m.aiSignal),
+    novelty: profile.novelty,
+  };
+}
+
 export async function fetchCuratedRecipes(
   profile: Profile,
   mood: string,
@@ -33,30 +69,7 @@ export async function fetchCuratedRecipes(
     if (!session) { console.info("[recipes] Not signed in — live recipes need an authenticated session."); return null; }
 
     const body = JSON.stringify({
-      profile: {
-        diet: profile.diet,
-        dietReligious: profile.dietReligious,
-        allergies: profile.allergies,
-        dislikedIngredients: profile.dislikedIngredients,
-        cuisines: profile.cuisines,
-        mealTypes: profile.mealTypes,
-        flavorLikes: profile.flavorLikes,
-        flavorAvoids: profile.flavorAvoids,
-        textureLikes: profile.textureLikes,
-        spiceTolerance: profile.spiceTolerance,
-        spiceTypes: profile.spiceTypes,
-        comfortFoods: profile.comfortFoods,
-        proteins: profile.proteins,
-        ingredientPhilosophy: profile.ingredientPhilosophy,
-        skill: profile.skill,
-        weeknightTime: profile.weeknightTime,
-        nutritionGoals: profile.nutritionGoals,
-        rankingPreference: profile.rankingPreference,
-        // The aiSignal for each cooking mood the user identifies with — the
-        // single richest steer for curation.
-        moodSignals: cookingMoods.filter(m => profile.cookingMoods.includes(m.label)).map(m => m.aiSignal),
-        novelty: profile.novelty,
-      },
+      profile: recipeProfilePayload(profile),
       mood, energy, time, query, filters, history, offset,
     });
 
