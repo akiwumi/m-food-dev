@@ -7,7 +7,7 @@ import {
   Send, UserPlus, Lock, Globe2, Activity, Salad, Wheat, Droplets, TrendingUp, Mail, CreditCard,
   HelpCircle, FlameKindling, Dna, BookMarked, Share2, Trash2,
 } from "lucide-react";
-import { moods, recipes, cookingMoods, skillLevels, type Recipe } from "./data";
+import { moods, cookingMoods, skillLevels, type Recipe } from "./data";
 import { clearStored, defaultDiners, defaultProfile, readStored, useStoredState, writeStored, type Diner, type Profile, type SocialPost } from "./store";
 import { profileForDiners, recommend, safeRecipes as applySafety } from "./recommendation";
 import { cleanText, readSafeImage } from "./security";
@@ -107,7 +107,7 @@ export default function App() {
   // into 502s and silently falling back to local recipes.
   const profile = useMemo(() => ({ ...defaultProfile, ...storedProfile }), [storedProfile]);
   const [page, setPage] = useState<Page>("home");
-  const [selected, setSelected] = useState(recipes[0]);
+  const [selected, setSelected] = useState<Recipe | null>(null);
   const [mood, setMood] = useState("Cozy");
   const [energy, setEnergy] = useState(45);
   const [time, setTime] = useState(30);
@@ -125,7 +125,7 @@ export default function App() {
   const sharedProfile = useMemo(() => profileForDiners(profile, diners.filter(d => selectedDiners.includes(d.id) && d.id !== "self")), [profile, diners, selectedDiners]);
   // catalog = bundled recipes plus any fetched from the AI-curated recipes API.
   // aiRanked = the API's curated order when available; null falls back to local ranking.
-  const [catalog, setCatalog] = useState<Recipe[]>(recipes);
+  const [catalog, setCatalog] = useState<Recipe[]>([]);
   const [aiRanked, setAiRanked] = useState<Recipe[] | null>(null);
   const [curating, setCurating] = useState(false);
   const [moreOffset, setMoreOffset] = useState(0);
@@ -188,14 +188,49 @@ export default function App() {
   useEffect(() => { const { charged } = runDue(); if (charged) setProfile(p => ({ ...p, subscriptionStatus: "active" })); refreshNotifs(); }, []);
   // Real auth: keep the entry flow in sync with the session.
   //  • Sign out anywhere → back to welcome.
-  //  • A returning user with a live session and a finished profile should never
-  //    be sent back through onboarding — drop them straight into the app.
-  useEffect(() => onAuthChange((event, session) => {
+  //  • On sign-in, pull preferences_json from Supabase so the profile is
+  //    restored on new devices (not just from localStorage).
+  //  • A returning user with a finished profile skips onboarding.
+  useEffect(() => onAuthChange(async (event, session) => {
     if (event === "SIGNED_OUT") { setEntry("welcome"); return; }
-    if (session && storedProfile.onboarded && storedProfile.accountCreated) {
+    if (!session) return;
+    if (isSupabaseConfigured && supabase) {
+      const { data } = await supabase.from("profiles")
+        .select("preferences_json")
+        .eq("id", session.user.id)
+        .maybeSingle();
+      if (data?.preferences_json && typeof data.preferences_json === "object" && !Array.isArray(data.preferences_json)) {
+        const restored = { ...defaultProfile, ...(data.preferences_json as Partial<Profile>), email: session.user.email ?? "" };
+        setProfile(restored);
+        if (restored.onboarded && restored.accountCreated) {
+          setEntry(prev => (prev === "welcome" || prev === "login") ? "app" : prev);
+          return;
+        }
+      }
+    }
+    if (storedProfile.onboarded && storedProfile.accountCreated) {
       setEntry(prev => (prev === "welcome" || prev === "login") ? "app" : prev);
     }
   }), [storedProfile.onboarded, storedProfile.accountCreated]);
+
+  // Debounced upsert: save the full profile to Supabase 1.5 s after any change.
+  // This keeps preferences_json current so the user's profile is restored when
+  // they sign in on a new device.
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase || !profile.accountCreated) return;
+    const t = setTimeout(async () => {
+      const { data: { user } } = await supabase!.auth.getUser();
+      if (!user) return;
+      await supabase!.from("profiles").upsert({
+        id: user.id,
+        display_name: profile.name,
+        onboarded: profile.onboarded,
+        preferences_json: profile,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "id" });
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [profile]);
 
   // Handle Stripe redirect back after Checkout (?checkout=success|canceled).
   useEffect(() => {
@@ -266,8 +301,8 @@ export default function App() {
     <main>
       {page === "home" && <HomeScreen profile={profile} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} results={results} setResults={setResults} ranked={ranked} curating={curating} loadMore={loadMore} live={aiRanked !== null} configured={isSupabaseConfigured} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} />}
       {page === "search" && <SearchScreen source={safeRecipes} profile={sharedProfile} mood={mood} history={foodHistory} open={open} saved={saved} setSaved={setSaved} />}
-      {page === "detail" && <DetailScreen recipe={selected} servings={eaterCount} back={() => go("home")} cook={() => go("cook")} saved={saved.includes(selected.id)} toggleSave={() => setSaved(toggle(saved, selected.id))} addGroceries={() => setGroceries(v => [...new Set([...v, ...selected.ingredients])])} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} shareToCommunity={() => shareRecipe(selected)} allergies={profile.allergies} />}
-      {page === "cook" && <CookScreen recipe={selected} exit={() => go("detail")} allergies={profile.allergies} finish={(rating, photo) => { setDiary(v => [{ recipe: selected, rating, when: "Today" }, ...v]); if (photo) setProfile(p => ({ ...p, photoLogs: [photo, ...p.photoLogs] })); go("diary"); }} />}
+      {page === "detail" && selected && <DetailScreen recipe={selected} servings={eaterCount} back={() => go("home")} cook={() => go("cook")} saved={saved.includes(selected.id)} toggleSave={() => setSaved(toggle(saved, selected.id))} addGroceries={() => setGroceries(v => [...new Set([...v, ...selected.ingredients])])} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} shareToCommunity={() => shareRecipe(selected)} allergies={profile.allergies} />}
+      {page === "cook" && selected && <CookScreen recipe={selected} exit={() => go("detail")} allergies={profile.allergies} finish={(rating, photo) => { setDiary(v => [{ recipe: selected, rating, when: "Today" }, ...v]); if (photo) setProfile(p => ({ ...p, photoLogs: [photo, ...p.photoLogs] })); go("diary"); }} />}
       {page === "diary" && <DiaryScreen diary={diary} open={open} photoLogs={profile.photoLogs} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} goFoodLog={() => go("food-log")} allergies={profile.allergies} />}
       {page === "grocery" && <GroceryScreen items={groceries} setItems={setGroceries} />}
       {page === "pantry" && <PantryScreen items={profile.pantryStaples} setItems={items => setProfile(p => ({ ...p, pantryStaples: items }))} addToGrocery={item => setGroceries(v => v.includes(item) ? v : [...v, item])} />}
@@ -276,7 +311,7 @@ export default function App() {
       {page === "settings" && <SettingsScreen profile={profile} save={setProfile} go={go} logout={() => { authSignOut(); setEntry("welcome"); }} />}
       {page === "favorites" && <LibraryScreen title="Saved recipes" source={safeRecipes.filter(r => saved.includes(r.id))} open={open} remove={r => setSaved(saved.filter(id => id !== r.id))} />}
       {page === "import" && <ImportScreen />}
-      {page === "admin" && <AdminScreen />}
+      {page === "admin" && <AdminScreen catalog={catalog} />}
       {page === "billing" && <BillingScreen profile={profile} save={setProfile} />}
       {page === "psych-profile" && <PsychProfileScreen profile={profile} save={setProfile} back={() => go("settings")} />}
       {page === "food-profile" && <FoodProfileScreen profile={profile} save={setProfile} back={() => go("settings")} />}
@@ -792,7 +827,7 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
         <p>{energy < 50 ? "Low-effort" : "Interesting"}, {mood.toLowerCase()}, within {time} min · {eaterCount} {eaterCount === 1 ? "person" : "people"}</p>
         {curating && <p className="quiet" style={{ display: "flex", alignItems: "center", gap: 6 }}><Sparkles size={13} /> Moody is curating real recipes for how you feel…</p>}
         {!curating && live && <p className="source-note live"><Check size={13} /> Live picks, freshly curated for you.</p>}
-        {!curating && !live && <div className="source-note offline"><div><b>Showing sample recipes</b><span>{configured ? "Couldn’t reach live recipe curation — check you’re signed in and online." : "Live curation isn’t configured in this build."}</span></div>{configured && retry && <button onClick={retry}><RotateCcw size={14} /> Retry</button>}</div>}
+        {!curating && !live && <div className="source-note offline"><div><b>Live curation unavailable</b><span>{configured ? "Couldn’t reach live recipe curation — check you’re signed in and online." : "Live curation isn’t configured in this build."}</span></div>{configured && retry && <button onClick={retry}><RotateCcw size={14} /> Retry</button>}</div>}
       </div>
       {visible.length ? (
         <div style={{ padding: "0 16px", display: "grid", gap: 14 }}>
@@ -1246,9 +1281,9 @@ function ImportScreen() {
   const [url, setUrl] = useState(""); const [done, setDone] = useState(false);
   return <div className="screen"><TopBar title="Import recipe" /><section className="import-card"><Upload /><span>WEB RECIPE IMPORT</span><h1>Bring a trusted recipe into your library.</h1><p>We’ll preserve the source, extract ingredients and steps, then ask you to review it before use.</p><input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://example.com/recipe" /><button className="primary" onClick={() => setDone(Boolean(url))}>Import & review</button>{done && <div className="import-success"><Check /><b>Draft created</b><span>Structure checked · source retained · waiting for review</span></div>}</section></div>;
 }
-function AdminScreen() {
+function AdminScreen({ catalog }: { catalog: Recipe[] }) {
   const [statuses, setStatuses] = useState<Record<string, string>>({});
-  return <div className="admin"><header><img src="/images/logo-1.png" alt="" /><div><span>EDITORIAL CONSOLE</span><h1>Recipe quality desk</h1></div></header><div className="admin-stats"><article><b>{recipes.length}</b><span>Total recipes</span></article><article><b>{recipes.filter(r => r.status === "published").length}</b><span>Published & verified</span></article><article><b>0</b><span>Safety flags</span></article></div><section><h2>Review queue</h2>{recipes.map(r => <article className="review-row" key={r.id}><img src={r.image} alt="" /><div><h3>{r.title}</h3><p>{r.cuisine} · {r.ingredients.length} ingredients · {r.steps.length} steps</p><span>Rights checked · Timing checked · Safety tags present</span></div><select value={statuses[r.id] || r.status} onChange={e => setStatuses({ ...statuses, [r.id]: e.target.value })}><option>draft</option><option>review</option><option>published</option><option>retired</option></select></article>)}</section></div>;
+  return <div className="admin"><header><img src="/images/logo-1.png" alt="" /><div><span>EDITORIAL CONSOLE</span><h1>Recipe quality desk</h1></div></header><div className="admin-stats"><article><b>{catalog.length}</b><span>Total recipes</span></article><article><b>{catalog.filter(r => r.status === "published").length}</b><span>Published & verified</span></article><article><b>0</b><span>Safety flags</span></article></div><section><h2>Review queue</h2>{catalog.length ? catalog.map(r => <article className="review-row" key={r.id}><img src={r.image} alt="" /><div><h3>{r.title}</h3><p>{r.cuisine} · {r.ingredients.length} ingredients · {r.steps.length} steps</p><span>Rights checked · Timing checked · Safety tags present</span></div><select value={statuses[r.id] || r.status} onChange={e => setStatuses({ ...statuses, [r.id]: e.target.value })}><option>draft</option><option>review</option><option>published</option><option>retired</option></select></article>) : <p className="quiet">No recipes in catalog yet. Recipes are added when you run a check-in while signed in.</p>}</section></div>;
 }
 function PlanPicker({ plan, setPlan }: { plan: string; setPlan: (p: string) => void }) {
   return <>{PLANS.map(p => <button key={p.id} className={plan === p.id ? "active" : ""} onClick={() => setPlan(p.id)}><div><b>{p.name}</b><span>{p.note}</span></div><strong>{p.price}</strong></button>)}</>;
