@@ -7,3 +7,5 @@ dist/
 **/.DS_Store
 tsconfig.tsbuildinfo
 .gstack/
+.superpowers/
+supabase/.temp/
