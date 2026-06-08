@@ -86,7 +86,7 @@ const CUISINE_GROUPS: OptionGroup[] = [
   { group: "East & Southeast Asia", items: ["Chinese / Cantonese", "Japanese", "Korean", "Thai", "Vietnamese", "Filipino", "Indonesian / Malaysian", "Singaporean"] },
 ];
 
-const PANTRY_GROUPS: OptionGroup[] = [
+export const PANTRY_GROUPS: OptionGroup[] = [
   { group: "Grains & carbs", items: ["Rice (white)", "Rice (brown)", "Pasta", "Couscous", "Quinoa", "Bread / sourdough", "Oats", "Polenta", "Noodles"] },
   { group: "Shelf-stable proteins", items: ["Canned chickpeas", "Canned beans", "Canned tuna / sardines", "Dried lentils", "Dried beans", "Tofu"] },
   { group: "Sauces & condiments", items: ["Soy sauce / tamari", "Fish sauce", "Worcestershire", "Sriracha / hot sauce", "Miso paste", "Tahini", "Harissa", "Coconut milk", "Canned tomatoes", "Stock / bouillon"] },

@@ -11,7 +11,7 @@ import { moods, recipes, cookingMoods, skillLevels, type Recipe } from "./data";
 import { clearStored, defaultDiners, defaultProfile, readStored, useStoredState, writeStored, type Diner, type Profile, type SocialPost } from "./store";
 import { profileForDiners, recommend, safeRecipes as applySafety } from "./recommendation";
 import { cleanText, readSafeImage } from "./security";
-import { onboardingQuestions, onboardingSections, type OnboardingKey, type OnboardingQuestion, type ProfileValue } from "./onboarding";
+import { onboardingQuestions, onboardingSections, PANTRY_GROUPS, type OnboardingKey, type OnboardingQuestion, type ProfileValue } from "./onboarding";
 import { SPOON_CUISINES, MEAL_TYPES, SEARCH_DIETS, SORT_OPTIONS, type RecipeFilters } from "./searchFilters";
 import { sendConfirmationEmail, sendWelcomeEmail, scheduleTrial, runDue, readInbox, unreadCount, markAllRead, cancelScheduled, simulateTrialEnd, type InboxItem } from "./notifications";
 import { analyzeFood, sumNutrition, flaggedAllergens, type FoodPhoto } from "./foodAnalysis";
@@ -84,7 +84,7 @@ async function syncSubscriptionFromDB(): Promise<{ status: string; plan: string;
 // every screen threading a callback through its props.
 const MenuCtx = createContext<() => void>(() => {});
 
-type Page = "home" | "search" | "diary" | "grocery" | "planner" | "detail" | "cook" | "insights" | "settings" | "favorites" | "import" | "admin" | "billing" | "psych-profile" | "food-profile" | "account" | "community" | "health" | "health-nutrition" | "health-variety" | "health-patterns" | "family-health" | "diners" | "food-log" | "help";
+type Page = "home" | "search" | "diary" | "grocery" | "planner" | "detail" | "cook" | "insights" | "settings" | "favorites" | "import" | "admin" | "billing" | "psych-profile" | "food-profile" | "account" | "community" | "health" | "health-nutrition" | "health-variety" | "health-patterns" | "family-health" | "diners" | "food-log" | "pantry" | "help";
 type Entry = "welcome" | "login" | "onboarding" | "account" | "verify" | "verified" | "subscription" | "app";
 const PLANS = [
   { id: "annual", name: "Annual", price: "$120/year", note: "Best value — about 2 months free" },
@@ -263,6 +263,7 @@ export default function App() {
       {page === "cook" && <CookScreen recipe={selected} exit={() => go("detail")} allergies={profile.allergies} finish={(rating, photo) => { setDiary(v => [{ recipe: selected, rating, when: "Today" }, ...v]); if (photo) setProfile(p => ({ ...p, photoLogs: [photo, ...p.photoLogs] })); go("diary"); }} />}
       {page === "diary" && <DiaryScreen diary={diary} open={open} photoLogs={profile.photoLogs} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} goFoodLog={() => go("food-log")} allergies={profile.allergies} />}
       {page === "grocery" && <GroceryScreen items={groceries} setItems={setGroceries} />}
+      {page === "pantry" && <PantryScreen items={profile.pantryStaples} setItems={items => setProfile(p => ({ ...p, pantryStaples: items }))} addToGrocery={item => setGroceries(v => v.includes(item) ? v : [...v, item])} />}
       {page === "planner" && <PlannerScreen open={open} />}
       {page === "insights" && <InsightsScreen diary={diary} />}
       {page === "settings" && <SettingsScreen profile={profile} save={setProfile} go={go} logout={() => { authSignOut(); setEntry("welcome"); }} />}
@@ -723,7 +724,7 @@ function BottomNav({ page, go }: { page: Page; go: (p: Page) => void }) {
 function MainMenu({ profile, page, go, close, openNotifs, unread, logout }: { profile: Profile; page: Page; go: (p: Page) => void; close: () => void; openNotifs: () => void; unread: number; logout: () => void }) {
   const nav = (p: Page) => { go(p); close(); };
   const groups: { title: string; items: [Page, string, typeof Home][] }[] = [
-    { title: "COOK & PLAN", items: [["home", "Home", Home], ["search", "Ask Moody", Sparkles], ["diary", "Diary", BookOpen], ["grocery", "Grocery", ShoppingCart], ["planner", "Planner", CalendarDays]] },
+    { title: "COOK & PLAN", items: [["home", "Home", Home], ["search", "Ask Moody", Sparkles], ["diary", "Diary", BookOpen], ["pantry", "My pantry", Salad], ["grocery", "Grocery", ShoppingCart], ["planner", "Planner", CalendarDays]] },
     { title: "DISCOVER", items: [["community", "Community", Users], ["favorites", "Saved recipes", Heart], ["import", "Import a recipe", Upload]] },
     { title: "TRACK", items: [["food-log", "Food photo log (camera)", Camera], ["insights", "Weekly reflections", BarChart3], ["health", "Health trends", Activity]] },
     { title: "YOUR PROFILE", items: [["food-profile", "Food profile & preferences", ClipboardCheck], ["psych-profile", "Psychological food profile", Sparkles], ["diners", "Household diners", UserPlus], ["account", "Account & public profile", UserRound]] },
@@ -1160,6 +1161,23 @@ function GroceryScreen({ items, setItems }: { items: string[]; setItems: (v: str
   const [entry, setEntry] = useState("");
   const add = (e: React.FormEvent) => { e.preventDefault(); const item = cleanText(entry, 80); if (item && !items.includes(item)) setItems([...items, item]); setEntry(""); };
   return <div className="screen"><TopBar title="Grocery" /><div className="grocery-hero"><ShoppingCart /><div><b>{items.length - checked.length} items left</b><p>One calm lap around the store.</p></div></div>{items.length ? <div className="grocery-list"><small>YOUR LIST</small>{items.map(i => <button className={checked.includes(i) ? "checked" : ""} onClick={() => setChecked(toggle(checked, i))} key={i}><span><Check /></span><p>{i}</p></button>)}</div> : <div className="empty-state" style={{ margin: "18px 0" }}><ShoppingCart /><h2>Your list is empty</h2><p>Add ingredients here, or send them straight from any recipe.</p></div>}<form className="add-cue" onSubmit={add}><input value={entry} onChange={e => setEntry(e.target.value)} placeholder="Add an item" /><button aria-label="Add item"><Plus /></button></form></div>;
+}
+// Pantry — a maintainable inventory of what the user has at home. Backed by the
+// profile's pantryStaples so it both seeds from onboarding and feeds Moody's
+// recommendations ("suggest meals from what I already have").
+function PantryScreen({ items, setItems, addToGrocery }: { items: string[]; setItems: (v: string[]) => void; addToGrocery: (item: string) => void }) {
+  const [entry, setEntry] = useState("");
+  const have = new Set(items);
+  const addItem = (raw: string) => { const item = cleanText(raw, 80); if (item && !have.has(item)) setItems([...items, item]); };
+  const remove = (item: string) => setItems(items.filter(i => i !== item));
+  const submit = (e: React.FormEvent) => { e.preventDefault(); addItem(entry); setEntry(""); };
+  return <div className="screen pantry"><TopBar title="My pantry" />
+    <div className="grocery-hero"><Salad /><div><b>{items.length} item{items.length === 1 ? "" : "s"} stocked</b><p>Keep track of what you have, so Moody can cook from your kitchen.</p></div></div>
+    <form className="add-cue" onSubmit={submit}><input value={entry} onChange={e => setEntry(e.target.value)} placeholder="Add something you have" /><button aria-label="Add to pantry"><Plus /></button></form>
+    {items.length ? <div className="pantry-items"><small>IN YOUR KITCHEN</small><div className="pantry-chips">{items.map(i => <span className="pantry-chip" key={i}>{i}<button aria-label={`Remove ${i}`} onClick={() => remove(i)}><X size={13} /></button><button className="to-cart" aria-label={`Add ${i} to grocery list`} title="Running low? Add to grocery" onClick={() => addToGrocery(i)}><ShoppingCart size={13} /></button></span>)}</div></div>
+      : <div className="empty-state" style={{ margin: "18px 0" }}><Salad /><h2>Your pantry is empty</h2><p>Add staples and ingredients you keep at home. Tap a suggestion below to get started.</p></div>}
+    <div className="pantry-suggest"><small>QUICK ADD</small>{PANTRY_GROUPS.map(g => { const opts = g.items.filter(i => !have.has(i)); if (!opts.length) return null; return <div className="pantry-group" key={g.group}><b>{g.group}</b><div className="choice">{opts.map(i => <button onClick={() => addItem(i)} key={i}>{i}</button>)}</div></div>; })}</div>
+  </div>;
 }
 function PlannerScreen(_: { open: (r: Recipe) => void }) {
   return <div className="screen"><TopBar title="This week" /><p className="quiet">Enough structure to help, enough room to change your mind.</p><div className="planner">{["Mon", "Tue", "Wed", "Thu", "Fri"].map((day, n) => <article key={day}><b>{day}<span>{n + 1}</span></b><button className="empty">+ Add dinner</button></article>)}</div></div>;

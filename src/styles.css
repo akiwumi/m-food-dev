@@ -369,6 +369,17 @@ body,.app{background:linear-gradient(180deg,#dceef2 0%,#eaf4f3 30%,#f5fbfa 100%)
 .mm-group button.active{background:var(--sage);color:var(--blue-deep)}
 .mm-logout{display:flex;align-items:center;justify-content:center;gap:8px;border:0;background:transparent;color:#a33;font-weight:700;padding:14px;margin-top:2px}
 .search-grid article>.remove-saved{color:#a33;z-index:2;box-shadow:var(--shadow-sm)}
+/* ── Pantry ───────────────────────────────────────────────────────── */
+.pantry .pantry-items{margin-top:18px}
+.pantry .pantry-items>small,.pantry .pantry-suggest>small,.pantry .pantry-group>b{display:block;font-size:10px;letter-spacing:.12em;color:var(--muted);font-weight:700}
+.pantry .pantry-items>small,.pantry .pantry-suggest>small{margin-bottom:8px}
+.pantry-chips{display:flex;flex-wrap:wrap;gap:8px}
+.pantry-chip{display:inline-flex;align-items:center;gap:6px;background:var(--white);border:1px solid var(--line);border-radius:99px;padding:8px 8px 8px 14px;font-size:13px;font-weight:600;box-shadow:var(--shadow-sm)}
+.pantry-chip button{border:0;background:var(--sage);color:var(--olive);width:24px;height:24px;border-radius:50%;display:grid;place-items:center;flex:none}
+.pantry-chip button.to-cart{background:var(--blue-soft,#e0eef6);color:var(--blue-deep)}
+.pantry-suggest{margin-top:22px}
+.pantry-group{margin-bottom:14px}
+.pantry-group>b{margin-bottom:7px}
 .welcome-modern .wm-explain{background:var(--glass,rgba(255,255,255,.7));border:1px solid rgba(0,0,0,.06);border-radius:24px;padding:20px;margin:4px 0 16px;display:grid;gap:12px;box-shadow:var(--shadow)}
 .welcome-modern .wm-explain h2{display:flex;align-items:center;gap:8px;font-size:18px;font-weight:800;margin:0;letter-spacing:-.01em}
 .welcome-modern .wm-explain h2 svg{color:var(--blue-deep)}
