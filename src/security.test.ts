@@ -35,4 +35,16 @@ describe("client security controls", () => {
     expect(migration).toContain("'community-images', 'community-images', false");
     expect(migration).toContain("(storage.foldername(name))[1] = auth.uid()::text");
   });
+
+  it("uses function-level auth for asymmetric Supabase user tokens", () => {
+    const config = readFileSync("supabase/config.toml", "utf8");
+    for (const slug of ["ai-gateway", "recipes"]) {
+      expect(config).toContain(`[functions.${slug}]`);
+      expect(config).toMatch(new RegExp(`\\[functions\\.${slug}\\][\\s\\S]*?verify_jwt = false`));
+
+      const source = readFileSync(`supabase/functions/${slug}/index.ts`, "utf8");
+      expect(source).toContain("/auth/v1/user");
+      expect(source).toContain('request.headers.get("authorization")');
+    }
+  });
 });

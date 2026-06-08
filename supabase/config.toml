@@ -1,0 +1,7 @@
+project_id = "pjfoiamcflimdreoxvpg"
+
+[functions.ai-gateway]
+verify_jwt = false
+
+[functions.recipes]
+verify_jwt = false
