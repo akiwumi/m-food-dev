@@ -99,7 +99,11 @@ export default function App() {
   const [splash, setSplash] = useState(true);
   const [entry, setEntry] = useStoredState<Entry>("moodfood-entry", "welcome");
   const [storedProfile, setProfile] = useStoredState<Profile>("moodfood-profile", defaultProfile);
-  const profile = { ...defaultProfile, ...storedProfile };
+  // Memoized so its reference is stable across renders. Without this, every
+  // render produced a new `profile` object, which cascaded into `sharedProfile`
+  // and re-fired the recipe-fetch effect on a loop — hammering the edge function
+  // into 502s and silently falling back to local recipes.
+  const profile = useMemo(() => ({ ...defaultProfile, ...storedProfile }), [storedProfile]);
   const [page, setPage] = useState<Page>("home");
   const [selected, setSelected] = useState(recipes[0]);
   const [mood, setMood] = useState("Cozy");
