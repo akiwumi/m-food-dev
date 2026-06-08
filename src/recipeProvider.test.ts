@@ -83,4 +83,14 @@ describe("fetchTheMealDbRecipes", () => {
       equipment: ["frying pan"],
     });
   });
+
+  it("preserves a full Spoonacular step image URL", () => {
+    const recipe = normalizeSpoonacularRecipe({
+      id: 8,
+      title: "Soup",
+      analyzedInstructions: [{ steps: [{ step: "Simmer.", image: "https://img.spoonacular.com/recipes/simmer.jpg" }] }],
+    }, "Cozy");
+
+    expect(recipe.steps[0].image).toBe("https://img.spoonacular.com/recipes/simmer.jpg");
+  });
 });

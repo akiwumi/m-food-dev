@@ -56,7 +56,7 @@ export function normalizeSpoonacularRecipe(recipe: any, mood: string) {
       text,
       title: text,
       detail: text,
-      image: step.image ? `https://img.spoonacular.com/recipes/${step.image}` : "",
+      image: step.image ? (/^https?:\/\//.test(step.image) ? step.image : `https://img.spoonacular.com/recipes/${step.image}`) : "",
       active: (step.ingredients ?? []).map((item: any) => item.name).filter(Boolean),
       equipment: (step.equipment ?? []).map((item: any) => item.name).filter(Boolean),
     };

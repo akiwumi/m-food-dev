@@ -19,6 +19,8 @@ import { aiChat, type ChatTurn } from "./ai";
 import { fetchCuratedRecipes, buildFoodHistory } from "./recipes";
 import { signUp as authSignUp, signIn as authSignIn, signOut as authSignOut, isEmailConfirmed, onAuthChange, isSupabaseConfigured } from "./auth";
 import { supabase } from "./supabase";
+import { displayStepDetail, displayStepTitle, formatTimer, stepImageSources } from "./cooking";
+import { RecipeImage } from "./RecipeImage";
 
 const SUPABASE_FN = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 
@@ -954,7 +956,7 @@ function TopBar({ title, back }: { title: string; back?: () => void }) {
   return <header className="top-bar"><button onClick={back} disabled={!back}><ArrowLeft /></button><h1>{title}</h1><button onClick={openMenu} aria-label="Open menu"><Menu /></button></header>;
 }
 function PickCard({ recipe, servings, open, reject }: { recipe: Recipe; servings: number; open: () => void; reject: () => void }) {
-  return <article className="pick-card"><img src={recipe.image} alt="" /><div><h2>{recipe.title}</h2><span><Clock3 size={13} />{recipe.time} min</span><span><Users size={13} />Scaled for {servings}</span><span><Check size={13} />safe for everyone</span><button onClick={open}>View recipe</button><button className="reject" onClick={reject}>Not tonight</button></div><button className="save-mini"><Heart size={17} /></button></article>;
+  return <article className="pick-card"><RecipeImage sources={stepImageSources(undefined, recipe.image)} alt={recipe.title} /><div><h2>{recipe.title}</h2><span><Clock3 size={13} />{recipe.time} min</span><span><Users size={13} />Scaled for {servings}</span><span><Check size={13} />safe for everyone</span><button onClick={open}>View recipe</button><button className="reject" onClick={reject}>Not tonight</button></div><button className="save-mini"><Heart size={17} /></button></article>;
 }
 
 function TokenInput({ tokens, setTokens, placeholder }: { tokens: string[]; setTokens: (v: string[]) => void; placeholder: string }) {
@@ -1079,7 +1081,7 @@ function SearchScreen({ source, profile, mood, history, open, saved, setSaved }:
     {loading
       ? <div className="empty-state"><Sparkles /><h2>Searching real recipes…</h2><p>Moody is matching {SPOON_CUISINES.length}+ cuisines and your safety profile.</p></div>
       : shown.length
-        ? <div className="search-grid">{shown.map(r => <article key={r.id}><img src={r.image} alt="" /><button onClick={() => setSaved(toggle(saved, r.id))}><Heart fill={saved.includes(r.id) ? "currentColor" : "none"} /></button><div><h2>{r.title}</h2><p>{r.reason}</p><span><Clock3 size={13} /> {r.time} min · {r.difficulty}</span><button className="primary" onClick={() => open(r)}>View recipe</button></div></article>)}</div>
+        ? <div className="search-grid">{shown.map(r => <article key={r.id}><RecipeImage sources={stepImageSources(undefined, r.image)} alt={r.title} /><button onClick={() => setSaved(toggle(saved, r.id))}><Heart fill={saved.includes(r.id) ? "currentColor" : "none"} /></button><div><h2>{r.title}</h2><p>{r.reason}</p><span><Clock3 size={13} /> {r.time} min · {r.difficulty}</span><button className="primary" onClick={() => open(r)}>View recipe</button></div></article>)}</div>
         : <div className="empty-state"><Search /><h2>No matches</h2><p>Try widening your filters or removing an excluded ingredient.</p></div>}
   </div>;
 }
@@ -1096,12 +1098,12 @@ function DetailScreen({ recipe, servings, back, cook, saved, toggleSave, addGroc
     }
     shareToCommunity();
   };
-  return <div className="detail"><div className="detail-image"><img src={recipe.image} alt="" /><button onClick={back}><ArrowLeft /></button><div><button onClick={share} aria-label="Share recipe"><Share2 /></button><button onClick={toggleSave} aria-label={saved ? "Saved" : "Save recipe"}><Heart fill={saved ? "currentColor" : "none"} /></button></div>{recipe.video && <button className="detail-play" onClick={() => setShowVideo(true)} aria-label="Watch video"><Play size={26} fill="currentColor" /></button>}</div><section className="detail-sheet"><h1>{recipe.title}</h1><div className="facts"><span><Clock3 />{recipe.time} min</span><span><Users />Serves {servings}</span><span><Star />{recipe.calories} cal each</span></div>{recipe.video && showVideo && <div className="detail-video"><iframe src={recipe.video} title={`${recipe.title} video`} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen /></div>}{recipe.video && !showVideo && <button className="secondary watch-btn" onClick={() => setShowVideo(true)}><Play size={16} fill="currentColor" />Watch how to make it</button>}<div className="moody-note"><Moody /><p>{recipe.reason}</p></div><div className="section-line"><h2>Ingredients</h2><span>{recipe.ingredients.length} items</span></div><div className="ingredients">{recipe.ingredients.map(i => <button className={checked.includes(i) ? "checked" : ""} onClick={() => setChecked(toggle(checked, i))} key={i}><span><Check size={14} /></span><p>{i}</p><em>{checked.includes(i) ? "Ready" : "I have it"}</em></button>)}</div><div className="detail-actions"><button className="secondary" onClick={addGroceries}><ShoppingCart size={18} />Add to grocery</button><button className="secondary" onClick={share}><Share2 size={18} />Share recipe</button></div>{recipe.sourceUrl && <a className="source-link" href={recipe.sourceUrl} target="_blank" rel="noopener noreferrer">View original recipe ↗</a>}<FoodCamera label="📸 Log your version with a photo" onSave={p => addPhoto({ ...p, recipeId: recipe.id })} hint={{ recipeCalories: recipe.calories, recipeName: recipe.title }} allergies={allergies} style={{ marginTop: 10 }} /><button className="primary sticky-cta" onClick={cook}><ChefHat size={18} />Start cook mode</button></section></div>;
+  return <div className="detail"><div className="detail-image"><RecipeImage sources={stepImageSources(undefined, recipe.image)} alt={recipe.title} /><button onClick={back}><ArrowLeft /></button><div><button onClick={share} aria-label="Share recipe"><Share2 /></button><button onClick={toggleSave} aria-label={saved ? "Saved" : "Save recipe"}><Heart fill={saved ? "currentColor" : "none"} /></button></div>{recipe.video && <button className="detail-play" onClick={() => setShowVideo(true)} aria-label="Watch video"><Play size={26} fill="currentColor" /></button>}</div><section className="detail-sheet"><h1>{recipe.title}</h1><div className="facts"><span><Clock3 />{recipe.time} min</span><span><Users />Serves {servings}</span><span><Star />{recipe.calories} cal each</span></div>{recipe.video && showVideo && <div className="detail-video"><iframe src={recipe.video} title={`${recipe.title} video`} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen /></div>}{recipe.video && !showVideo && <button className="secondary watch-btn" onClick={() => setShowVideo(true)}><Play size={16} fill="currentColor" />Watch how to make it</button>}<div className="moody-note"><Moody /><p>{recipe.reason}</p></div><div className="section-line"><h2>Ingredients</h2><span>{recipe.ingredients.length} items</span></div><div className="ingredients">{recipe.ingredients.map(i => <button className={checked.includes(i) ? "checked" : ""} onClick={() => setChecked(toggle(checked, i))} key={i}><span><Check size={14} /></span><p>{i}</p><em>{checked.includes(i) ? "Ready" : "I have it"}</em></button>)}</div><div className="detail-actions"><button className="secondary" onClick={addGroceries}><ShoppingCart size={18} />Add to grocery</button><button className="secondary" onClick={share}><Share2 size={18} />Share recipe</button></div>{recipe.sourceUrl && <a className="source-link" href={recipe.sourceUrl} target="_blank" rel="noopener noreferrer">View original recipe ↗</a>}<FoodCamera label="📸 Log your version with a photo" onSave={p => addPhoto({ ...p, recipeId: recipe.id })} hint={{ recipeCalories: recipe.calories, recipeName: recipe.title }} allergies={allergies} style={{ marginTop: 10 }} /><button className="primary sticky-cta" onClick={cook}><ChefHat size={18} />Start cook mode</button></section></div>;
 }
 
 function CookScreen({ recipe, exit, finish, allergies }: { recipe: Recipe; exit: () => void; finish: (rating: number, photo?: FoodPhoto) => void; allergies: string[] }) {
   const saved = readStored<{ step?: unknown }>(`moodfood-cook-${recipe.id}`, {});
-  const resumedStep = typeof saved.step === "number" && Number.isInteger(saved.step) ? Math.min(saved.step, recipe.steps.length - 1) : 0;
+  const resumedStep = typeof saved.step === "number" && Number.isInteger(saved.step) ? Math.min(saved.step, Math.max(0, recipe.steps.length - 1)) : 0;
   const [step, setStep] = useState(Math.max(0, resumedStep));
   const [seconds, setSeconds] = useState(0);
   const [running, setRunning] = useState(false);
@@ -1112,7 +1114,36 @@ function CookScreen({ recipe, exit, finish, allergies }: { recipe: Recipe; exit:
   useEffect(() => writeStored(`moodfood-cook-${recipe.id}`, { step }), [step, recipe.id]);
   useEffect(() => { if (!running || seconds <= 0) return; const id = setInterval(() => setSeconds((v: number) => v - 1), 1000); return () => clearInterval(id); }, [running, seconds]);
   const next = () => step === recipe.steps.length - 1 ? setDone(true) : setStep(step + 1);
-  return <div className="cook"><header><button onClick={exit}><X /></button><b>Step {step + 1} of {recipe.steps.length}</b><button><MoreVertical /></button></header><div className="cook-progress"><span style={{ width: `${((step + 1) / recipe.steps.length) * 100}%` }} /></div><h1>{current.text}</h1><img src={recipe.image} alt="" />{current.active && <div className="active-items"><small>Active ingredients</small><div>{current.active.map(i => <span key={i}>{i}</span>)}</div></div>}{current.timer && <button className="timer" onClick={() => { setSeconds(current.timer!); setRunning(!running); }}><Timer />{seconds ? `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}` : `${Math.round(current.timer / 60)}:00`}</button>}<div className="cook-controls"><button onClick={() => setStep(Math.max(0, step - 1))}><RotateCcw /><span>Previous</span></button><button className="pause" onClick={() => setRunning(!running)}>{running ? <Pause /> : <Play />}<span>{running ? "Pause" : "Start"}</span></button><button onClick={next}><Play /><span>{step === recipe.steps.length - 1 ? "Finish" : "Next"}</span></button></div><div className="awake"><Check />Screen stays awake</div>{done && <div className="finish-overlay"><section><div className="done-mark"><Check /></div><h2>Dinner is ready.</h2><p>How did it land tonight?</p><div className="stars">{[1,2,3,4,5].map(n => <button onClick={() => setRating(n)} key={n}><Star fill={n <= rating ? "currentColor" : "none"} /></button>)}</div>{mealPhoto ? <div className="photo-preview-mini"><img src={mealPhoto.image} alt="Your meal" /><span><b>{mealPhoto.calories} kcal</b> estimated · {mealPhoto.dish}</span></div> : <FoodCamera label="📸 Add a photo of your cook" onSave={p => setMealPhoto({ ...p, recipeId: recipe.id })} allergies={allergies} compact />}<button className="primary" onClick={() => finish(rating, mealPhoto ?? undefined)}>Log meal &amp; finish</button><button className="text" onClick={() => setDone(false)}>Back to cooking</button></section></div>}</div>;
+  if (!current) return <div className="cook cook-unavailable"><section className="cook-instruction-card"><h1>Instructions unavailable.</h1><p>This recipe did not include cooking steps.</p>{recipe.sourceUrl && <a className="source-link" href={recipe.sourceUrl} target="_blank" rel="noopener noreferrer">View original recipe ↗</a>}<button className="cook-next" onClick={exit}>Back to recipe</button></section></div>;
+  const timerValue = seconds || current.timer || 0;
+  return <div className="cook">
+    <header className="cook-header">
+      <button className="cook-circle" onClick={exit} aria-label="Close cook mode"><ArrowLeft /></button>
+      <b>Step {step + 1} of {recipe.steps.length}</b>
+      <button className="cook-circle" aria-label="More cooking options"><MoreVertical /></button>
+    </header>
+    <div className="cook-progress"><span style={{ width: `${((step + 1) / recipe.steps.length) * 100}%` }} /></div>
+    <RecipeImage className="cook-image" sources={stepImageSources(current.image, recipe.image)} alt={`${recipe.title}, step ${step + 1}`} />
+    <section className="cook-instruction-card">
+      <small>STEP {step + 1}</small>
+      <h1>{displayStepTitle(current)}</h1>
+      <p>{displayStepDetail(current)}</p>
+      {current.cue && <div className="cook-cue"><b>Look for:</b> {current.cue}</div>}
+      {(current.active?.length || current.equipment?.length) && <div className="cook-chips">
+        {current.active?.map(item => <span key={`ingredient-${item}`}>{item}</span>)}
+        {current.equipment?.map(item => <span className="equipment" key={`equipment-${item}`}>{item}</span>)}
+      </div>}
+      {current.timer && <button className="cook-timer" onClick={() => { if (!seconds) setSeconds(current.timer!); setRunning(!running); }}>
+        <span><Timer size={17} /></span><div><b>{formatTimer(timerValue)}</b><small>Verified cooking timer</small></div><i>{running ? <Pause size={16} /> : <Play size={16} fill="currentColor" />}</i>
+      </button>}
+      <div className="cook-controls">
+        <button onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0}><ArrowLeft size={17} /> Previous</button>
+        <button className="cook-next" onClick={next}>{step === recipe.steps.length - 1 ? "Finish" : "Next step"} <ArrowRight size={17} /></button>
+      </div>
+      <div className="awake"><Check size={14} />Screen stays awake</div>
+    </section>
+    {done && <div className="finish-overlay"><section><div className="done-mark"><Check /></div><h2>Dinner is ready.</h2><p>How did it land tonight?</p><div className="stars">{[1,2,3,4,5].map(n => <button onClick={() => setRating(n)} key={n}><Star fill={n <= rating ? "currentColor" : "none"} /></button>)}</div>{mealPhoto ? <div className="photo-preview-mini"><img src={mealPhoto.image} alt="Your meal" /><span><b>{mealPhoto.calories} kcal</b> estimated · {mealPhoto.dish}</span></div> : <FoodCamera label="📸 Add a photo of your cook" onSave={p => setMealPhoto({ ...p, recipeId: recipe.id })} allergies={allergies} compact />}<button className="primary" onClick={() => finish(rating, mealPhoto ?? undefined)}>Log meal &amp; finish</button><button className="text" onClick={() => setDone(false)}>Back to cooking</button></section></div>}
+  </div>;
 }
 
 function DiaryScreen({ diary, open, photoLogs, addPhoto, goFoodLog, allergies }: {
