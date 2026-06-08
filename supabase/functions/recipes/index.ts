@@ -29,6 +29,7 @@
 // sortDirection, ignorePantry, plus full recipe info/nutrition/instructions.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { enrichSteps } from "./enrich.ts";
 import { fetchTheMealDbRecipes, normalizeSpoonacularRecipe } from "./provider.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
@@ -272,6 +273,13 @@ async function curate(recipes: any[], profile: any, mood: string, history: any):
   }
 }
 
+async function enrichRecipeInstructions(recipes: any[]) {
+  return Promise.all(recipes.map(async recipe => ({
+    ...recipe,
+    steps: await enrichSteps(recipe.steps ?? [], recipe.title ?? "Recipe", OPENAI_API_KEY),
+  })));
+}
+
 Deno.serve(async (request) => {
   const origin = request.headers.get("origin");
   if (request.method === "OPTIONS") {
@@ -376,16 +384,16 @@ Deno.serve(async (request) => {
       if (safe.length) {
         const curated = await curate(safe, profile, mood, history);
         const withVideos = await attachVideos(curated, query, cuisines[0] ?? mood);
-        return Response.json({ provider: "spoonacular", recipes: withVideos }, { headers: headers(origin) });
+        return Response.json({ provider: "spoonacular", recipes: await enrichRecipeInstructions(withVideos) }, { headers: headers(origin) });
       }
     }
 
     const fallback = safetyFilter(await fetchTheMealDbRecipes(query, mood), profile.allergies ?? []);
-    if (fallback.length) return Response.json({ provider: "themealdb", recipes: fallback }, { headers: headers(origin) });
+    if (fallback.length) return Response.json({ provider: "themealdb", recipes: await enrichRecipeInstructions(fallback) }, { headers: headers(origin) });
     return Response.json({ error: "Recipe sources failed" }, { status: 502, headers: headers(origin) });
   } catch {
     const fallback = safetyFilter(await fetchTheMealDbRecipes(query, mood), profile.allergies ?? []);
-    if (fallback.length) return Response.json({ provider: "themealdb", recipes: fallback }, { headers: headers(origin) });
+    if (fallback.length) return Response.json({ provider: "themealdb", recipes: await enrichRecipeInstructions(fallback) }, { headers: headers(origin) });
     return Response.json({ error: "Recipe sources failed" }, { status: 502, headers: headers(origin) });
   }
 });
