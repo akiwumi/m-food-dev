@@ -29,8 +29,7 @@
 // sortDirection, ignorePantry, plus full recipe info/nutrition/instructions.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { enrichSteps } from "./enrich.ts";
-import { fetchTheMealDbRecipes, filterRecipesForProfile, normalizeSpoonacularRecipe } from "./provider.ts";
+import { dedupeRecipes, fetchTheMealDbRecipes, filterRecipesByCategory, filterRecipesByMaxTime, filterRecipesForProfile, normalizeSpoonacularRecipe } from "./provider.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
@@ -119,6 +118,7 @@ function mapCuisines(cuisines: string[]): string[] {
 
 // App meal-type label → Spoonacular `type`.
 const MEAL_TYPE_MAP: Record<string, string> = {
+  main: "main course", starter: "appetizer",
   breakfast: "breakfast", brunch: "breakfast", lunch: "main course",
   dinner: "main course", "late night": "main course", "meal prep": "main course",
   snacks: "snack", snack: "snack", dessert: "dessert", "side dish": "side dish",
@@ -126,6 +126,7 @@ const MEAL_TYPE_MAP: Record<string, string> = {
   beverage: "beverage", drink: "drink", "main course": "main course",
 };
 function mapMealType(type: string): string {
+  if ((type ?? "").toLowerCase().trim() === "starter") return "";
   return MEAL_TYPE_MAP[(type ?? "").toLowerCase().trim()] ?? "";
 }
 
@@ -169,38 +170,6 @@ function joinList(values: unknown, max: number, itemMax = 40): string {
     .filter((v): v is string => typeof v === "string")
     .map(v => v.trim().slice(0, itemMax))
     .filter(Boolean))].slice(0, max).join(",");
-}
-
-// Best-effort: attach a cooking video to recipes when one exists. Spoonacular's
-// complexSearch has no video field, so we make ONE videos search and fuzzy-match
-// titles by shared significant words. Cheap (1 call) and only adds when found.
-const STOP = new Set(["the", "and", "with", "a", "an", "of", "in", "to", "for", "easy", "best", "quick", "recipe", "homemade", "style", "your"]);
-const sig = (s: string) => new Set((s ?? "").toLowerCase().replace(/[^a-z\s]/g, " ").split(/\s+/).filter(w => w.length > 2 && !STOP.has(w)));
-async function attachVideos(recipes: any[], query: string, hint: string) {
-  if (!recipes.length) return recipes;
-  try {
-    const q = (query || hint || recipes[0]?.title || "dinner").slice(0, 80);
-    const res = await fetch(`https://api.spoonacular.com/food/videos/search?${new URLSearchParams({ apiKey: SPOONACULAR_API_KEY, query: q, number: "20" })}`);
-    if (!res.ok) return recipes;
-    const vids = (await res.json())?.videos ?? [];
-    if (!vids.length) return recipes;
-    return recipes.map(r => {
-      if (r.video) return r;
-      const rw = sig(r.title);
-      let best: any = null, bestScore = 0;
-      for (const v of vids) {
-        const vw = sig(v.shortTitle || v.title);
-        let overlap = 0;
-        for (const w of rw) if (vw.has(w)) overlap++;
-        if (overlap > bestScore) { bestScore = overlap; best = v; }
-      }
-      return bestScore >= 2 && best?.youTubeId
-        ? { ...r, video: `https://www.youtube.com/embed/${best.youTubeId}` }
-        : r;
-    });
-  } catch {
-    return recipes;
-  }
 }
 
 // Belt-and-suspenders: never let an allergen through even if the upstream filter slips.
@@ -264,6 +233,7 @@ async function curate(recipes: any[], profile: any, mood: string, history: any):
         max_tokens: 600,
         messages: [{ role: "system", content: sys }, { role: "user", content: menu }],
       }),
+      signal: AbortSignal.timeout(5_000),
     });
     if (!res.ok) return recipes;
     const data = await res.json();
@@ -280,13 +250,6 @@ async function curate(recipes: any[], profile: any, mood: string, history: any):
   } catch {
     return recipes;
   }
-}
-
-async function enrichRecipeInstructions(recipes: any[]) {
-  return Promise.all(recipes.map(async recipe => ({
-    ...recipe,
-    steps: await enrichSteps(recipe.steps ?? [], recipe.title ?? "Recipe", OPENAI_API_KEY),
-  })));
 }
 
 Deno.serve(async (request) => {
@@ -315,10 +278,11 @@ Deno.serve(async (request) => {
   const query = typeof body?.query === "string" ? body.query.slice(0, 80)
     : typeof filters?.query === "string" ? filters.query.slice(0, 80) : "";
   const num = (v: unknown, lo: number, hi: number) => Number.isFinite(v) ? Math.max(lo, Math.min(hi, Math.round(v as number))) : null;
+  const maxTime = num(filters.maxReadyTime, 5, 180) ?? time;
 
   const params = new URLSearchParams({
     apiKey: SPOONACULAR_API_KEY,
-    number: "10",
+    number: "8",
     addRecipeNutrition: "true",
     addRecipeInformation: "true",
     addRecipeInstructions: "true",
@@ -326,7 +290,7 @@ Deno.serve(async (request) => {
     fillIngredients: "true",
     ignorePantry: "true",
     offset: String(num(body?.offset, 0, 900) ?? 0),
-    maxReadyTime: String(num(filters.maxReadyTime, 5, 180) ?? time),
+    maxReadyTime: String(maxTime),
   });
   if (query) params.set("query", query);
 
@@ -336,7 +300,7 @@ Deno.serve(async (request) => {
   params.set("sortDirection", dir);
 
   // Diet: a per-search override wins over the saved profile diet.
-  const diet = mapDiet(filters.diet ?? profile.diet);
+  const diet = mapDiet(profile.diet) || mapDiet(filters.diet);
   if (diet) params.set("diet", diet);
 
   const intolerances = mapIntolerances(profile.allergies ?? []);
@@ -349,7 +313,8 @@ Deno.serve(async (request) => {
   if (cuisines.length) params.set("cuisine", cuisines.slice(0, 6).join(","));
 
   // Meal type: explicit search selection only (same hard-filter reasoning).
-  const type = mapMealType(filters.type ?? "");
+  const category = typeof filters.type === "string" ? filters.type : "";
+  const type = mapMealType(category);
   if (type) params.set("type", type);
 
   // Exclude: hard dislikes always; pork/beef when a religious rule forbids it.
@@ -395,13 +360,12 @@ Deno.serve(async (request) => {
       const data = await res.json();
       const normalized = (data.results ?? []).map((r: any) => normalizeSpoonacularRecipe(r, mood));
       spoonCount = normalized.length;
-      const safe = filterRecipesForProfile(safetyFilter(normalized, profile.allergies ?? []), profile);
+      const safe = dedupeRecipes(filterRecipesByCategory(filterRecipesByMaxTime(filterRecipesForProfile(safetyFilter(normalized, profile.allergies ?? []), profile), maxTime), category)).slice(0, 8);
       spoonSafeCount = safe.length;
       console.log(`[recipes] spoonacular: status=${res.status} total=${spoonCount} safe=${spoonSafeCount}`);
       if (safe.length) {
         const curated = await curate(safe, profile, mood, history);
-        const withVideos = await attachVideos(curated, query, cuisines[0] ?? mood);
-        return Response.json({ provider: "spoonacular", recipes: await enrichRecipeInstructions(withVideos) }, { headers: headers(origin) });
+        return Response.json({ provider: "spoonacular", recipes: curated }, { headers: headers(origin) });
       }
     } else {
       spoonErr = await res.text().catch(() => "");
@@ -410,10 +374,10 @@ Deno.serve(async (request) => {
 
     const mealdbRecipes = await fetchTheMealDbRecipes(query, mood);
     mealdbCount = mealdbRecipes.length;
-    const fallback = filterRecipesForProfile(safetyFilter(mealdbRecipes, profile.allergies ?? []), profile);
+    const fallback = dedupeRecipes(filterRecipesByCategory(filterRecipesByMaxTime(filterRecipesForProfile(safetyFilter(mealdbRecipes, profile.allergies ?? []), profile), maxTime), category)).slice(0, 8);
     mealdbSafeCount = fallback.length;
     console.log(`[recipes] themealdb: total=${mealdbCount} safe=${mealdbSafeCount}`);
-    if (fallback.length) return Response.json({ provider: "themealdb", recipes: await enrichRecipeInstructions(fallback) }, { headers: headers(origin) });
+    if (fallback.length) return Response.json({ provider: "themealdb", recipes: fallback }, { headers: headers(origin) });
 
     console.error(`[recipes] both sources empty — diet=${profile.diet} allergies=${JSON.stringify(profile.allergies)}`);
     return Response.json({
@@ -426,10 +390,10 @@ Deno.serve(async (request) => {
     try {
       const mealdbRecipes = await fetchTheMealDbRecipes(query, mood);
       mealdbCount = mealdbRecipes.length;
-      const fallback = filterRecipesForProfile(safetyFilter(mealdbRecipes, profile.allergies ?? []), profile);
+      const fallback = dedupeRecipes(filterRecipesByCategory(filterRecipesByMaxTime(filterRecipesForProfile(safetyFilter(mealdbRecipes, profile.allergies ?? []), profile), maxTime), category)).slice(0, 8);
       mealdbSafeCount = fallback.length;
       console.log(`[recipes] themealdb fallback after exception: total=${mealdbCount} safe=${mealdbSafeCount}`);
-      if (fallback.length) return Response.json({ provider: "themealdb", recipes: await enrichRecipeInstructions(fallback) }, { headers: headers(origin) });
+      if (fallback.length) return Response.json({ provider: "themealdb", recipes: fallback }, { headers: headers(origin) });
     } catch (e2) {
       console.error(`[recipes] themealdb also threw: ${e2 instanceof Error ? e2.message : String(e2)}`);
     }

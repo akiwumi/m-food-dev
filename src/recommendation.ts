@@ -3,6 +3,8 @@ import type { Profile } from "./store";
 import type { Diner } from "./store";
 
 export const RANKING_CONFIG_VERSION = "pilot-v1";
+const LAND_MEAT = /\b(beef|steak|veal|chicken|turkey|duck|pork|bacon|ham|sausage|lamb|mutton|goat|venison|rabbit)\b/i;
+const FISH = /\b(fish|salmon|tuna|cod|haddock|trout|sardine|anchov|prawn|shrimp|crab|lobster|mussel|clam|oyster|scallop|seafood)\b/i;
 
 function supportsDiet(recipe: Recipe, diet: string) {
   if (["Anything", "Everything", "Flexitarian"].includes(diet)) return true;
@@ -11,12 +13,16 @@ function supportsDiet(recipe: Recipe, diet: string) {
 }
 
 export function safeRecipes(recipes: Recipe[], profile: Profile) {
-  return recipes.filter(recipe =>
-    recipe.status === "published" &&
-    !recipe.allergens.some(allergen => profile.allergies.includes(allergen)) &&
-    supportsDiet(recipe, profile.diet) &&
-    recipe.equipment.every(item => profile.equipment.includes(item)),
-  );
+  return recipes.filter(recipe => {
+    const text = `${recipe.title} ${recipe.ingredients.join(" ")}`;
+    const diet = profile.diet.toLowerCase();
+    return recipe.status === "published" &&
+      !recipe.allergens.some(allergen => profile.allergies.includes(allergen)) &&
+      supportsDiet(recipe, profile.diet) &&
+      !(diet.includes("pesc") && LAND_MEAT.test(text)) &&
+      !((diet.includes("vegetarian") || diet.includes("vegan")) && (LAND_MEAT.test(text) || FISH.test(text))) &&
+      recipe.equipment.every(item => profile.equipment.includes(item));
+  });
 }
 
 // Maps comfort-food categories and flavor/texture cues to the words we expect
@@ -84,6 +90,7 @@ export function recipeScore(recipe: Recipe, profile: Profile, mood: string, ener
 
 export function recommend(recipes: Recipe[], profile: Profile, mood: string, energy: number, time: number) {
   return safeRecipes(recipes, profile)
+    .filter(recipe => recipe.time <= time)
     .map(recipe => ({ recipe, score: recipeScore(recipe, profile, mood, energy, time), configVersion: RANKING_CONFIG_VERSION }))
     .sort((a, b) => b.score - a.score);
 }

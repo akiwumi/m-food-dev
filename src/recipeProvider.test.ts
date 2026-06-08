@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fetchTheMealDbRecipes, filterRecipesForProfile, normalizeSpoonacularRecipe } from "../supabase/functions/recipes/provider";
+import { dedupeRecipes, fetchTheMealDbRecipes, filterRecipesByCategory, filterRecipesByMaxTime, filterRecipesForProfile, normalizeSpoonacularRecipe } from "../supabase/functions/recipes/provider";
 
 describe("fetchTheMealDbRecipes", () => {
   it("returns normalized real recipes when the primary provider is unavailable", async () => {
@@ -84,6 +84,33 @@ describe("fetchTheMealDbRecipes", () => {
     });
   });
 
+  it("combines every Spoonacular instruction section into the full method", () => {
+    const recipe = normalizeSpoonacularRecipe({
+      id: 9,
+      title: "Dinner",
+      analyzedInstructions: [
+        { name: "Main", steps: [{ number: 1, step: "Prepare the sauce." }] },
+        { name: "To serve", steps: [{ number: 1, step: "Toast the bread." }, { number: 2, step: "Serve together." }] },
+      ],
+    }, "Cozy");
+
+    expect(recipe.steps.map((step: { text: string }) => step.text)).toEqual([
+      "Prepare the sauce.",
+      "Toast the bread.",
+      "Serve together.",
+    ]);
+  });
+
+  it("enforces the selected maximum cook time after provider results return", () => {
+    const recipes = [
+      { title: "Fast", time: 15 },
+      { title: "Too slow", time: 45 },
+      { title: "Unknown" },
+    ];
+
+    expect(filterRecipesByMaxTime(recipes, 15).map(recipe => recipe.title)).toEqual(["Fast"]);
+  });
+
   it("preserves a full Spoonacular step image URL", () => {
     const recipe = normalizeSpoonacularRecipe({
       id: 8,
@@ -113,6 +140,38 @@ describe("fetchTheMealDbRecipes", () => {
     ], { diet: "Pescatarian", allergies: [], dietReligious: [] });
 
     expect(safe.map(recipe => recipe.title)).toEqual(["Salmon bowl", "Tomato pasta"]);
+  });
+
+  it("never returns meat to a vegetarian even when the provider labels it vegetarian", () => {
+    const safe = filterRecipesForProfile([
+      { title: "Chicken salad", ingredients: ["chicken"], diets: ["Vegetarian"], allergens: [] },
+      { title: "Tomato pasta", ingredients: ["tomato", "pasta"], diets: ["Vegetarian"], allergens: [] },
+    ], { diet: "Vegetarian", allergies: [], dietReligious: [] });
+
+    expect(safe.map(recipe => recipe.title)).toEqual(["Tomato pasta"]);
+  });
+
+  it("keeps requested meal categories separate", () => {
+    const recipes = [
+      { title: "Pasta", mealTypes: ["main course"] },
+      { title: "Bruschetta", mealTypes: ["appetizer"] },
+      { title: "Cake", mealTypes: ["dessert"] },
+      { title: "Popcorn", mealTypes: ["snack"] },
+    ];
+
+    expect(filterRecipesByCategory(recipes, "starter").map(recipe => recipe.title)).toEqual(["Bruschetta"]);
+    expect(filterRecipesByCategory(recipes, "dessert").map(recipe => recipe.title)).toEqual(["Cake"]);
+  });
+
+  it("deduplicates recipes by id and normalized title", () => {
+    const recipes = [
+      { id: "1", title: "Tomato Pasta" },
+      { id: "1", title: "Tomato Pasta" },
+      { id: "2", title: " tomato   pasta " },
+      { id: "3", title: "Bean Stew" },
+    ];
+
+    expect(dedupeRecipes(recipes).map(recipe => recipe.title)).toEqual(["Tomato Pasta", "Bean Stew"]);
   });
 
   it("tags fallback seafood recipes as pescatarian", async () => {

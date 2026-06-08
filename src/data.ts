@@ -21,6 +21,7 @@ export type Recipe = {
   ingredients: string[];
   steps: RecipeStep[];
   cuisine: string;
+  mealTypes?: string[];
   diets: string[];
   allergens: string[];
   equipment: string[];

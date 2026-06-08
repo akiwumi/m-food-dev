@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, createContext, useContext } from "react";
 import {
   ArrowLeft, ArrowRight, Bell, BookOpen, CalendarDays, Check, ChefHat, ChevronRight,
-  Clock3, Heart, Home, ListChecks, Menu, MoreVertical, Pause, Play, RotateCcw, Search,
+  Clock3, Heart, Home, ListChecks, Menu, MoreVertical, Play, RotateCcw, Search,
   Settings2, ShoppingCart, Sparkles, Star, Timer, X, ShieldCheck, UserRound, BarChart3,
   Upload, LogOut, Plus, ClipboardCheck, LayoutDashboard, Camera, Users, MessageCircle,
   Send, UserPlus, Lock, Globe2, Activity, Salad, Wheat, Droplets, TrendingUp, Mail, CreditCard,
@@ -21,6 +21,7 @@ import { signUp as authSignUp, signIn as authSignIn, signOut as authSignOut, isE
 import { supabase } from "./supabase";
 import { displayStepDetail, displayStepTitle, formatTimer, stepImageSources } from "./cooking";
 import { RecipeImage } from "./RecipeImage";
+import { finalizeSearchResults } from "./searchResults";
 
 const SUPABASE_FN = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 
@@ -86,7 +87,8 @@ async function syncSubscriptionFromDB(): Promise<{ status: string; plan: string;
 // every screen threading a callback through its props.
 const MenuCtx = createContext<() => void>(() => {});
 
-type Page = "home" | "search" | "diary" | "grocery" | "planner" | "detail" | "cook" | "insights" | "settings" | "favorites" | "import" | "admin" | "billing" | "psych-profile" | "food-profile" | "account" | "community" | "health" | "health-nutrition" | "health-variety" | "health-patterns" | "family-health" | "diners" | "food-log" | "pantry" | "help";
+type Page = "home" | "search" | "results" | "diary" | "grocery" | "planner" | "detail" | "cook" | "insights" | "settings" | "favorites" | "import" | "admin" | "billing" | "psych-profile" | "food-profile" | "account" | "community" | "health" | "health-nutrition" | "health-variety" | "health-patterns" | "family-health" | "diners" | "food-log" | "pantry" | "help";
+type SearchRequest = { query: string; filters: RecipeFilters };
 type Entry = "welcome" | "login" | "onboarding" | "account" | "verify" | "verified" | "subscription" | "app";
 const PLANS = [
   { id: "annual", name: "Annual", price: "$120/year", note: "Best value — about 2 months free" },
@@ -94,7 +96,7 @@ const PLANS = [
   { id: "monthly", name: "Monthly", price: "$15/month", note: "Cancel anytime" },
 ] as const;
 const nav = [
-  ["home", "Home", Home], ["search", "Search", Search], ["diary", "Diary", BookOpen],
+  ["home", "Home", Home], ["search", "Search", Search], ["results", "Results", ListChecks],
   ["grocery", "Grocery", ShoppingCart], ["planner", "Planner", CalendarDays],
 ] as const;
 export default function App() {
@@ -112,6 +114,10 @@ export default function App() {
   const [energy, setEnergy] = useState(45);
   const [time, setTime] = useState(30);
   const [results, setResults] = useState(false);
+  const [searchRequest, setSearchRequest] = useState<SearchRequest | null>(null);
+  const [searchResults, setSearchResults] = useState<Recipe[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchOffset, setSearchOffset] = useState(0);
   const [moodyOpen, setMoodyOpen] = useState(false);
   const [pendingShare, setPendingShare] = useState<string | undefined>(undefined);
   const [saved, setSaved] = useStoredState<string[]>("moodfood-saved", []);
@@ -141,27 +147,40 @@ export default function App() {
     [diary, profile.photoLogs, saved, catalog],
   );
 
+  const runSearch = async (request: SearchRequest, nextPage = false) => {
+    const offset = nextPage ? searchOffset + 8 : 0;
+    setSearchRequest(request);
+    setSearchLoading(true);
+    setSearchOffset(offset);
+    setPage("results");
+    window.scrollTo(0, 0);
+    try {
+      const live = await fetchCuratedRecipes(sharedProfile, mood, 50, request.filters.maxReadyTime ?? 60, request.query, request.filters, foodHistory, offset);
+      const localPage = finalizeSearchResults(safeRecipes, sharedProfile, request.filters, 100).slice(offset, offset + 8);
+      setSearchResults(finalizeSearchResults(live ?? localPage, sharedProfile, request.filters, 8));
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
   // When the user asks for recommendations, fetch real AI-curated recipes.
-  // Debounced so dragging the energy/time sliders doesn't spam the API.
   useEffect(() => {
     if (entry !== "app" || !results) return;
     let cancelled = false;
     setCurating(true);
     setMoreOffset(0);
-    const t = setTimeout(() => {
-      fetchCuratedRecipes(sharedProfile, mood, energy, time, "", {}, foodHistory, 0)
-        .then(list => {
-          if (cancelled) return;
-          if (list?.length) {
-            setCatalog(prev => { const ids = new Set(list.map(r => r.id)); return [...list, ...prev.filter(r => !ids.has(r.id))]; });
-            setAiRanked(list);
-          } else {
-            setAiRanked(null); // not signed in / not configured → local ranking
-          }
-        })
-        .finally(() => { if (!cancelled) setCurating(false); });
-    }, 500);
-    return () => { cancelled = true; clearTimeout(t); };
+    fetchCuratedRecipes(sharedProfile, mood, energy, time, "", {}, foodHistory, 0)
+      .then(list => {
+        if (cancelled) return;
+        if (list?.length) {
+          setCatalog(prev => { const ids = new Set(list.map(r => r.id)); return [...list, ...prev.filter(r => !ids.has(r.id))]; });
+          setAiRanked(list);
+        } else {
+          setAiRanked(null); // not signed in / not configured → local ranking
+        }
+      })
+      .finally(() => { if (!cancelled) setCurating(false); });
+    return () => { cancelled = true; };
   }, [results, mood, energy, time, sharedProfile, entry, recipeNonce]);
 
   // "Show me 5 more" — fetch a fresh page (next offset) and append. Falls back to
@@ -312,9 +331,14 @@ export default function App() {
   return <MenuCtx.Provider value={() => setMenuOpen(true)}><div className={page === "cook" ? "app cooking" : "app"}>
     {page !== "cook" && <DesktopNav page={page} go={go} />}
     <main>
-      {page === "home" && <HomeScreen profile={profile} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} results={results} setResults={setResults} ranked={ranked} curating={curating} loadMore={loadMore} live={aiRanked !== null} configured={isSupabaseConfigured} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} />}
-      {page === "search" && <SearchScreen source={safeRecipes} profile={sharedProfile} mood={mood} history={foodHistory} open={open} saved={saved} setSaved={setSaved} />}
-      {page === "detail" && selected && <DetailScreen recipe={selected} servings={eaterCount} back={() => go("home")} cook={() => go("cook")} saved={saved.includes(selected.id)} toggleSave={() => setSaved(toggle(saved, selected.id))} addGroceries={() => setGroceries(v => [...new Set([...v, ...selected.ingredients])])} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} shareToCommunity={() => shareRecipe(selected)} allergies={profile.allergies} />}
+      {page === "home" && <HomeScreen profile={profile} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} results={false} setResults={setResults} beginResults={() => { setSearchRequest(null); setCurating(true); setAiRanked(null); setResults(true); go("results"); }} ranked={ranked} curating={curating} loadMore={loadMore} live={aiRanked !== null} configured={isSupabaseConfigured} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} />}
+      {page === "search" && <SearchScreen profile={sharedProfile} onSearch={request => runSearch(request)} />}
+      {page === "results" && (searchRequest
+        ? <SearchResultsScreen results={searchResults} loading={searchLoading} request={searchRequest} more={() => runSearch(searchRequest, true)} home={() => go("home")} search={() => go("search")} open={open} saved={saved} setSaved={setSaved} />
+        : results
+          ? <HomeScreen profile={profile} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} results setResults={v => { setResults(v); if (!v) go("home"); }} beginResults={() => {}} ranked={ranked} curating={curating} loadMore={loadMore} live={aiRanked !== null} configured={isSupabaseConfigured} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} />
+          : <EmptyResultsScreen home={() => go("home")} search={() => go("search")} />)}
+      {page === "detail" && selected && <DetailScreen recipe={selected} servings={eaterCount} back={() => go("results")} cook={() => go("cook")} saved={saved.includes(selected.id)} toggleSave={() => setSaved(toggle(saved, selected.id))} addGroceries={() => setGroceries(v => [...new Set([...v, ...selected.ingredients])])} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} shareToCommunity={() => shareRecipe(selected)} allergies={profile.allergies} />}
       {page === "cook" && selected && <CookScreen recipe={selected} exit={() => go("detail")} allergies={profile.allergies} finish={(rating, photo) => { setDiary(v => [{ recipe: selected, rating, when: "Today" }, ...v]); if (photo) setProfile(p => ({ ...p, photoLogs: [photo, ...p.photoLogs] })); go("diary"); }} />}
       {page === "diary" && <DiaryScreen diary={diary} open={open} photoLogs={profile.photoLogs} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} goFoodLog={() => go("food-log")} allergies={profile.allergies} />}
       {page === "grocery" && <GroceryScreen items={groceries} setItems={setGroceries} />}
@@ -818,9 +842,9 @@ function AppHeader({ openNotifs, unread, profile }: { openNotifs?: () => void; u
   );
 }
 
-function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, results, setResults, ranked, curating, loadMore, live, configured, retry, open, go, diners, selectedDiners, setSelectedDiners, eaterCount, setEaterCount, openNotifs, unread, addPhoto }: {
+function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, results, setResults, beginResults, ranked, curating, loadMore, live, configured, retry, open, go, diners, selectedDiners, setSelectedDiners, eaterCount, setEaterCount, openNotifs, unread, addPhoto }: {
   profile: Profile; mood: string; setMood: (v: string) => void; energy: number; setEnergy: (v: number) => void; time: number; setTime: (v: number) => void;
-  results: boolean; setResults: (v: boolean) => void; ranked: Recipe[]; curating?: boolean; loadMore?: () => void; live?: boolean; configured?: boolean; retry?: () => void; open: (r: Recipe) => void; go: (p: Page) => void;
+  results: boolean; setResults: (v: boolean) => void; beginResults: () => void; ranked: Recipe[]; curating?: boolean; loadMore?: () => void; live?: boolean; configured?: boolean; retry?: () => void; open: (r: Recipe) => void; go: (p: Page) => void;
   diners: Diner[]; selectedDiners: string[]; setSelectedDiners: (v: string[]) => void;
   eaterCount: number; setEaterCount: (v: number) => void; openNotifs?: () => void; unread?: number;
   addPhoto: (p: FoodPhoto) => void;
@@ -835,12 +859,18 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
   if (results) return (
     <div className="home-screen">
       <AppHeader profile={profile} openNotifs={openNotifs} unread={unread} />
+      {curating ? <div className="thinking-state">
+        <div className="thinking-orbit"><Sparkles /><i /><i /><i /></div>
+        <span>MOODY IS THINKING</span>
+        <h1>Finding dinner that fits tonight.</h1>
+        <p>Checking your safety rules, {time}-minute limit, mood, and food profile.</p>
+        <div className="thinking-lines"><i /><i /><i /></div>
+      </div> : <>
       <div className="home-greeting">
         <h1>Tonight’s picks.</h1>
         <p>{energy < 50 ? "Low-effort" : "Interesting"}, {mood.toLowerCase()}, within {time} min · {eaterCount} {eaterCount === 1 ? "person" : "people"}</p>
-        {curating && <p className="quiet" style={{ display: "flex", alignItems: "center", gap: 6 }}><Sparkles size={13} /> Moody is curating real recipes for how you feel…</p>}
-        {!curating && live && <p className="source-note live"><Check size={13} /> Live picks, freshly curated for you.</p>}
-        {!curating && !live && <div className="source-note offline"><div><b>Live curation unavailable</b><span>{configured ? "Couldn’t reach live recipe curation — check you’re signed in and online." : "Live curation isn’t configured in this build."}</span></div>{configured && retry && <button onClick={retry}><RotateCcw size={14} /> Retry</button>}</div>}
+        {live && <p className="source-note live"><Check size={13} /> Live picks, freshly curated for you.</p>}
+        {!live && <div className="source-note offline"><div><b>Live curation unavailable</b><span>{configured ? "Couldn’t reach live recipe curation — check you’re signed in and online." : "Live curation isn’t configured in this build."}</span></div>{configured && retry && <button onClick={retry}><RotateCcw size={14} /> Retry</button>}</div>}
       </div>
       {visible.length ? (
         <div style={{ padding: "0 16px", display: "grid", gap: 14 }}>
@@ -866,6 +896,7 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
       <div style={{ padding: "14px 16px 0" }}>
         <button className="secondary" style={{ width: "100%" }} onClick={() => setResults(false)}>← Change tonight’s context</button>
       </div>
+      </>}
     </div>
   );
 
@@ -938,7 +969,7 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
         <button
           className="primary"
           style={{ width: "100%", marginTop: 18, minHeight: 54 }}
-          onClick={() => setResults(true)}
+          onClick={beginResults}
         >
           Find tonight’s dinner <ArrowRight size={18} />
         </button>
@@ -1016,7 +1047,7 @@ function TokenInput({ tokens, setTokens, placeholder }: { tokens: string[]; setT
   </>;
 }
 
-function SearchScreen({ source, profile, mood, history, open, saved, setSaved }: { source: Recipe[]; profile: Profile; mood: string; history: import("./recipes").FoodHistory; open: (r: Recipe) => void; saved: string[]; setSaved: (v: string[]) => void }) {
+function SearchScreen({ profile, onSearch }: { profile: Profile; onSearch: (request: SearchRequest) => void }) {
   const [query, setQuery] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [cuisines, setCuisines] = useState<string[]>([]);
@@ -1028,9 +1059,6 @@ function SearchScreen({ source, profile, mood, history, open, saved, setSaved }:
   const [exclude, setExclude] = useState<string[]>([]);
   const [maxCalories, setMaxCalories] = useState(0);   // 0 = off
   const [minProtein, setMinProtein] = useState(0);     // 0 = off
-  const [results, setResults] = useState<Recipe[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [searched, setSearched] = useState(false);
 
   const activeFilterCount =
     cuisines.length + include.length + exclude.length +
@@ -1038,8 +1066,7 @@ function SearchScreen({ source, profile, mood, history, open, saved, setSaved }:
     (sort !== (profile.rankingPreference || "Most popular") ? 1 : 0) +
     (maxCalories ? 1 : 0) + (minProtein ? 1 : 0);
 
-  const run = async () => {
-    setLoading(true); setSearched(true);
+  const run = () => {
     const filters: RecipeFilters = {
       query, cuisines,
       type: type || undefined,
@@ -1049,26 +1076,8 @@ function SearchScreen({ source, profile, mood, history, open, saved, setSaved }:
       maxCalories: maxCalories || undefined,
       minProtein: minProtein || undefined,
     };
-    // Search always carries the full food-psychology profile + history, so even a
-    // bare keyword is filtered and ranked for this specific person.
-    const list = await fetchCuratedRecipes(profile, mood, 50, maxTime, query, filters, history);
-    setResults(list);   // null => fall back to local catalog below
-    setLoading(false);
+    onSearch({ query, filters });
   };
-
-  // Local fallback over bundled recipes when the backend is unavailable / not
-  // signed in, so search still does something useful in the pilot.
-  const local = source.filter(r => {
-    const text = `${r.title} ${r.cuisine} ${r.moods.join(" ")} ${r.ingredients.join(" ")}`.toLowerCase();
-    if (query && !text.includes(query.toLowerCase())) return false;
-    if (cuisines.length && !cuisines.some(c => r.cuisine.toLowerCase().includes(c.toLowerCase().split(" ")[0]))) return false;
-    if (r.time > maxTime) return false;
-    if (exclude.some(x => text.includes(x.toLowerCase()))) return false;
-    if (include.length && !include.every(x => text.includes(x.toLowerCase()))) return false;
-    if (maxCalories && r.calories > maxCalories) return false;
-    return true;
-  });
-  const shown = results ?? (searched ? local : source);
 
   return <div className="screen">
     <TopBar title="Ask Moody" />
@@ -1081,7 +1090,7 @@ function SearchScreen({ source, profile, mood, history, open, saved, setSaved }:
       <button className={"filter-toggle" + (showFilters ? " open" : "")} onClick={() => setShowFilters(v => !v)}>
         <Settings2 size={15} /> Filters{activeFilterCount ? ` · ${activeFilterCount}` : ""}
       </button>
-      <button className="primary search-go" onClick={run} disabled={loading}>{loading ? "Searching…" : <>Search <ArrowRight size={15} /></>}</button>
+      <button className="primary search-go" onClick={run}>Search <ArrowRight size={15} /></button>
     </div>
 
     {showFilters && <div className="search-filters">
@@ -1090,15 +1099,15 @@ function SearchScreen({ source, profile, mood, history, open, saved, setSaved }:
         <div className="choice">{SORT_OPTIONS.map(o => <button key={o.id} className={sort === o.id ? "active" : ""} onClick={() => setSort(o.id)} title={o.hint}>{o.label}</button>)}</div>
       </div>
       <div className="filter-block">
-        <span className="filter-label">Meal type</span>
-        <div className="choice">{MEAL_TYPES.map(t => <button key={t} className={type === t ? "active" : ""} onClick={() => setType(type === t ? "" : t)}>{t}</button>)}</div>
+        <span className="filter-label">Course — results never mix courses</span>
+        <div className="choice">{MEAL_TYPES.map(t => <button key={t} className={type === t ? "active" : ""} onClick={() => setType(type === t ? "" : t)}>{t[0].toUpperCase() + t.slice(1)}</button>)}</div>
       </div>
       <div className="filter-block">
         <span className="filter-label">Cuisine</span>
         <div className="choice">{SPOON_CUISINES.map(c => <button key={c} className={cuisines.includes(c) ? "active" : ""} onClick={() => setCuisines(toggle(cuisines, c))}>{c}</button>)}</div>
       </div>
       <div className="filter-block">
-        <span className="filter-label">Diet (override)</span>
+        <span className="filter-label">Additional diet filter</span>
         <div className="choice">{SEARCH_DIETS.map(d => <button key={d} className={diet === d ? "active" : ""} onClick={() => setDiet(d)}>{d}</button>)}</div>
       </div>
       <div className="filter-block">
@@ -1124,13 +1133,28 @@ function SearchScreen({ source, profile, mood, history, open, saved, setSaved }:
       {!!activeFilterCount && <button className="secondary" style={{ width: "100%" }} onClick={() => { setCuisines([]); setType(""); setDiet("Any"); setMaxTime(60); setSort(profile.rankingPreference || "Most popular"); setInclude([]); setExclude([]); setMaxCalories(0); setMinProtein(0); }}>Clear filters</button>}
     </div>}
 
-    <p className="quiet">Allergies and dietary rules from your profile are always applied — these filters add to them.</p>
+    <p className="quiet">Your saved allergies and diet always remain hard rules. Search filters can only narrow them further.</p>
+  </div>;
+}
 
-    {loading
-      ? <div className="empty-state"><Sparkles /><h2>Searching real recipes…</h2><p>Moody is matching {SPOON_CUISINES.length}+ cuisines and your safety profile.</p></div>
-      : shown.length
-        ? <div className="search-grid">{shown.map(r => <article key={r.id}><RecipeImage sources={stepImageSources(undefined, r.image)} alt={r.title} /><button onClick={() => setSaved(toggle(saved, r.id))}><Heart fill={saved.includes(r.id) ? "currentColor" : "none"} /></button><div><h2>{r.title}</h2><p>{r.reason}</p><span><Clock3 size={13} /> {r.time} min · {r.difficulty}</span><button className="primary" onClick={() => open(r)}>View recipe</button></div></article>)}</div>
-        : <div className="empty-state"><Search /><h2>No matches</h2><p>Try widening your filters or removing an excluded ingredient.</p></div>}
+function SearchResultsScreen({ results, loading, request, more, home, search, open, saved, setSaved }: { results: Recipe[]; loading: boolean; request: SearchRequest; more: () => void; home: () => void; search: () => void; open: (recipe: Recipe) => void; saved: string[]; setSaved: (values: string[]) => void }) {
+  return <div className="screen">
+    <TopBar title="Results" />
+    <div className="results-summary"><span>{request.filters.type ? `${request.filters.type.toUpperCase()} ONLY` : "PERSONALISED SEARCH"}</span><h1>{request.query || "Recipes matching your filters"}</h1><p>{results.length} unique matches · up to {request.filters.maxReadyTime ?? 60} min</p></div>
+    {loading && !results.length
+      ? <div className="thinking-state"><div className="thinking-orbit"><Sparkles /><i /><i /><i /></div><span>SEARCHING</span><h1>Checking every hard rule.</h1><p>Diet, course, time, ingredients, and duplicates are being verified.</p></div>
+      : results.length
+        ? <div className="search-grid">{results.map(r => <article key={r.id}><RecipeImage sources={stepImageSources(undefined, r.image)} alt={r.title} /><button onClick={() => setSaved(toggle(saved, r.id))}><Heart fill={saved.includes(r.id) ? "currentColor" : "none"} /></button><div><h2>{r.title}</h2><p>{r.reason}</p><span><Clock3 size={13} /> {r.time} min · {r.difficulty}</span><button className="primary" onClick={() => open(r)}>View recipe</button></div></article>)}</div>
+        : <div className="empty-state"><Search /><h2>No exact matches</h2><p>Adjust one filter and search again. Your saved diet and allergies remain protected.</p></div>}
+    <div className="results-actions"><button className="primary" onClick={more} disabled={loading}>{loading ? "Finding alternatives…" : "More alternatives"}</button><button className="secondary" onClick={search}>Change search</button><button className="secondary" onClick={home}><Home size={17} />Return home</button></div>
+  </div>;
+}
+
+function EmptyResultsScreen({ home, search }: { home: () => void; search: () => void }) {
+  return <div className="screen">
+    <TopBar title="Results" />
+    <div className="empty-state"><Search /><h2>No results yet</h2><p>Start a search or find tonight's dinner to see recommendations here.</p></div>
+    <div className="results-actions"><button className="primary" onClick={search}><Search size={17} />Search recipes</button><button className="secondary" onClick={home}><Home size={17} />Return home</button></div>
   </div>;
 }
 
@@ -1146,50 +1170,31 @@ function DetailScreen({ recipe, servings, back, cook, saved, toggleSave, addGroc
     }
     shareToCommunity();
   };
-  return <div className="detail"><div className="detail-image"><RecipeImage sources={stepImageSources(undefined, recipe.image)} alt={recipe.title} /><button onClick={back}><ArrowLeft /></button><div><button onClick={share} aria-label="Share recipe"><Share2 /></button><button onClick={toggleSave} aria-label={saved ? "Saved" : "Save recipe"}><Heart fill={saved ? "currentColor" : "none"} /></button></div>{recipe.video && <button className="detail-play" onClick={() => setShowVideo(true)} aria-label="Watch video"><Play size={26} fill="currentColor" /></button>}</div><section className="detail-sheet"><h1>{recipe.title}</h1><div className="facts"><span><Clock3 />{recipe.time} min</span><span><Users />Serves {servings}</span><span><Star />{recipe.calories} cal each</span></div>{recipe.video && showVideo && <div className="detail-video"><iframe src={recipe.video} title={`${recipe.title} video`} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen /></div>}{recipe.video && !showVideo && <button className="secondary watch-btn" onClick={() => setShowVideo(true)}><Play size={16} fill="currentColor" />Watch how to make it</button>}<div className="moody-note"><Moody /><p>{recipe.reason}</p></div><div className="section-line"><h2>Ingredients</h2><span>{recipe.ingredients.length} items</span></div><div className="ingredients">{recipe.ingredients.map(i => <button className={checked.includes(i) ? "checked" : ""} onClick={() => setChecked(toggle(checked, i))} key={i}><span><Check size={14} /></span><p>{i}</p><em>{checked.includes(i) ? "Ready" : "I have it"}</em></button>)}</div><div className="detail-actions"><button className="secondary" onClick={addGroceries}><ShoppingCart size={18} />Add to grocery</button><button className="secondary" onClick={share}><Share2 size={18} />Share recipe</button></div>{recipe.sourceUrl && <a className="source-link" href={recipe.sourceUrl} target="_blank" rel="noopener noreferrer">View original recipe ↗</a>}<FoodCamera label="📸 Log your version with a photo" onSave={p => addPhoto({ ...p, recipeId: recipe.id })} hint={{ recipeCalories: recipe.calories, recipeName: recipe.title }} allergies={allergies} style={{ marginTop: 10 }} /><button className="primary sticky-cta" onClick={cook}><ChefHat size={18} />Start cook mode</button></section></div>;
+  return <div className="detail"><div className="detail-image"><RecipeImage sources={stepImageSources(undefined, recipe.image)} alt={recipe.title} /><button onClick={back}><ArrowLeft /></button><div><button onClick={share} aria-label="Share recipe"><Share2 /></button><button onClick={toggleSave} aria-label={saved ? "Saved" : "Save recipe"}><Heart fill={saved ? "currentColor" : "none"} /></button></div>{recipe.video && <button className="detail-play" onClick={() => setShowVideo(true)} aria-label="Watch video"><Play size={26} fill="currentColor" /></button>}</div><section className="detail-sheet"><h1>{recipe.title}</h1><div className="facts"><span><Clock3 />{recipe.time} min</span><span><Users />Serves {servings}</span><span><Star />{recipe.calories} cal each</span></div>{recipe.video && showVideo && <div className="detail-video"><iframe src={recipe.video} title={`${recipe.title} video`} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen /></div>}{recipe.video && !showVideo && <button className="secondary watch-btn" onClick={() => setShowVideo(true)}><Play size={16} fill="currentColor" />Watch how to make it</button>}<div className="moody-note"><Moody /><p>{recipe.reason}</p></div><div className="section-line"><h2>Ingredients</h2><span>{recipe.ingredients.length} items</span></div><div className="ingredients">{recipe.ingredients.map(i => <button className={checked.includes(i) ? "checked" : ""} onClick={() => setChecked(toggle(checked, i))} key={i}><span><Check size={14} /></span><p>{i}</p><em>{checked.includes(i) ? "Ready" : "I have it"}</em></button>)}</div><div className="section-line"><h2>Full cooking method</h2><span>{recipe.steps.length} steps</span></div><div className="recipe-method">{recipe.steps.map((step, index) => <article key={`${index}-${step.text}`}><b>{index + 1}</b><div><h3>{displayStepTitle(step)}</h3><p>{displayStepDetail(step)}</p>{step.cue && <small><strong>Look for:</strong> {step.cue}</small>}</div></article>)}</div><div className="detail-actions"><button className="secondary" onClick={addGroceries}><ShoppingCart size={18} />Add to grocery</button><button className="secondary" onClick={share}><Share2 size={18} />Share recipe</button></div>{recipe.sourceUrl && <a className="source-link" href={recipe.sourceUrl} target="_blank" rel="noopener noreferrer">View original recipe ↗</a>}<FoodCamera label="📸 Log your version with a photo" onSave={p => addPhoto({ ...p, recipeId: recipe.id })} hint={{ recipeCalories: recipe.calories, recipeName: recipe.title }} allergies={allergies} style={{ marginTop: 10 }} /><button className="primary sticky-cta" onClick={cook}><ChefHat size={18} />Open guided cooking</button></section></div>;
 }
 
 function CookScreen({ recipe, exit, finish, allergies }: { recipe: Recipe; exit: () => void; finish: (rating: number, photo?: FoodPhoto) => void; allergies: string[] }) {
-  const saved = readStored<{ step?: unknown }>(`moodfood-cook-${recipe.id}`, {});
-  const resumedStep = typeof saved.step === "number" && Number.isInteger(saved.step) ? Math.min(saved.step, Math.max(0, recipe.steps.length - 1)) : 0;
-  const [step, setStep] = useState(Math.max(0, resumedStep));
-  const [seconds, setSeconds] = useState(0);
-  const [running, setRunning] = useState(false);
   const [done, setDone] = useState(false);
   const [rating, setRating] = useState(5);
   const [mealPhoto, setMealPhoto] = useState<FoodPhoto | null>(null);
-  const current = recipe.steps[step];
-  useEffect(() => writeStored(`moodfood-cook-${recipe.id}`, { step }), [step, recipe.id]);
-  useEffect(() => { if (!running || seconds <= 0) return; const id = setInterval(() => setSeconds((v: number) => v - 1), 1000); return () => clearInterval(id); }, [running, seconds]);
-  const next = () => step === recipe.steps.length - 1 ? setDone(true) : setStep(step + 1);
-  if (!current) return <div className="cook cook-unavailable"><section className="cook-instruction-card"><h1>Instructions unavailable.</h1><p>This recipe did not include cooking steps.</p>{recipe.sourceUrl && <a className="source-link" href={recipe.sourceUrl} target="_blank" rel="noopener noreferrer">View original recipe ↗</a>}<button className="cook-next" onClick={exit}>Back to recipe</button></section></div>;
-  const timerValue = seconds || current.timer || 0;
+  if (!recipe.steps.length) return <div className="cook cook-unavailable"><section className="cook-instruction-card"><h1>Instructions unavailable.</h1><p>This recipe did not include cooking steps.</p>{recipe.sourceUrl && <a className="source-link" href={recipe.sourceUrl} target="_blank" rel="noopener noreferrer">View original recipe ↗</a>}<button className="cook-next" onClick={exit}>Back to recipe</button></section></div>;
   return <div className="cook">
     <header className="cook-header">
       <button className="cook-circle" onClick={exit} aria-label="Close cook mode"><ArrowLeft /></button>
-      <b>Step {step + 1} of {recipe.steps.length}</b>
-      <button className="cook-circle" aria-label="More cooking options"><MoreVertical /></button>
+      <b>{recipe.title}</b>
+      <span />
     </header>
-    <div className="cook-progress"><span style={{ width: `${((step + 1) / recipe.steps.length) * 100}%` }} /></div>
-    <RecipeImage className="cook-image" sources={stepImageSources(current.image, recipe.image)} alt={`${recipe.title}, step ${step + 1}`} />
-    <section className="cook-instruction-card">
-      <small>STEP {step + 1}</small>
+    <RecipeImage className="cook-image" sources={stepImageSources(undefined, recipe.image)} alt={recipe.title} />
+    <div className="cook-method-head"><span>FULL METHOD</span><h1>Cook from top to bottom.</h1><p>Every instruction stays visible. Scroll naturally as you work.</p></div>
+    <div className="cook-method">{recipe.steps.map((current, index) => <section className="cook-instruction-card" key={`${index}-${current.text}`}>
+      <small>STEP {index + 1} OF {recipe.steps.length}</small>
       <h1>{displayStepTitle(current)}</h1>
       <p>{displayStepDetail(current)}</p>
       {current.cue && <div className="cook-cue"><b>Look for:</b> {current.cue}</div>}
-      {(current.active?.length || current.equipment?.length) && <div className="cook-chips">
-        {current.active?.map(item => <span key={`ingredient-${item}`}>{item}</span>)}
-        {current.equipment?.map(item => <span className="equipment" key={`equipment-${item}`}>{item}</span>)}
-      </div>}
-      {current.timer && <button className="cook-timer" onClick={() => { if (!seconds) setSeconds(current.timer!); setRunning(!running); }}>
-        <span><Timer size={17} /></span><div><b>{formatTimer(timerValue)}</b><small>Verified cooking timer</small></div><i>{running ? <Pause size={16} /> : <Play size={16} fill="currentColor" />}</i>
-      </button>}
-      <div className="cook-controls">
-        <button onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0}><ArrowLeft size={17} /> Previous</button>
-        <button className="cook-next" onClick={next}>{step === recipe.steps.length - 1 ? "Finish" : "Next step"} <ArrowRight size={17} /></button>
-      </div>
-      <div className="awake"><Check size={14} />Screen stays awake</div>
-    </section>
+      {(current.active?.length || current.equipment?.length) && <div className="cook-chips">{current.active?.map(item => <span key={`ingredient-${item}`}>{item}</span>)}{current.equipment?.map(item => <span className="equipment" key={`equipment-${item}`}>{item}</span>)}</div>}
+      {current.timer && <div className="cook-timer"><span><Timer size={17} /></span><div><b>{formatTimer(current.timer)}</b><small>Verified cooking time</small></div><i><Clock3 size={16} /></i></div>}
+    </section>)}</div>
+    <button className="cook-finish" onClick={() => setDone(true)}><Check size={18} />I’m finished cooking</button>
     {done && <div className="finish-overlay"><section><div className="done-mark"><Check /></div><h2>Dinner is ready.</h2><p>How did it land tonight?</p><div className="stars">{[1,2,3,4,5].map(n => <button onClick={() => setRating(n)} key={n}><Star fill={n <= rating ? "currentColor" : "none"} /></button>)}</div>{mealPhoto ? <div className="photo-preview-mini"><img src={mealPhoto.image} alt="Your meal" /><span><b>{mealPhoto.calories} kcal</b> estimated · {mealPhoto.dish}</span></div> : <FoodCamera label="📸 Add a photo of your cook" onSave={p => setMealPhoto({ ...p, recipeId: recipe.id })} allergies={allergies} compact />}<button className="primary" onClick={() => finish(rating, mealPhoto ?? undefined)}>Log meal &amp; finish</button><button className="text" onClick={() => setDone(false)}>Back to cooking</button></section></div>}
   </div>;
 }
@@ -1925,7 +1930,7 @@ const FAQ_DATA = [
     section: "Cook mode",
     items: [
       { q: "What is cook mode?", a: "A distraction-free step-by-step cooking guide. The screen stays awake, each step shows the active ingredients, and timers can be started inline. Your progress is saved if you leave and come back." },
-      { q: "Can I pause cook mode?", a: "Yes — tap the Pause button or navigate away. When you return to the recipe, cook mode resumes from where you left off." },
+      { q: "How does cook mode work?", a: "The full method stays on one scrolling page, so you can move naturally between steps without opening tabs." },
     ],
   },
   {

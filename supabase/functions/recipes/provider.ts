@@ -39,6 +39,7 @@ function normalizeMeal(meal: Record<string, unknown>, mood: string) {
     ingredients,
     steps: steps.length ? steps : [{ text: "See the original recipe for instructions." }],
     cuisine: String(meal.strArea ?? ""),
+    mealTypes: [String(meal.strCategory ?? "").toLowerCase()].filter(Boolean),
     diets,
     allergens: [],
     equipment: [],
@@ -72,11 +73,41 @@ export function filterRecipesForProfile(recipes: any[], profile: any): any[] {
   });
 }
 
+export function filterRecipesByMaxTime(recipes: any[], maxTime: number): any[] {
+  return recipes.filter(recipe => Number.isFinite(recipe?.time) && recipe.time <= maxTime);
+}
+
+const CATEGORY_TYPES: Record<string, string[]> = {
+  main: ["main course"],
+  starter: ["appetizer", "salad", "soup", "side dish"],
+  dessert: ["dessert"],
+  snack: ["snack"],
+};
+
+export function filterRecipesByCategory(recipes: any[], category: string): any[] {
+  const allowed = CATEGORY_TYPES[(category ?? "").toLowerCase()];
+  if (!allowed) return recipes;
+  return recipes.filter(recipe => (recipe.mealTypes ?? []).some((type: string) => allowed.includes(type.toLowerCase())));
+}
+
+export function dedupeRecipes(recipes: any[]): any[] {
+  const ids = new Set<string>();
+  const titles = new Set<string>();
+  return recipes.filter(recipe => {
+    const id = String(recipe?.id ?? "").trim();
+    const title = String(recipe?.title ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+    if ((id && ids.has(id)) || (title && titles.has(title))) return false;
+    if (id) ids.add(id);
+    if (title) titles.add(title);
+    return true;
+  });
+}
+
 export function normalizeSpoonacularRecipe(recipe: any, mood: string) {
   const nutrients = recipe.nutrition?.nutrients ?? [];
   const calories = Math.round(nutrients.find((nutrient: any) => nutrient.name === "Calories")?.amount ?? 0);
   const time = recipe.readyInMinutes ?? 30;
-  const steps = (recipe.analyzedInstructions?.[0]?.steps ?? []).map((step: any) => {
+  const steps = (recipe.analyzedInstructions ?? []).flatMap((section: any) => section?.steps ?? []).map((step: any) => {
     const text = String(step.step ?? "").trim();
     return {
       text,
@@ -101,6 +132,7 @@ export function normalizeSpoonacularRecipe(recipe: any, mood: string) {
     ingredients,
     steps: steps.length ? steps : [{ text: "See full instructions on the recipe source.", title: "See full instructions", detail: "See full instructions on the recipe source." }],
     cuisine: recipe.cuisines?.[0] ?? "",
+    mealTypes: recipe.dishTypes ?? [],
     diets: recipe.diets ?? [],
     allergens: [],
     equipment: [],

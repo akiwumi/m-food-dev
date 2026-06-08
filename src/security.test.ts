@@ -47,4 +47,17 @@ describe("client security controls", () => {
       expect(source).toContain('request.headers.get("authorization")');
     }
   });
+
+  it("keeps slow recipe enrichment out of the search response path", () => {
+    const source = readFileSync("supabase/functions/recipes/index.ts", "utf8");
+    expect(source).not.toContain("enrichRecipeInstructions");
+    expect(source).not.toContain("attachVideos");
+  });
+
+  it("prevents mobile form focus zoom and horizontal form overflow", () => {
+    const styles = readFileSync("src/styles.css", "utf8");
+    expect(styles).toContain("font-size:16px");
+    expect(styles).toContain("max-width:100%");
+    expect(styles).toContain("overflow-x:hidden");
+  });
 });
