@@ -4,8 +4,11 @@
   "description": "",
   "scripts": {
     "dev": "vite",
+    "prebuild": "node scripts/sync-vercel-csp.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
+    "csp:sync": "node scripts/sync-vercel-csp.mjs",
+    "csp:check": "node scripts/sync-vercel-csp.mjs --check",
     "test": "vitest run",
     "security:audit": "npm audit --audit-level=high",
     "verify": "npm run security:audit && npm test && npm run build"
