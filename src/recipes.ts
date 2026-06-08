@@ -27,46 +27,57 @@ export async function fetchCuratedRecipes(
   history: FoodHistory = {},
   offset = 0,
 ): Promise<Recipe[] | null> {
-  if (!supabase) return null;
+  if (!supabase) { console.info("[recipes] Supabase not configured (.env.local) — showing local recipes."); return null; }
   try {
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return null;
+    if (!session) { console.info("[recipes] Not signed in — live recipes need an authenticated session."); return null; }
 
-    const res = await fetch(ENDPOINT, {
-      method: "POST",
-      headers: { authorization: `Bearer ${session.access_token}`, "content-type": "application/json" },
-      body: JSON.stringify({
-        profile: {
-          diet: profile.diet,
-          dietReligious: profile.dietReligious,
-          allergies: profile.allergies,
-          dislikedIngredients: profile.dislikedIngredients,
-          cuisines: profile.cuisines,
-          mealTypes: profile.mealTypes,
-          flavorLikes: profile.flavorLikes,
-          flavorAvoids: profile.flavorAvoids,
-          textureLikes: profile.textureLikes,
-          spiceTolerance: profile.spiceTolerance,
-          spiceTypes: profile.spiceTypes,
-          comfortFoods: profile.comfortFoods,
-          proteins: profile.proteins,
-          ingredientPhilosophy: profile.ingredientPhilosophy,
-          skill: profile.skill,
-          weeknightTime: profile.weeknightTime,
-          nutritionGoals: profile.nutritionGoals,
-          rankingPreference: profile.rankingPreference,
-          // The aiSignal for each cooking mood the user identifies with — the
-          // single richest steer for curation.
-          moodSignals: cookingMoods.filter(m => profile.cookingMoods.includes(m.label)).map(m => m.aiSignal),
-          novelty: profile.novelty,
-        },
-        mood, energy, time, query, filters, history, offset,
-      }),
+    const body = JSON.stringify({
+      profile: {
+        diet: profile.diet,
+        dietReligious: profile.dietReligious,
+        allergies: profile.allergies,
+        dislikedIngredients: profile.dislikedIngredients,
+        cuisines: profile.cuisines,
+        mealTypes: profile.mealTypes,
+        flavorLikes: profile.flavorLikes,
+        flavorAvoids: profile.flavorAvoids,
+        textureLikes: profile.textureLikes,
+        spiceTolerance: profile.spiceTolerance,
+        spiceTypes: profile.spiceTypes,
+        comfortFoods: profile.comfortFoods,
+        proteins: profile.proteins,
+        ingredientPhilosophy: profile.ingredientPhilosophy,
+        skill: profile.skill,
+        weeknightTime: profile.weeknightTime,
+        nutritionGoals: profile.nutritionGoals,
+        rankingPreference: profile.rankingPreference,
+        // The aiSignal for each cooking mood the user identifies with — the
+        // single richest steer for curation.
+        moodSignals: cookingMoods.filter(m => profile.cookingMoods.includes(m.label)).map(m => m.aiSignal),
+        novelty: profile.novelty,
+      },
+      mood, energy, time, query, filters, history, offset,
     });
-    if (!res.ok) return null;
+
+    const post = (token: string) => fetch(ENDPOINT, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body,
+    });
+
+    let res = await post(session.access_token);
+    // A stale/expired access token returns 401 — refresh once and retry before
+    // giving up (otherwise we'd silently fall back to local recipes).
+    if (res.status === 401) {
+      const { data: { session: fresh } } = await supabase.auth.refreshSession();
+      if (fresh?.access_token) res = await post(fresh.access_token);
+    }
+    if (!res.ok) { console.warn(`[recipes] Live curation failed (HTTP ${res.status}) — showing local recipes.`); return null; }
     const data = await res.json();
     return Array.isArray(data.recipes) && data.recipes.length ? (data.recipes as Recipe[]) : null;
-  } catch {
+  } catch (e) {
+    console.warn("[recipes] Live curation request failed — showing local recipes.", e);
     return null;
   }
 }

@@ -12,14 +12,19 @@ async function callGateway<T>(payload: Record<string, unknown>): Promise<T> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error("Not signed in — AI needs an authenticated session.");
 
-  const res = await fetch(GATEWAY_URL, {
+  const body = JSON.stringify(payload);
+  const post = (token: string) => fetch(GATEWAY_URL, {
     method: "POST",
-    headers: {
-      authorization: `Bearer ${session.access_token}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(payload),
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body,
   });
+
+  let res = await post(session.access_token);
+  // Refresh once on a stale-token 401 before failing.
+  if (res.status === 401) {
+    const { data: { session: fresh } } = await supabase.auth.refreshSession();
+    if (fresh?.access_token) res = await post(fresh.access_token);
+  }
   if (!res.ok) throw new Error(`AI gateway error ${res.status}`);
   return res.json() as Promise<T>;
 }
