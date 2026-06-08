@@ -193,7 +193,14 @@ export default function App() {
   //  • A returning user with a finished profile skips onboarding.
   useEffect(() => onAuthChange(async (event, session) => {
     if (event === "SIGNED_OUT") { setEntry("welcome"); return; }
-    if (!session) return;
+    // No session on initial load means the user has no valid Supabase auth.
+    // If entry is already "app" (persisted from a prior session that may have
+    // predated real auth, or whose tokens have expired), drop back to login so
+    // they can sign in and unlock AI-curated recipes.
+    if (!session) {
+      setEntry(prev => prev === "app" ? "login" : prev);
+      return;
+    }
 
     // Only restore from Supabase when the stored preferences contain a real
     // completed profile (onboarded: true). New accounts have preferences_json = {}
