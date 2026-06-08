@@ -380,6 +380,13 @@ body,.app{background:linear-gradient(180deg,#dceef2 0%,#eaf4f3 30%,#f5fbfa 100%)
 .pantry-suggest{margin-top:22px}
 .pantry-group{margin-bottom:14px}
 .pantry-group>b{margin-bottom:7px}
+/* ── Recipe source note (live vs sample) ──────────────────────────── */
+.source-note.live{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--olive);font-weight:600;margin:2px 0 0}
+.source-note.offline{display:flex;align-items:center;gap:10px;background:#fff5e8;border:1px solid #f0d9b8;border-radius:14px;padding:11px 13px;margin:6px 0 0}
+.source-note.offline div{flex:1}
+.source-note.offline b{display:block;font-size:13px;font-weight:800;color:#9a6a1c}
+.source-note.offline span{font-size:11px;color:#9a6a1c;line-height:1.4;opacity:.9}
+.source-note.offline button{flex:none;border:1px solid #d8a85a;background:#fff;color:#9a6a1c;font-weight:700;border-radius:99px;padding:7px 13px;font-size:12px;display:inline-flex;align-items:center;gap:5px}
 .welcome-modern .wm-explain{background:var(--glass,rgba(255,255,255,.7));border:1px solid rgba(0,0,0,.06);border-radius:24px;padding:20px;margin:4px 0 16px;display:grid;gap:12px;box-shadow:var(--shadow)}
 .welcome-modern .wm-explain h2{display:flex;align-items:center;gap:8px;font-size:18px;font-weight:800;margin:0;letter-spacing:-.01em}
 .welcome-modern .wm-explain h2 svg{color:var(--blue-deep)}
