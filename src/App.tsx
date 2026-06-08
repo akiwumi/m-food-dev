@@ -194,20 +194,26 @@ export default function App() {
   useEffect(() => onAuthChange(async (event, session) => {
     if (event === "SIGNED_OUT") { setEntry("welcome"); return; }
     if (!session) return;
-    if (isSupabaseConfigured && supabase) {
+
+    // Only restore from Supabase when the stored preferences contain a real
+    // completed profile (onboarded: true). New accounts have preferences_json = {}
+    // (set by the signup trigger) — applying that would wipe localStorage.
+    // We only reach this path on SIGNED_IN / INITIAL_SESSION when localStorage
+    // doesn't already have a completed profile, i.e. on a new device.
+    if (isSupabaseConfigured && supabase && !storedProfile.onboarded) {
       const { data } = await supabase.from("profiles")
         .select("preferences_json")
         .eq("id", session.user.id)
         .maybeSingle();
-      if (data?.preferences_json && typeof data.preferences_json === "object" && !Array.isArray(data.preferences_json)) {
-        const restored = { ...defaultProfile, ...(data.preferences_json as Partial<Profile>), email: session.user.email ?? "" };
+      const prefs = data?.preferences_json as Record<string, unknown> | null;
+      if (prefs && prefs.onboarded === true && prefs.accountCreated === true) {
+        const restored = { ...defaultProfile, ...prefs, email: session.user.email ?? "" } as Profile;
         setProfile(restored);
-        if (restored.onboarded && restored.accountCreated) {
-          setEntry(prev => (prev === "welcome" || prev === "login") ? "app" : prev);
-          return;
-        }
+        setEntry(prev => (prev === "welcome" || prev === "login") ? "app" : prev);
+        return;
       }
     }
+
     if (storedProfile.onboarded && storedProfile.accountCreated) {
       setEntry(prev => (prev === "welcome" || prev === "login") ? "app" : prev);
     }
