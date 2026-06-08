@@ -368,6 +368,7 @@ body,.app{background:linear-gradient(180deg,#dceef2 0%,#eaf4f3 30%,#f5fbfa 100%)
 .mm-group button>svg:last-child{color:var(--muted);opacity:.45}
 .mm-group button.active{background:var(--sage);color:var(--blue-deep)}
 .mm-logout{display:flex;align-items:center;justify-content:center;gap:8px;border:0;background:transparent;color:#a33;font-weight:700;padding:14px;margin-top:2px}
+.search-grid article>.remove-saved{color:#a33;z-index:2;box-shadow:var(--shadow-sm)}
 .welcome-modern .wm-explain{background:var(--glass,rgba(255,255,255,.7));border:1px solid rgba(0,0,0,.06);border-radius:24px;padding:20px;margin:4px 0 16px;display:grid;gap:12px;box-shadow:var(--shadow)}
 .welcome-modern .wm-explain h2{display:flex;align-items:center;gap:8px;font-size:18px;font-weight:800;margin:0;letter-spacing:-.01em}
 .welcome-modern .wm-explain h2 svg{color:var(--blue-deep)}
