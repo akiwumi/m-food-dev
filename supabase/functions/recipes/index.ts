@@ -384,25 +384,58 @@ Deno.serve(async (request) => {
   if (minProtein) targets.minProtein = String(minProtein);
   for (const [k, v] of Object.entries(targets)) params.set(k, v);
 
+  let spoonStatus = 0, spoonCount = 0, spoonSafeCount = 0;
+  let mealdbCount = 0, mealdbSafeCount = 0;
+  let spoonErr = "";
+
   try {
     const res = await fetch(`https://api.spoonacular.com/recipes/complexSearch?${params}`);
+    spoonStatus = res.status;
     if (res.ok) {
       const data = await res.json();
       const normalized = (data.results ?? []).map((r: any) => normalizeSpoonacularRecipe(r, mood));
+      spoonCount = normalized.length;
       const safe = filterRecipesForProfile(safetyFilter(normalized, profile.allergies ?? []), profile);
+      spoonSafeCount = safe.length;
+      console.log(`[recipes] spoonacular: status=${res.status} total=${spoonCount} safe=${spoonSafeCount}`);
       if (safe.length) {
         const curated = await curate(safe, profile, mood, history);
         const withVideos = await attachVideos(curated, query, cuisines[0] ?? mood);
         return Response.json({ provider: "spoonacular", recipes: await enrichRecipeInstructions(withVideos) }, { headers: headers(origin) });
       }
+    } else {
+      spoonErr = await res.text().catch(() => "");
+      console.warn(`[recipes] spoonacular failed: status=${res.status} body=${spoonErr.slice(0, 200)}`);
     }
 
-    const fallback = filterRecipesForProfile(safetyFilter(await fetchTheMealDbRecipes(query, mood), profile.allergies ?? []), profile);
+    const mealdbRecipes = await fetchTheMealDbRecipes(query, mood);
+    mealdbCount = mealdbRecipes.length;
+    const fallback = filterRecipesForProfile(safetyFilter(mealdbRecipes, profile.allergies ?? []), profile);
+    mealdbSafeCount = fallback.length;
+    console.log(`[recipes] themealdb: total=${mealdbCount} safe=${mealdbSafeCount}`);
     if (fallback.length) return Response.json({ provider: "themealdb", recipes: await enrichRecipeInstructions(fallback) }, { headers: headers(origin) });
-    return Response.json({ error: "Recipe sources failed" }, { status: 502, headers: headers(origin) });
-  } catch {
-    const fallback = filterRecipesForProfile(safetyFilter(await fetchTheMealDbRecipes(query, mood), profile.allergies ?? []), profile);
-    if (fallback.length) return Response.json({ provider: "themealdb", recipes: await enrichRecipeInstructions(fallback) }, { headers: headers(origin) });
-    return Response.json({ error: "Recipe sources failed" }, { status: 502, headers: headers(origin) });
+
+    console.error(`[recipes] both sources empty — diet=${profile.diet} allergies=${JSON.stringify(profile.allergies)}`);
+    return Response.json({
+      error: "Recipe sources failed",
+      diag: { spoonStatus, spoonCount, spoonSafeCount, spoonErr: spoonErr.slice(0, 100), mealdbCount, mealdbSafeCount },
+    }, { status: 502, headers: headers(origin) });
+  } catch (e) {
+    const errMsg = e instanceof Error ? e.message : String(e);
+    console.error(`[recipes] exception: ${errMsg}`);
+    try {
+      const mealdbRecipes = await fetchTheMealDbRecipes(query, mood);
+      mealdbCount = mealdbRecipes.length;
+      const fallback = filterRecipesForProfile(safetyFilter(mealdbRecipes, profile.allergies ?? []), profile);
+      mealdbSafeCount = fallback.length;
+      console.log(`[recipes] themealdb fallback after exception: total=${mealdbCount} safe=${mealdbSafeCount}`);
+      if (fallback.length) return Response.json({ provider: "themealdb", recipes: await enrichRecipeInstructions(fallback) }, { headers: headers(origin) });
+    } catch (e2) {
+      console.error(`[recipes] themealdb also threw: ${e2 instanceof Error ? e2.message : String(e2)}`);
+    }
+    return Response.json({
+      error: "Recipe sources failed",
+      diag: { spoonStatus, spoonErr: errMsg.slice(0, 100), mealdbCount, mealdbSafeCount },
+    }, { status: 502, headers: headers(origin) });
   }
 });

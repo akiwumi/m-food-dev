@@ -86,9 +86,18 @@ export async function fetchCuratedRecipes(
       const { data: { session: fresh } } = await supabase.auth.refreshSession();
       if (fresh?.access_token) res = await post(fresh.access_token);
     }
-    if (!res.ok) { console.warn(`[recipes] Live curation failed (HTTP ${res.status}) — showing local recipes.`); return null; }
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      console.warn(`[recipes] Live curation failed (HTTP ${res.status}):`, body);
+      return null;
+    }
     const data = await res.json();
-    return Array.isArray(data.recipes) && data.recipes.length ? (data.recipes as Recipe[]) : null;
+    if (!Array.isArray(data.recipes) || !data.recipes.length) {
+      console.warn("[recipes] Edge function returned no recipes:", JSON.stringify(data).slice(0, 300));
+      return null;
+    }
+    console.info(`[recipes] Got ${data.recipes.length} recipes from ${data.provider ?? "unknown"}`);
+    return data.recipes as Recipe[];
   } catch (e) {
     console.warn("[recipes] Live curation request failed — showing local recipes.", e);
     return null;
