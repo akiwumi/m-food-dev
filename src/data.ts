@@ -1,3 +1,14 @@
+export type RecipeStep = {
+  text: string;
+  title?: string;
+  detail?: string;
+  cue?: string;
+  image?: string;
+  timer?: number;
+  active?: string[];
+  equipment?: string[];
+};
+
 export type Recipe = {
   id: string;
   title: string;
@@ -8,7 +19,7 @@ export type Recipe = {
   moods: string[];
   reason: string;
   ingredients: string[];
-  steps: { text: string; timer?: number; active?: string[] }[];
+  steps: RecipeStep[];
   cuisine: string;
   diets: string[];
   allergens: string[];
