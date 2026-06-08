@@ -29,6 +29,7 @@
 // sortDirection, ignorePantry, plus full recipe info/nutrition/instructions.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { fetchTheMealDbRecipes, normalizeSpoonacularRecipe } from "./provider.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
@@ -167,35 +168,6 @@ function joinList(values: unknown, max: number, itemMax = 40): string {
     .filter((v): v is string => typeof v === "string")
     .map(v => v.trim().slice(0, itemMax))
     .filter(Boolean))].slice(0, max).join(",");
-}
-
-const stripHtml = (s: string) => (s ?? "").replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
-
-function normalize(r: any, mood: string) {
-  const nutrients = r.nutrition?.nutrients ?? [];
-  const calories = Math.round(nutrients.find((n: any) => n.name === "Calories")?.amount ?? 0);
-  const time = r.readyInMinutes ?? 30;
-  const steps = (r.analyzedInstructions?.[0]?.steps ?? []).map((s: any) => ({ text: s.step }));
-  const ingredients = (r.extendedIngredients ?? []).map((i: any) => i.original).filter(Boolean);
-  return {
-    id: String(r.id),
-    title: r.title ?? "Recipe",
-    image: r.image ?? "",
-    time,
-    difficulty: time <= 30 ? "Easy" : "Medium",
-    calories,
-    moods: [mood],
-    reason: stripHtml(r.summary).split(". ").slice(0, 1).join(". "),
-    ingredients,
-    steps: steps.length ? steps : [{ text: "See full instructions on the recipe source." }],
-    cuisine: r.cuisines?.[0] ?? "",
-    diets: r.diets ?? [],
-    allergens: [], // Spoonacular already excluded the user's intolerances
-    equipment: [], // empty passes the client-side equipment filter
-    status: "published",
-    video: "",
-    sourceUrl: r.sourceUrl ?? r.spoonacularSourceUrl ?? "",
-  };
 }
 
 // Best-effort: attach a cooking video to recipes when one exists. Spoonacular's
@@ -397,14 +369,23 @@ Deno.serve(async (request) => {
 
   try {
     const res = await fetch(`https://api.spoonacular.com/recipes/complexSearch?${params}`);
-    if (!res.ok) return Response.json({ error: "Recipe source failed" }, { status: 502, headers: headers(origin) });
-    const data = await res.json();
-    const normalized = (data.results ?? []).map((r: any) => normalize(r, mood));
-    const safe = safetyFilter(normalized, profile.allergies ?? []);
-    const curated = await curate(safe, profile, mood, history);
-    const withVideos = await attachVideos(curated, query, cuisines[0] ?? mood);
-    return Response.json({ provider: "spoonacular", recipes: withVideos }, { headers: headers(origin) });
+    if (res.ok) {
+      const data = await res.json();
+      const normalized = (data.results ?? []).map((r: any) => normalizeSpoonacularRecipe(r, mood));
+      const safe = safetyFilter(normalized, profile.allergies ?? []);
+      if (safe.length) {
+        const curated = await curate(safe, profile, mood, history);
+        const withVideos = await attachVideos(curated, query, cuisines[0] ?? mood);
+        return Response.json({ provider: "spoonacular", recipes: withVideos }, { headers: headers(origin) });
+      }
+    }
+
+    const fallback = safetyFilter(await fetchTheMealDbRecipes(query, mood), profile.allergies ?? []);
+    if (fallback.length) return Response.json({ provider: "themealdb", recipes: fallback }, { headers: headers(origin) });
+    return Response.json({ error: "Recipe sources failed" }, { status: 502, headers: headers(origin) });
   } catch {
-    return Response.json({ error: "Recipe source failed" }, { status: 502, headers: headers(origin) });
+    const fallback = safetyFilter(await fetchTheMealDbRecipes(query, mood), profile.allergies ?? []);
+    if (fallback.length) return Response.json({ provider: "themealdb", recipes: fallback }, { headers: headers(origin) });
+    return Response.json({ error: "Recipe sources failed" }, { status: 502, headers: headers(origin) });
   }
 });
