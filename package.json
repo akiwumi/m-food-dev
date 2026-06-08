@@ -4,7 +4,6 @@
   "description": "",
   "scripts": {
     "dev": "vite",
-    "prebuild": "node scripts/sync-vercel-csp.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "csp:sync": "node scripts/sync-vercel-csp.mjs",

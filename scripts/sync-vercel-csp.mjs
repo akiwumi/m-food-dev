@@ -1,9 +1,12 @@
 // Writes the production CSP from csp.config.js into vercel.json.
 //
-// Runs automatically via the "prebuild" npm hook, so `npm run build` always
-// emits a vercel.json whose Content-Security-Policy header matches the single
-// source of truth. Pass --check to fail (exit 1) instead of writing when the
-// file is out of sync -- useful in CI.
+// Run manually with: npm run csp:sync
+// Check for drift with: npm run csp:check
+//
+// NOT wired to prebuild — Vercel preprocesses vercel.json before the build
+// starts (potentially reformatting it), which breaks the pattern match.
+// Instead, run csp:sync locally whenever csp.config.js changes and commit
+// the updated vercel.json. Pass --check to exit 1 when out of sync.
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
