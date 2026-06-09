@@ -209,46 +209,65 @@ export default function App() {
   useEffect(() => { const { charged } = runDue(); if (charged) setProfile(p => ({ ...p, subscriptionStatus: "active" })); refreshNotifs(); }, []);
   // Real auth: keep the entry flow in sync with the session.
   //  • Sign out anywhere → back to welcome.
-  //  • On sign-in, pull preferences_json from Supabase so the profile is
-  //    restored on new devices (not just from localStorage).
-  //  • A returning user with a finished profile skips onboarding.
+  //  • On sign-in, Supabase is the source of truth — restore preferences_json
+  //    if it has a completed profile, otherwise push local data up.
+  //  • Only route to onboarding for accounts created in the last 10 minutes
+  //    (genuine new signups). Returning users whose data is missing (cleared
+  //    browser, new device) go straight to the app — never re-onboard.
   useEffect(() => onAuthChange(async (event, session) => {
     if (event === "SIGNED_OUT") { setEntry("welcome"); return; }
-    // No session on initial load means the user has no valid Supabase auth.
-    // If entry is already "app" (persisted from a prior session that may have
-    // predated real auth, or whose tokens have expired), drop back to login so
-    // they can sign in and unlock AI-curated recipes.
     if (!session) {
       setEntry(prev => prev === "app" ? "login" : prev);
       return;
     }
 
-    // Only restore from Supabase when the stored preferences contain a real
-    // completed profile (onboarded: true). New accounts have preferences_json = {}
-    // (set by the signup trigger) — applying that would wipe localStorage.
-    // We only reach this path on SIGNED_IN / INITIAL_SESSION when localStorage
-    // doesn't already have a completed profile, i.e. on a new device.
-    if (isSupabaseConfigured && supabase && !storedProfile.onboarded) {
+    if (isSupabaseConfigured && supabase) {
       const { data } = await supabase.from("profiles")
         .select("preferences_json")
         .eq("id", session.user.id)
         .maybeSingle();
       const prefs = data?.preferences_json as Record<string, unknown> | null;
-      if (prefs && prefs.onboarded === true && prefs.accountCreated === true) {
+
+      if (prefs && prefs.onboarded === true) {
+        // Supabase has a completed profile — restore it (handles new-device login).
         const restored = { ...defaultProfile, ...prefs, email: session.user.email ?? "" } as Profile;
         setProfile(restored);
         setEntry(prev => (prev === "welcome" || prev === "login") ? "app" : prev);
         return;
       }
-      setProfile({ ...defaultProfile, email: session.user.email ?? "", accountCreated: true });
-      setEntry("onboarding");
+
+      // Supabase profile is empty/incomplete. Check local storage first.
+      if (storedProfile.onboarded) {
+        // Local profile is complete — push it to Supabase now we have a session.
+        supabase.from("profiles").upsert({
+          id: session.user.id,
+          display_name: storedProfile.name,
+          onboarded: true,
+          preferences_json: storedProfile,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "id" });
+        setEntry(prev => (prev === "welcome" || prev === "login") ? "app" : prev);
+        return;
+      }
+
+      // Neither Supabase nor localStorage has a completed profile.
+      // Use account age: < 10 min = genuinely new signup → onboard.
+      // Older accounts are returning users whose data is missing → skip re-onboarding.
+      const accountAgeMs = Date.now() - new Date(session.user.created_at).getTime();
+      if (accountAgeMs < 10 * 60 * 1000) {
+        setProfile({ ...defaultProfile, email: session.user.email ?? "", accountCreated: true });
+        setEntry("onboarding");
+      } else {
+        setEntry(prev => (prev === "welcome" || prev === "login") ? "app" : prev);
+      }
       return;
     }
 
+    // Supabase not configured (pilot/local mode) — use localStorage signal.
     if (storedProfile.onboarded && storedProfile.accountCreated) {
       setEntry(prev => (prev === "welcome" || prev === "login") ? "app" : prev);
     }
-  }), [storedProfile.onboarded, storedProfile.accountCreated]);
+  }), [storedProfile.onboarded, storedProfile.accountCreated, storedProfile]);
 
   // Debounced upsert: save the full profile to Supabase 1.5 s after any change.
   // This keeps preferences_json current so the user's profile is restored when
