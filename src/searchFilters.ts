@@ -11,9 +11,9 @@ export const SPOON_CUISINES = [
   "Mexican", "Middle Eastern", "Nordic", "Southern", "Spanish", "Thai", "Vietnamese",
 ];
 
-// Spoonacular `type` (meal type) values surfaced in search.
+// Meal-time categories shown on home screen and in search filters.
 export const MEAL_TYPES = [
-  "main", "starter", "dessert", "snack", "drink",
+  "breakfast", "lunch", "dinner", "snacks", "dessert",
 ];
 
 // Diet override choices in search (label sent straight to the edge function,

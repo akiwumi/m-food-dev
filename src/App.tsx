@@ -114,6 +114,7 @@ export default function App() {
   const [mood, setMood] = useState("Cozy");
   const [energy, setEnergy] = useState(45);
   const [time, setTime] = useState(30);
+  const [mealCategory, setMealCategory] = useState("");
   const [results, setResults] = useState(false);
   const [searchRequest, setSearchRequest] = useState<SearchRequest | null>(null);
   const [searchResults, setSearchResults] = useState<Recipe[]>([]);
@@ -143,12 +144,13 @@ export default function App() {
   const ACCESSORY_TYPES = useMemo(() => new Set(["dessert", "desserts", "snack", "snacks", "drink", "drinks", "beverage", "beverages", "sweet", "sweets"]), []);
   const ranked = useMemo(() => {
     const base = aiRanked ?? localRanked;
-    if (searchRequest?.filters?.type) return base; // explicit type filter in search → show as-is
+    // When an explicit type filter or meal category is set, pass through as-is
+    if (searchRequest?.filters?.type || mealCategory) return base;
     return base.filter(r => {
       const types = (r.mealTypes ?? []).map((t: string) => t.toLowerCase());
       return !types.length || !types.every((t: string) => ACCESSORY_TYPES.has(t));
     });
-  }, [aiRanked, localRanked, searchRequest?.filters?.type, ACCESSORY_TYPES]);
+  }, [aiRanked, localRanked, searchRequest?.filters?.type, mealCategory, ACCESSORY_TYPES]);
 
   // What the user has actually cooked, logged, and saved — so the AI learns from
   // behaviour, not just the stated profile. Recomputed as those change.
@@ -178,8 +180,9 @@ export default function App() {
     if (entry !== "app" || !results) return;
     let cancelled = false;
     setCurating(true);
+    setAiRanked(null); // clear stale results immediately so loading state shows
     setMoreOffset(0);
-    fetchCuratedRecipes(sharedProfile, mood, energy, time, "", {}, foodHistory, 0)
+    fetchCuratedRecipes(sharedProfile, mood, energy, time, "", { type: mealCategory || undefined }, foodHistory, 0)
       .then(list => {
         if (cancelled) return;
         if (list?.length) {
@@ -191,7 +194,7 @@ export default function App() {
       })
       .finally(() => { if (!cancelled) { setCurating(false); setHasFetched(true); } });
     return () => { cancelled = true; };
-  }, [results, mood, energy, time, sharedProfile, entry, recipeNonce]);
+  }, [results, mood, energy, time, sharedProfile, entry, recipeNonce, mealCategory]);
 
   // "Show me 5 more" — fetch a fresh page (next offset) and append. Falls back to
   // simply revealing more of the local ranking when the backend isn't available.
@@ -200,7 +203,7 @@ export default function App() {
     const nextOffset = moreOffset + 10;
     setMoreOffset(nextOffset);
     try {
-      const list = await fetchCuratedRecipes(sharedProfile, mood, energy, time, "", {}, foodHistory, nextOffset);
+      const list = await fetchCuratedRecipes(sharedProfile, mood, energy, time, "", { type: mealCategory || undefined }, foodHistory, nextOffset);
       if (list?.length) {
         setCatalog(prev => { const ids = new Set(prev.map(r => r.id)); return [...prev, ...list.filter(r => !ids.has(r.id))]; });
         setAiRanked(prev => { const seen = new Set((prev ?? []).map(r => r.id)); return [...(prev ?? []), ...list.filter(r => !seen.has(r.id))]; });
@@ -363,12 +366,12 @@ export default function App() {
   return <MenuCtx.Provider value={() => setMenuOpen(true)}><div className={page === "cook" ? "app cooking" : "app"}>
     {page !== "cook" && <DesktopNav page={page} go={go} />}
     <main>
-      {page === "home" && <HomeScreen profile={profile} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} results={false} setResults={setResults} beginResults={() => { setSearchRequest(null); setCurating(true); setAiRanked(null); setHasFetched(false); setResults(true); go("results"); }} ranked={ranked} curating={curating} loadMore={loadMore} live={aiRanked !== null} configured={isSupabaseConfigured} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} />}
+      {page === "home" && <HomeScreen profile={profile} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} results={false} setResults={setResults} beginResults={() => { setSearchRequest(null); setCurating(true); setAiRanked(null); setHasFetched(false); setResults(true); go("results"); }} ranked={ranked} curating={curating} loadMore={loadMore} live={aiRanked !== null} configured={isSupabaseConfigured} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} />}
       {page === "search" && <SearchScreen profile={sharedProfile} onSearch={request => runSearch(request)} />}
       {page === "results" && (searchRequest
         ? <SearchResultsScreen results={searchResults} loading={searchLoading} request={searchRequest} more={() => runSearch(searchRequest, true)} home={() => go("home")} search={() => go("search")} open={open} saved={saved} setSaved={setSaved} />
         : results
-          ? <HomeScreen profile={profile} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} results setResults={v => { setResults(v); if (!v) go("home"); }} beginResults={() => {}} ranked={ranked} curating={curating} hasFetched={hasFetched} loadMore={loadMore} live={aiRanked !== null} configured={isSupabaseConfigured} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} />
+          ? <HomeScreen profile={profile} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} results setResults={v => { setResults(v); if (!v) go("home"); }} beginResults={() => {}} ranked={ranked} curating={curating} hasFetched={hasFetched} loadMore={loadMore} live={aiRanked !== null} configured={isSupabaseConfigured} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} />
           : <EmptyResultsScreen home={() => go("home")} search={() => go("search")} />)}
       {page === "detail" && selected && <DetailScreen recipe={selected} servings={eaterCount} back={() => go(detailReturnPage)} cook={() => go("cook")} saved={saved.includes(selected.id)} toggleSave={() => setSaved(toggle(saved, selected.id))} addGroceries={() => setGroceries(v => [...new Set([...v, ...selected.ingredients])])} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} shareToCommunity={() => shareRecipe(selected)} allergies={profile.allergies} />}
       {page === "cook" && selected && <CookScreen recipe={selected} exit={() => go("detail")} allergies={profile.allergies} finish={(rating, photo) => { setDiary(v => [{ recipe: selected, rating, when: "Today" }, ...v]); if (photo) setProfile(p => ({ ...p, photoLogs: [photo, ...p.photoLogs] })); go("diary"); }} />}
@@ -876,8 +879,9 @@ function AppHeader({ openNotifs, unread, profile }: { openNotifs?: () => void; u
   );
 }
 
-function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, results, setResults, beginResults, ranked, curating, hasFetched, loadMore, live, configured, retry, open, go, diners, selectedDiners, setSelectedDiners, eaterCount, setEaterCount, openNotifs, unread, addPhoto }: {
+function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, mealCategory, setMealCategory, results, setResults, beginResults, ranked, curating, hasFetched, loadMore, live, configured, retry, open, go, diners, selectedDiners, setSelectedDiners, eaterCount, setEaterCount, openNotifs, unread, addPhoto }: {
   profile: Profile; mood: string; setMood: (v: string) => void; energy: number; setEnergy: (v: number) => void; time: number; setTime: (v: number) => void;
+  mealCategory: string; setMealCategory: (v: string) => void;
   results: boolean; setResults: (v: boolean) => void; beginResults: () => void; ranked: Recipe[]; curating?: boolean; hasFetched?: boolean; loadMore?: () => void; live?: boolean; configured?: boolean; retry?: () => void; open: (r: Recipe) => void; go: (p: Page) => void;
   diners: Diner[]; selectedDiners: string[]; setSelectedDiners: (v: string[]) => void;
   eaterCount: number; setEaterCount: (v: number) => void; openNotifs?: () => void; unread?: number;
@@ -901,8 +905,8 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
         <div className="thinking-lines"><i /><i /><i /></div>
       </div> : <>
       <div className="home-greeting">
-        <h1>Tonight’s picks.</h1>
-        <p>{energy < 50 ? "Low-effort" : "Interesting"}, {mood.toLowerCase()}, within {time} min · {eaterCount} {eaterCount === 1 ? "person" : "people"}</p>
+        <h1>{mealCategory ? `${mealCategory[0].toUpperCase()}${mealCategory.slice(1)} picks.` : "Tonight’s picks."}</h1>
+        <p>{energy < 50 ? "Low-effort" : "Interesting"}, {mood.toLowerCase()}{mealCategory ? `, ${mealCategory}` : ""}, within {time} min · {eaterCount} {eaterCount === 1 ? "person" : "people"}</p>
         {live && <p className="source-note live"><Check size={13} /> Live picks, freshly curated for you.</p>}
         {!live && <div className="source-note offline"><div><b>Live curation unavailable</b><span>{configured ? "Couldn’t reach live recipe curation — check you’re signed in and online." : "Live curation isn’t configured in this build."}</span></div>{configured && retry && <button onClick={retry}><RotateCcw size={14} /> Retry</button>}</div>}
       </div>
@@ -1000,12 +1004,23 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
         <input type="range" value={energy} onChange={e => setEnergy(+e.target.value)} style={{ width: "100%" }} />
         <div className="range-label"><span>Low — easy recipes</span><span>High — adventurous</span></div>
 
+        <span className="section-label">Meal type</span>
+        <div className="meal-category-pills">
+          {["Breakfast", "Lunch", "Dinner", "Snacks", "Dessert"].map(cat => (
+            <button
+              key={cat}
+              className={mealCategory === cat.toLowerCase() ? "active" : ""}
+              onClick={() => setMealCategory(mealCategory === cat.toLowerCase() ? "" : cat.toLowerCase())}
+            >{cat}</button>
+          ))}
+        </div>
+
         <button
           className="primary"
           style={{ width: "100%", marginTop: 18, minHeight: 54 }}
           onClick={beginResults}
         >
-          Find tonight’s dinner <ArrowRight size={18} />
+          {mealCategory ? `Find ${mealCategory} recipes` : "Find tonight’s dinner"} <ArrowRight size={18} />
         </button>
       </div>
 

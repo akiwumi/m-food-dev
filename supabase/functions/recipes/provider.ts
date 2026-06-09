@@ -87,10 +87,17 @@ export function filterRecipesByMaxTime(recipes: any[], maxTime: number): any[] {
 }
 
 const CATEGORY_TYPES: Record<string, string[]> = {
+  // Legacy search values
   main: ["main course"],
   starter: ["appetizer", "salad", "soup", "side dish"],
+  // Meal-time categories (home screen + search)
+  breakfast: ["breakfast", "morning meal", "brunch"],
+  lunch: ["main course", "lunch", "salad", "soup", "side dish", "sandwich"],
+  dinner: ["main course", "dinner"],
+  snacks: ["snack", "appetizer", "finger food"],
+  snack: ["snack", "appetizer", "finger food"],
   dessert: ["dessert"],
-  snack: ["snack"],
+  drink: ["beverage", "drink"],
 };
 
 export function filterRecipesByCategory(recipes: any[], category: string): any[] {

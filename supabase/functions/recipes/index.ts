@@ -130,11 +130,25 @@ function mapCuisines(cuisines: string[]): string[] {
   return [...out];
 }
 
+// Mood → Spoonacular query keywords so different moods surface different recipes.
+const MOOD_QUERY_TERMS: Record<string, string> = {
+  tired:        "easy quick simple",
+  stressed:     "comforting easy simple",
+  cozy:         "comforting hearty warm",
+  celebratory:  "special impressive festive",
+  energised:    "light fresh healthy",
+  focused:      "protein nutritious healthy",
+  adventurous:  "exotic unique international",
+  sad:          "comforting warming soothing",
+  happy:        "bright fresh colorful",
+};
+
 // App meal-type label → Spoonacular `type`.
 const MEAL_TYPE_MAP: Record<string, string> = {
   main: "main course", starter: "appetizer",
-  breakfast: "breakfast", brunch: "breakfast", lunch: "main course",
-  dinner: "main course", "late night": "main course", "meal prep": "main course",
+  breakfast: "breakfast", brunch: "breakfast",
+  lunch: "main course", dinner: "main course",
+  "late night": "main course", "meal prep": "main course",
   snacks: "snack", snack: "snack", dessert: "dessert", "side dish": "side dish",
   appetizer: "appetizer", salad: "salad", soup: "soup", bread: "bread",
   beverage: "beverage", drink: "drink", "main course": "main course",
@@ -304,7 +318,11 @@ Deno.serve(async (request) => {
     offset: String(num(body?.offset, 0, 900) ?? 0),
     maxReadyTime: String(maxTime),
   });
-  if (query) params.set("query", query);
+  // When no explicit query is given, inject mood keywords so Spoonacular returns
+  // different recipe sets for different moods (not the same popularity-sorted top-20).
+  const moodTerms = !query ? (MOOD_QUERY_TERMS[(mood ?? "").toLowerCase()] ?? "") : "";
+  const effectiveQuery = query || moodTerms;
+  if (effectiveQuery) params.set("query", effectiveQuery);
 
   // Sort: explicit search sort wins, else the profile's ranking preference.
   const { sort, dir } = mapSort(filters.sort ?? profile.rankingPreference ?? "popularity");
