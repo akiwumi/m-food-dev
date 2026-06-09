@@ -79,7 +79,7 @@ export async function fetchCuratedRecipes(
         method: "POST",
         headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
         body,
-        signal: AbortSignal.timeout(22_000),
+        signal: AbortSignal.timeout(8_000),
       });
 
       let res = await post(session.access_token);
@@ -113,9 +113,9 @@ export async function fetchCuratedRecipes(
   return Promise.race([
     run(),
     new Promise<null>(resolve => setTimeout(() => {
-      console.warn("[recipes] Hard timeout (25 s) — falling back to local recipes.");
+      console.warn("[recipes] Hard timeout (10 s) — falling back to local recipes.");
       resolve(null);
-    }, 25_000)),
+    }, 10_000)),
   ]);
 }
 

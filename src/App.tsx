@@ -159,20 +159,20 @@ export default function App() {
     [diary, profile.photoLogs, saved, catalog],
   );
 
-  const runSearch = async (request: SearchRequest, nextPage = false) => {
+  const runSearch = (request: SearchRequest, nextPage = false) => {
     const offset = nextPage ? searchOffset + 8 : 0;
     setSearchRequest(request);
-    setSearchLoading(true);
     setSearchOffset(offset);
     setPage("results");
     window.scrollTo(0, 0);
-    try {
-      const live = await fetchCuratedRecipes(sharedProfile, mood, 50, request.filters.maxReadyTime ?? 60, request.query, request.filters, foodHistory, offset);
-      const localPage = finalizeSearchResults(safeRecipes, sharedProfile, request.filters, 100).slice(offset, offset + 8);
-      setSearchResults(finalizeSearchResults(live ?? localPage, sharedProfile, request.filters, 8));
-    } finally {
-      setSearchLoading(false);
-    }
+    // Show local results immediately so the user never stares at a spinner.
+    const localPage = finalizeSearchResults(safeRecipes, sharedProfile, request.filters, 100).slice(offset, offset + 8);
+    setSearchResults(finalizeSearchResults(localPage, sharedProfile, request.filters, 8));
+    setSearchLoading(true);
+    // Fetch live results in the background; swap in if they arrive in time.
+    fetchCuratedRecipes(sharedProfile, mood, 50, request.filters.maxReadyTime ?? 60, request.query, request.filters, foodHistory, offset)
+      .then(live => { if (live?.length) setSearchResults(finalizeSearchResults(live, sharedProfile, request.filters, 8)); })
+      .finally(() => setSearchLoading(false));
   };
 
   // When the user asks for recommendations, fetch real AI-curated recipes.
@@ -366,7 +366,7 @@ export default function App() {
   return <MenuCtx.Provider value={() => setMenuOpen(true)}><div className={page === "cook" ? "app cooking" : "app"}>
     {page !== "cook" && <DesktopNav page={page} go={go} />}
     <main>
-      {page === "home" && <HomeScreen profile={profile} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} results={false} setResults={setResults} beginResults={() => { setSearchRequest(null); setCurating(true); setAiRanked(null); setHasFetched(false); setResults(true); go("results"); }} ranked={ranked} curating={curating} loadMore={loadMore} live={aiRanked !== null} configured={isSupabaseConfigured} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} />}
+      {page === "home" && <HomeScreen profile={profile} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} results={false} setResults={setResults} beginResults={() => { setSearchRequest(null); setAiRanked(null); setHasFetched(true); setResults(true); go("results"); }} ranked={ranked} curating={curating} loadMore={loadMore} live={aiRanked !== null} configured={isSupabaseConfigured} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} />}
       {page === "search" && <SearchScreen profile={sharedProfile} onSearch={request => runSearch(request)} />}
       {page === "results" && (searchRequest
         ? <SearchResultsScreen results={searchResults} loading={searchLoading} request={searchRequest} more={() => runSearch(searchRequest, true)} home={() => go("home")} search={() => go("search")} open={open} saved={saved} setSaved={setSaved} />
@@ -897,18 +897,13 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
   if (results) return (
     <div className="home-screen">
       <AppHeader profile={profile} openNotifs={openNotifs} unread={unread} />
-      {(curating || !hasFetched) ? <div className="thinking-state">
-        <div className="thinking-orbit"><Sparkles /><i /><i /><i /></div>
-        <span>MOODY IS THINKING</span>
-        <h1>Finding dinner that fits tonight.</h1>
-        <p>Checking your safety rules, {time}-minute limit, mood, and food profile.</p>
-        <div className="thinking-lines"><i /><i /><i /></div>
-      </div> : <>
+      <>
       <div className="home-greeting">
         <h1>{mealCategory ? `${mealCategory[0].toUpperCase()}${mealCategory.slice(1)} picks.` : "Tonight’s picks."}</h1>
         <p>{energy < 50 ? "Low-effort" : "Interesting"}, {mood.toLowerCase()}{mealCategory ? `, ${mealCategory}` : ""}, within {time} min · {eaterCount} {eaterCount === 1 ? "person" : "people"}</p>
-        {live && <p className="source-note live"><Check size={13} /> Live picks, freshly curated for you.</p>}
-        {!live && <div className="source-note offline"><div><b>Live curation unavailable</b><span>{configured ? "Couldn’t reach live recipe curation — check you’re signed in and online." : "Live curation isn’t configured in this build."}</span></div>{configured && retry && <button onClick={retry}><RotateCcw size={14} /> Retry</button>}</div>}
+        {curating && <p className="source-note curating"><Sparkles size={13} /> Finding fresh picks for you…</p>}
+        {!curating && live && <p className="source-note live"><Check size={13} /> Live picks, freshly curated for you.</p>}
+        {!curating && !live && <div className="source-note offline"><div><b>Showing local picks</b><span>{configured ? "Live curation timed out — these are your best local matches." : "Live curation isn’t configured in this build."}</span></div>{configured && retry && <button onClick={retry}><RotateCcw size={14} /> Retry</button>}</div>}
       </div>
       {visible.length ? (
         <div style={{ padding: "0 16px", display: "grid", gap: 14 }}>
@@ -934,7 +929,7 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
       <div style={{ padding: "14px 16px 0" }}>
         <button className="secondary" style={{ width: "100%" }} onClick={() => setResults(false)}>← Change tonight’s context</button>
       </div>
-      </>}
+      </>
     </div>
   );
 
