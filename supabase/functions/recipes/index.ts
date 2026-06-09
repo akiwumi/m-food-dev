@@ -244,7 +244,7 @@ async function curate(recipes: any[], profile: any, mood: string, history: any):
       body: JSON.stringify({
         model: "gpt-4o-mini",
         response_format: { type: "json_object" },
-        max_tokens: 600,
+        max_tokens: 400,
         messages: [{ role: "system", content: sys }, { role: "user", content: menu }],
       }),
       signal: AbortSignal.timeout(5_000),
@@ -272,7 +272,7 @@ Deno.serve(async (request) => {
   if (!auth?.startsWith("Bearer ") || !SUPABASE_URL || !SUPABASE_ANON_KEY) return Response.json({ error: "Unauthorized" }, { status: 401, headers: headers(origin) });
   const identity = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
     headers: { authorization: auth, apikey: SUPABASE_ANON_KEY },
-    signal: AbortSignal.timeout(8_000),
+    signal: AbortSignal.timeout(5_000),
   });
   if (!identity.ok) return Response.json({ error: "Unauthorized" }, { status: 401, headers: headers(origin) });
 
@@ -294,7 +294,7 @@ Deno.serve(async (request) => {
   const params = new URLSearchParams({
     apiKey: SPOONACULAR_API_KEY,
     // Overfetch before hard safety/quality filtering, then return at most eight.
-    number: "32",
+    number: "20",
     addRecipeNutrition: "true",
     addRecipeInformation: "true",
     addRecipeInstructions: "true",

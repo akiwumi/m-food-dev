@@ -181,7 +181,7 @@ input[type=range]{accent-color:var(--blue-deep)}
 body,.app{background:linear-gradient(180deg,#dceef2 0%,#eaf4f3 30%,#f5fbfa 100%)!important}
 
 /* ── Splash redesign ─────────────────────────────────────────────── */
-.splash{position:fixed;inset:0;border:0;padding:0;background:#0d1413!important;overflow:hidden;display:block!important}
+.splash{position:fixed;inset:0;padding:0;background:#0d1413!important;overflow:hidden;display:block!important}
 .splash .splash-photo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;animation:none}
 .splash .splash-veil{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.10) 0%,rgba(0,0,0,.18) 40%,rgba(0,0,0,.78) 100%)}
 .splash .splash-logo-center{position:absolute;top:38%;left:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:10px}
@@ -191,8 +191,10 @@ body,.app{background:linear-gradient(180deg,#dceef2 0%,#eaf4f3 30%,#f5fbfa 100%)
 .splash .splash-eyebrow{font-size:10px;letter-spacing:.22em;font-weight:700;color:#b6dde6;text-transform:uppercase}
 .splash .splash-copy strong{font:800 44px/1.02 "Plus Jakarta Sans",sans-serif!important;color:#fff;margin:0}
 .splash .splash-copy p{margin:0;color:rgba(255,255,255,.75);font-size:14px;line-height:1.55;max-width:30ch}
-.splash .splash-copy .splash-cta{display:inline-flex;align-items:center;gap:10px;background:#fff;color:#171a1c;font-weight:800;padding:15px 24px;border-radius:99px;box-shadow:0 12px 36px rgba(0,0,0,.4);width:fit-content}
-.splash .splash-copy .splash-cta svg{color:#171a1c}
+.splash .splash-actions{display:flex;flex-direction:column;align-items:flex-start;gap:14px;margin-top:6px}
+.splash .splash-cta{display:inline-flex;align-items:center;gap:10px;background:#fff;color:#171a1c;font-weight:800;padding:15px 24px;border-radius:99px;box-shadow:0 12px 36px rgba(0,0,0,.4);width:fit-content;border:none;cursor:pointer;font-size:15px}
+.splash .splash-cta svg{color:#171a1c}
+.splash .splash-signin{background:none;border:none;color:rgba(255,255,255,.65);font-size:13px;font-weight:600;padding:2px 0;cursor:pointer;letter-spacing:.01em;text-align:left}
 
 /* ── App header: logo-ring + name + bell ─────────────────────────── */
 .app-header{display:flex;align-items:center;padding:18px 20px 0;gap:12px;background:transparent;border:0;margin:0}
@@ -620,5 +622,5 @@ form,.search-box,.search-actions,.search-filters,.entry,.auth-modern{max-width:1
 .thinking-lines{display:flex;gap:7px;margin-top:20px}.thinking-lines i{width:26px;height:4px;border-radius:99px;background:var(--olive);animation:thinking-pulse 1.2s ease-in-out infinite}.thinking-lines i:nth-child(2){animation-delay:.2s}.thinking-lines i:nth-child(3){animation-delay:.4s}
 @keyframes thinking-pulse{50%{opacity:.3;transform:scale(.9)}}@keyframes thinking-orbit{to{transform:rotate(360deg)}}
 
-.recipe-method{display:grid;gap:10px}.recipe-method article{display:grid;grid-template-columns:34px 1fr;gap:12px;padding:15px;background:#f6f8ef;border:1px solid var(--line);border-radius:18px}.recipe-method article>b{width:34px;height:34px;border-radius:50%;background:var(--olive);color:white;display:grid;place-items:center;font-size:12px}.recipe-method h3{margin:2px 0 6px;font-size:14px}.recipe-method p{margin:0;color:var(--muted);font-size:12px;line-height:1.65}.recipe-method small{display:block;margin-top:8px;color:var(--olive);line-height:1.5}
-.cook-method-head{width:100%;max-width:620px;margin:26px auto 6px;text-align:center}.cook-method-head h1{font-family:"Plus Jakarta Sans",system-ui,sans-serif}.cook-method{width:100%;display:grid;gap:12px}.cook-method .cook-instruction-card{margin-top:0}.cook-finish{width:100%;max-width:620px;min-height:54px;margin:20px auto;border:0;border-radius:18px;background:var(--olive);color:white;font-weight:800;display:flex;align-items:center;justify-content:center;gap:8px}
+.recipe-method{display:grid;gap:10px}.recipe-method article{display:grid;grid-template-columns:34px 1fr;gap:12px;padding:16px;background:#f6f8ef;border:1px solid var(--line);border-radius:18px}.recipe-method article>b{width:34px;height:34px;border-radius:50%;background:var(--olive);color:white;display:grid;place-items:center;font-size:12px;align-self:start}.recipe-method p{margin:0;color:var(--ink);font-size:13px;line-height:1.75}.recipe-method small{display:block;margin-top:8px;color:var(--olive);line-height:1.5}
+.cook-step-text{font-size:17px;line-height:1.7;color:var(--ink);margin:0;font-weight:500}.cook-method-head{width:100%;max-width:620px;margin:26px auto 6px;text-align:center}.cook-method-head h1{font-family:"Plus Jakarta Sans",system-ui,sans-serif}.cook-method{width:100%;display:grid;gap:12px}.cook-method .cook-instruction-card{margin-top:0}.cook-finish{width:100%;max-width:620px;min-height:54px;margin:20px auto;border:0;border-radius:18px;background:var(--olive);color:white;font-weight:800;display:flex;align-items:center;justify-content:center;gap:8px}
