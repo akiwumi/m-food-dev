@@ -110,6 +110,7 @@ export default function App() {
   const profile = useMemo(() => ({ ...defaultProfile, ...storedProfile }), [storedProfile]);
   const [page, setPage] = useState<Page>("home");
   const [selected, setSelected] = useState<Recipe | null>(null);
+  const [detailReturnPage, setDetailReturnPage] = useState<Page>("results");
   const [mood, setMood] = useState("Cozy");
   const [energy, setEnergy] = useState(45);
   const [time, setTime] = useState(30);
@@ -238,6 +239,9 @@ export default function App() {
         setEntry(prev => (prev === "welcome" || prev === "login") ? "app" : prev);
         return;
       }
+      setProfile({ ...defaultProfile, email: session.user.email ?? "", accountCreated: true });
+      setEntry("onboarding");
+      return;
     }
 
     if (storedProfile.onboarded && storedProfile.accountCreated) {
@@ -288,7 +292,7 @@ export default function App() {
   }, []);
 
   const go = (next: Page) => { setPage(next); window.scrollTo(0, 0); };
-  const open = (recipe: Recipe) => { setSelected(recipe); go("detail"); };
+  const open = (recipe: Recipe) => { setSelected(recipe); setDetailReturnPage(page); go("detail"); };
   // Share a recipe into the community feed: make sure it's in the catalog so the
   // post can link it, preselect it in the composer, and jump to Community.
   const shareRecipe = (recipe: Recipe) => {
@@ -315,7 +319,7 @@ export default function App() {
 
   if (splash) return <Splash proceed={() => setSplash(false)} />;
   if (entry === "welcome") return <Welcome start={() => setEntry("onboarding")} signin={() => setEntry("login")} />;
-  if (entry === "login") return <LoginScreen back={() => setEntry("welcome")} onSignedIn={(email) => { setProfile({ ...profile, email, accountCreated: true, emailVerified: true }); setEntry("app"); }} />;
+  if (entry === "login") return <LoginScreen back={() => setEntry("welcome")} onSignedIn={() => {}} />;
   if (entry === "onboarding") return <Onboarding profile={profile} save={setProfile} finish={(next) => { setProfile({ ...next, onboarded: true }); clearStored("moodfood-onboarding-step"); setEntry("account"); }} />;
   if (entry === "account") return <AccountSetupScreen profile={profile} back={() => setEntry("onboarding")} submit={(patch, opts) => {
     const confirmed = !!opts?.hasSession; // session present = email confirmation is OFF, so they're in
@@ -338,7 +342,7 @@ export default function App() {
         : results
           ? <HomeScreen profile={profile} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} results setResults={v => { setResults(v); if (!v) go("home"); }} beginResults={() => {}} ranked={ranked} curating={curating} loadMore={loadMore} live={aiRanked !== null} configured={isSupabaseConfigured} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} />
           : <EmptyResultsScreen home={() => go("home")} search={() => go("search")} />)}
-      {page === "detail" && selected && <DetailScreen recipe={selected} servings={eaterCount} back={() => go("results")} cook={() => go("cook")} saved={saved.includes(selected.id)} toggleSave={() => setSaved(toggle(saved, selected.id))} addGroceries={() => setGroceries(v => [...new Set([...v, ...selected.ingredients])])} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} shareToCommunity={() => shareRecipe(selected)} allergies={profile.allergies} />}
+      {page === "detail" && selected && <DetailScreen recipe={selected} servings={eaterCount} back={() => go(detailReturnPage)} cook={() => go("cook")} saved={saved.includes(selected.id)} toggleSave={() => setSaved(toggle(saved, selected.id))} addGroceries={() => setGroceries(v => [...new Set([...v, ...selected.ingredients])])} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} shareToCommunity={() => shareRecipe(selected)} allergies={profile.allergies} />}
       {page === "cook" && selected && <CookScreen recipe={selected} exit={() => go("detail")} allergies={profile.allergies} finish={(rating, photo) => { setDiary(v => [{ recipe: selected, rating, when: "Today" }, ...v]); if (photo) setProfile(p => ({ ...p, photoLogs: [photo, ...p.photoLogs] })); go("diary"); }} />}
       {page === "diary" && <DiaryScreen diary={diary} open={open} photoLogs={profile.photoLogs} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} goFoodLog={() => go("food-log")} allergies={profile.allergies} />}
       {page === "grocery" && <GroceryScreen items={groceries} setItems={setGroceries} />}

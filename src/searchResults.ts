@@ -15,7 +15,9 @@ const FISH = /\b(fish|salmon|tuna|cod|haddock|trout|sardine|anchov|prawn|shrimp|
 function matchesRequestedDiet(recipe: Recipe, requested?: string) {
   const diet = (requested ?? "").toLowerCase();
   const text = `${recipe.title} ${recipe.ingredients.join(" ")}`;
-  if (diet.includes("vegan") || diet.includes("vegetarian")) return !LAND_MEAT.test(text) && !FISH.test(text);
+  const tags = recipe.diets.map(value => value.toLowerCase());
+  if (diet.includes("vegan")) return tags.includes("vegan") && !LAND_MEAT.test(text) && !FISH.test(text);
+  if (diet.includes("vegetarian")) return tags.some(tag => ["vegetarian", "vegan"].includes(tag)) && !LAND_MEAT.test(text) && !FISH.test(text);
   if (diet.includes("pesc")) return !LAND_MEAT.test(text);
   return true;
 }

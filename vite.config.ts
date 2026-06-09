@@ -22,4 +22,17 @@ function cspMeta() {
 
 export default defineConfig({
   plugins: [react(), cspMeta()],
+  build: {
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            { name: "react-vendor", test: /node_modules\/(react|react-dom|scheduler)\// },
+            { name: "supabase-vendor", test: /node_modules\/@supabase\// },
+            { name: "icons-vendor", test: /node_modules\/lucide-react\// },
+          ],
+        },
+      },
+    },
+  },
 });

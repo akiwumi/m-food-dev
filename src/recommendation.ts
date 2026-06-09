@@ -6,18 +6,34 @@ export const RANKING_CONFIG_VERSION = "pilot-v1";
 const LAND_MEAT = /\b(beef|steak|veal|chicken|turkey|duck|pork|bacon|ham|sausage|lamb|mutton|goat|venison|rabbit)\b/i;
 const FISH = /\b(fish|salmon|tuna|cod|haddock|trout|sardine|anchov|prawn|shrimp|crab|lobster|mussel|clam|oyster|scallop|seafood)\b/i;
 
+const normalize = (value: string) => value.trim().toLowerCase().replace(/s$/, "");
+const containsTerm = (text: string, term: string) => {
+  const escaped = normalize(term).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return escaped ? new RegExp(`\\b${escaped}(?:s)?\\b`, "i").test(text) : false;
+};
+
 function supportsDiet(recipe: Recipe, diet: string) {
-  if (["Anything", "Everything", "Flexitarian"].includes(diet)) return true;
-  if (diet === "Pescatarian") return recipe.diets.some(value => ["Pescatarian", "Vegetarian", "Vegan"].includes(value));
-  return recipe.diets.includes(diet);
+  const constraints = diet.split("+").map(value => value.trim()).filter(value => !["Anything", "Everything", "Flexitarian"].includes(value));
+  const recipeDiets = recipe.diets.map(value => value.toLowerCase());
+  return constraints.every(constraint => {
+    const value = constraint.toLowerCase();
+    if (value.includes("pesc")) return recipeDiets.some(tag => ["pescatarian", "vegetarian", "vegan"].includes(tag));
+    if (value.includes("vegetarian")) return recipeDiets.some(tag => ["vegetarian", "vegan"].includes(tag));
+    if (value.includes("vegan")) return recipeDiets.includes("vegan");
+    return recipeDiets.includes(value);
+  });
 }
 
 export function safeRecipes(recipes: Recipe[], profile: Profile) {
   return recipes.filter(recipe => {
     const text = `${recipe.title} ${recipe.ingredients.join(" ")}`;
     const diet = profile.diet.toLowerCase();
+    const declaredAllergens = recipe.allergens.map(normalize);
+    const hasAllergen = profile.allergies.some(allergen =>
+      declaredAllergens.includes(normalize(allergen)) || containsTerm(text, allergen)
+    );
     return recipe.status === "published" &&
-      !recipe.allergens.some(allergen => profile.allergies.includes(allergen)) &&
+      !hasAllergen &&
       supportsDiet(recipe, profile.diet) &&
       !(diet.includes("pesc") && LAND_MEAT.test(text)) &&
       !((diet.includes("vegetarian") || diet.includes("vegan")) && (LAND_MEAT.test(text) || FISH.test(text))) &&
@@ -97,6 +113,6 @@ export function recommend(recipes: Recipe[], profile: Profile, mood: string, ene
 
 export function profileForDiners(profile: Profile, diners: Diner[]) {
   const allergies = [...new Set([...profile.allergies, ...diners.flatMap(d => d.allergies)])];
-  const diets = [profile.diet, ...diners.map(d => d.diet)].filter(d => !["Anything", "Everything", "Flexitarian"].includes(d));
-  return { ...profile, allergies, diet: diets.length === 1 ? diets[0] : diets.length > 1 && new Set(diets).size === 1 ? diets[0] : "Everything" };
+  const diets = [...new Set([profile.diet, ...diners.map(d => d.diet)].filter(d => !["Anything", "Everything", "Flexitarian"].includes(d)))];
+  return { ...profile, allergies, diet: diets.length ? diets.join(" + ") : "Everything" };
 }

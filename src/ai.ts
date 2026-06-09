@@ -17,6 +17,7 @@ async function callGateway<T>(payload: Record<string, unknown>): Promise<T> {
     method: "POST",
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
     body,
+    signal: AbortSignal.timeout(15_000),
   });
 
   let res = await post(session.access_token);

@@ -49,4 +49,26 @@ describe("recommendation safety", () => {
     const shared = profileForDiners(defaultProfile, [{ id: "guest", name: "Guest", relationship: "Friend", diet: "Anything", allergies: ["Dairy"] }]);
     expect(safeRecipes(fixture, { ...shared, equipment: ["Stovetop", "Oven", "Blender"] }).every(recipe => !recipe.allergens.includes("Dairy"))).toBe(true);
   });
+
+  it("matches allergens case-insensitively and checks ingredient text", () => {
+    const safe = safeRecipes([
+      { ...fixture[1], id: "declared", title: "Nut bowl", allergens: ["Tree Nuts"], ingredients: ["rice"] },
+      { ...fixture[1], id: "ingredient", title: "Creamy bowl", allergens: [], ingredients: ["milk", "rice"] },
+    ], { ...defaultProfile, allergies: ["tree nuts", "Milk"], equipment: ["Stovetop"] });
+
+    expect(safe).toEqual([]);
+  });
+
+  it("never relaxes conflicting household diets to Everything", () => {
+    const shared = profileForDiners(
+      { ...defaultProfile, diet: "Vegan" },
+      [{ id: "guest", name: "Guest", relationship: "Friend", diet: "Keto", allergies: [] }],
+    );
+
+    expect(shared.diet).not.toBe("Everything");
+    expect(safeRecipes([
+      { ...fixture[1], id: "vegan-keto", title: "Tofu bowl", diets: ["Vegan", "Keto"], ingredients: ["tofu"] },
+      { ...fixture[1], id: "vegan-only", title: "Bean bowl", diets: ["Vegan"], ingredients: ["beans"] },
+    ], { ...shared, equipment: ["Stovetop"] }).map(recipe => recipe.id)).toEqual(["vegan-keto"]);
+  });
 });

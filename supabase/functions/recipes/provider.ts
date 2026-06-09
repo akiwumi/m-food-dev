@@ -59,14 +59,23 @@ const spoonacularImage = (recipe: any) => {
 
 export function filterRecipesForProfile(recipes: any[], profile: any): any[] {
   const diet = String(profile?.diet ?? "").toLowerCase();
+  const dietConstraints = diet.split("+").map(value => value.trim()).filter(value => value && !["any", "anything", "everything", "flexitarian"].includes(value));
   const allergies = (profile?.allergies ?? []).map((value: string) => value.toLowerCase().replace(/s$/, "")).filter(Boolean);
   const religious = (profile?.dietReligious ?? []).join(" ").toLowerCase();
 
   return recipes.filter(recipe => {
     const text = `${recipe.title ?? ""} ${(recipe.ingredients ?? []).join(" ")}`.toLowerCase();
+    const tags = (recipe.diets ?? []).map((value: string) => value.toLowerCase());
     if (allergies.some((term: string) => text.includes(term))) return false;
     if ((diet.includes("pesc") || diet.includes("vegetarian") || diet.includes("vegan")) && LAND_MEAT.test(text)) return false;
     if ((diet.includes("vegetarian") || diet.includes("vegan")) && FISH.test(text)) return false;
+    if (!dietConstraints.every(constraint => {
+      if (constraint.includes("vegan")) return tags.includes("vegan");
+      if (constraint.includes("vegetarian")) return tags.some((tag: string) => ["vegetarian", "vegan"].includes(tag));
+      if (constraint.includes("pesc")) return !tags.length || tags.some((tag: string) => ["pescatarian", "vegetarian", "vegan"].includes(tag));
+      if (constraint.includes("keto")) return tags.some((tag: string) => tag.includes("keto"));
+      return tags.some((tag: string) => tag.includes(constraint));
+    })) return false;
     if (/no pork|halal|kosher|jewish|muslim|islam|seventh-day/.test(religious) && /\b(pork|bacon|ham)\b/i.test(text)) return false;
     if (/no beef|hindu/.test(religious) && /\b(beef|steak|veal)\b/i.test(text)) return false;
     return true;
@@ -101,6 +110,27 @@ export function dedupeRecipes(recipes: any[]): any[] {
     if (title) titles.add(title);
     return true;
   });
+}
+
+export function applyCuratedRanking(recipes: any[], ranking: any[]): any[] {
+  const rankedIndexes = new Set<number>();
+  const ranked = (Array.isArray(ranking) ? ranking : []).flatMap(item => {
+    const index = Number.isInteger(item?.i) ? item.i : -1;
+    const recipe = recipes[index];
+    if (!recipe || rankedIndexes.has(index)) return [];
+    rankedIndexes.add(index);
+    return [{ ...recipe, reason: typeof item.reason === "string" && item.reason.trim() ? item.reason.trim() : recipe.reason }];
+  });
+  return [...ranked, ...recipes.filter((_, index) => !rankedIndexes.has(index))];
+}
+
+export function filterRecipesWithCompleteInstructions(recipes: any[]): any[] {
+  const placeholder = /\b(see|view|find)\b.*\b(full|original|source)\b.*\binstructions?\b/i;
+  return recipes.filter(recipe =>
+    Array.isArray(recipe?.steps) &&
+    recipe.steps.length > 0 &&
+    recipe.steps.every((step: any) => typeof step?.text === "string" && step.text.trim() && !placeholder.test(step.text))
+  );
 }
 
 export function normalizeSpoonacularRecipe(recipe: any, mood: string) {
@@ -155,7 +185,7 @@ export async function fetchTheMealDbRecipes(
 
   try {
     const load = async (requests: string[]) => {
-      const responses = await Promise.all(requests.map(url => fetcher(url)));
+      const responses = await Promise.all(requests.map(url => fetcher(url, { signal: AbortSignal.timeout(8_000) })));
       const payloads = await Promise.all(responses.filter(res => res.ok).map(res => res.json()));
       return payloads.flatMap(payload => Array.isArray(payload?.meals) ? payload.meals : []);
     };

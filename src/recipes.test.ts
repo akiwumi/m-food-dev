@@ -52,4 +52,14 @@ describe("finalizeSearchResults", () => {
 
     expect(results.map(result => result.title)).toEqual(["Bean salad"]);
   });
+
+  it("enforces an explicit vegan filter beyond a saved vegetarian profile", () => {
+    const results = finalizeSearchResults([
+      recipe({ id: "dairy", title: "Cheese pasta", ingredients: ["cheese", "pasta"], diets: ["Vegetarian"] }),
+      recipe({ id: "vegan", title: "Bean pasta", diets: ["Vegetarian", "Vegan"] }),
+    ], { ...defaultProfile, diet: "Vegetarian" }, { diet: "Vegan" });
+
+    expect(results.map(result => result.title)).toEqual(["Bean pasta"]);
+  });
+
 });

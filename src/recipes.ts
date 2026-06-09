@@ -77,6 +77,7 @@ export async function fetchCuratedRecipes(
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body,
+      signal: AbortSignal.timeout(15_000),
     });
 
     let res = await post(session.access_token);

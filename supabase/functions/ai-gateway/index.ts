@@ -61,6 +61,7 @@ async function callOpenAI(body: unknown): Promise<Response> {
     method: "POST",
     headers: { authorization: `Bearer ${OPENAI_API_KEY}`, "content-type": "application/json" },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(15_000),
   });
 }
 
@@ -77,7 +78,10 @@ Deno.serve(async (request) => {
   // Require a real authenticated Supabase user.
   const auth = request.headers.get("authorization");
   if (!auth?.startsWith("Bearer ") || !SUPABASE_URL || !SUPABASE_ANON_KEY) return Response.json({ error: "Unauthorized" }, { status: 401, headers: headers(origin) });
-  const identity = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: { authorization: auth, apikey: SUPABASE_ANON_KEY } });
+  const identity = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+    headers: { authorization: auth, apikey: SUPABASE_ANON_KEY },
+    signal: AbortSignal.timeout(8_000),
+  });
   if (!identity.ok) return Response.json({ error: "Unauthorized" }, { status: 401, headers: headers(origin) });
 
   if (!OPENAI_API_KEY) return Response.json({ error: "AI not configured" }, { status: 503, headers: headers(origin) });

@@ -29,7 +29,7 @@
 // sortDirection, ignorePantry, plus full recipe info/nutrition/instructions.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { dedupeRecipes, fetchTheMealDbRecipes, filterRecipesByCategory, filterRecipesByMaxTime, filterRecipesForProfile, normalizeSpoonacularRecipe } from "./provider.ts";
+import { applyCuratedRanking, dedupeRecipes, fetchTheMealDbRecipes, filterRecipesByCategory, filterRecipesByMaxTime, filterRecipesForProfile, filterRecipesWithCompleteInstructions, normalizeSpoonacularRecipe } from "./provider.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
@@ -63,6 +63,20 @@ function mapDiet(diet: string): string {
   if (d.includes("fodmap")) return "low fodmap";
   if (d.includes("gluten")) return "gluten free";
   return ""; // Everything / Flexitarian / Anything → no diet filter
+}
+
+function combineHardDiets(profileDiet: unknown, searchDiet: unknown): string {
+  const values = [profileDiet, searchDiet]
+    .filter((value): value is string => typeof value === "string")
+    .flatMap(value => value.split("+"))
+    .map(value => value.trim())
+    .filter(value => value && !["any", "anything", "everything", "flexitarian"].includes(value.toLowerCase()));
+  return [...new Set(values)].join(" + ");
+}
+
+function strictestProviderDiet(diet: string): string {
+  const values = diet.split("+").map(value => mapDiet(value)).filter(Boolean);
+  return ["vegan", "vegetarian", "pescetarian"].find(value => values.includes(value)) ?? values[0] ?? "";
 }
 const INTOLERANCE_MAP: Record<string, string> = {
   dairy: "dairy", "dairy (allergy)": "dairy", "lactose intolerance": "dairy",
@@ -239,14 +253,7 @@ async function curate(recipes: any[], profile: any, mood: string, history: any):
     const data = await res.json();
     const parsed = JSON.parse(data.choices?.[0]?.message?.content ?? "{}");
     const order = Array.isArray(parsed.ranked) ? parsed.ranked : [];
-    const out: any[] = [];
-    for (const item of order) {
-      const r = recipes[item.i];
-      if (r && !out.includes(r)) out.push({ ...r, reason: item.reason || r.reason });
-    }
-    // Append any the model dropped, so we never lose a safe recipe.
-    for (const r of recipes) if (!out.includes(r)) out.push(r);
-    return out;
+    return applyCuratedRanking(recipes, order);
   } catch {
     return recipes;
   }
@@ -263,7 +270,10 @@ Deno.serve(async (request) => {
 
   const auth = request.headers.get("authorization");
   if (!auth?.startsWith("Bearer ") || !SUPABASE_URL || !SUPABASE_ANON_KEY) return Response.json({ error: "Unauthorized" }, { status: 401, headers: headers(origin) });
-  const identity = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: { authorization: auth, apikey: SUPABASE_ANON_KEY } });
+  const identity = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+    headers: { authorization: auth, apikey: SUPABASE_ANON_KEY },
+    signal: AbortSignal.timeout(8_000),
+  });
   if (!identity.ok) return Response.json({ error: "Unauthorized" }, { status: 401, headers: headers(origin) });
 
   if (!SPOONACULAR_API_KEY) return Response.json({ error: "Recipe source not configured" }, { status: 503, headers: headers(origin) });
@@ -272,6 +282,7 @@ Deno.serve(async (request) => {
   try { body = await request.json(); } catch { return Response.json({ error: "Invalid JSON" }, { status: 400, headers: headers(origin) }); }
   const profile = body?.profile ?? {};
   const filters = body?.filters ?? {};
+  const hardProfile = { ...profile, diet: combineHardDiets(profile.diet, filters.diet) };
   const history = body?.history ?? {};
   const mood = typeof body?.mood === "string" ? body.mood : "Cozy";
   const time = Number.isFinite(body?.time) ? Math.max(10, Math.min(180, body.time)) : 45;
@@ -282,7 +293,8 @@ Deno.serve(async (request) => {
 
   const params = new URLSearchParams({
     apiKey: SPOONACULAR_API_KEY,
-    number: "8",
+    // Overfetch before hard safety/quality filtering, then return at most eight.
+    number: "32",
     addRecipeNutrition: "true",
     addRecipeInformation: "true",
     addRecipeInstructions: "true",
@@ -300,7 +312,7 @@ Deno.serve(async (request) => {
   params.set("sortDirection", dir);
 
   // Diet: a per-search override wins over the saved profile diet.
-  const diet = mapDiet(profile.diet) || mapDiet(filters.diet);
+  const diet = strictestProviderDiet(hardProfile.diet);
   if (diet) params.set("diet", diet);
 
   const intolerances = mapIntolerances(profile.allergies ?? []);
@@ -354,13 +366,13 @@ Deno.serve(async (request) => {
   let spoonErr = "";
 
   try {
-    const res = await fetch(`https://api.spoonacular.com/recipes/complexSearch?${params}`);
+    const res = await fetch(`https://api.spoonacular.com/recipes/complexSearch?${params}`, { signal: AbortSignal.timeout(10_000) });
     spoonStatus = res.status;
     if (res.ok) {
       const data = await res.json();
       const normalized = (data.results ?? []).map((r: any) => normalizeSpoonacularRecipe(r, mood));
       spoonCount = normalized.length;
-      const safe = dedupeRecipes(filterRecipesByCategory(filterRecipesByMaxTime(filterRecipesForProfile(safetyFilter(normalized, profile.allergies ?? []), profile), maxTime), category)).slice(0, 8);
+      const safe = dedupeRecipes(filterRecipesWithCompleteInstructions(filterRecipesByCategory(filterRecipesByMaxTime(filterRecipesForProfile(safetyFilter(normalized, profile.allergies ?? []), hardProfile), maxTime), category))).slice(0, 8);
       spoonSafeCount = safe.length;
       console.log(`[recipes] spoonacular: status=${res.status} total=${spoonCount} safe=${spoonSafeCount}`);
       if (safe.length) {
@@ -374,7 +386,7 @@ Deno.serve(async (request) => {
 
     const mealdbRecipes = await fetchTheMealDbRecipes(query, mood);
     mealdbCount = mealdbRecipes.length;
-    const fallback = dedupeRecipes(filterRecipesByCategory(filterRecipesByMaxTime(filterRecipesForProfile(safetyFilter(mealdbRecipes, profile.allergies ?? []), profile), maxTime), category)).slice(0, 8);
+    const fallback = dedupeRecipes(filterRecipesWithCompleteInstructions(filterRecipesByCategory(filterRecipesByMaxTime(filterRecipesForProfile(safetyFilter(mealdbRecipes, profile.allergies ?? []), hardProfile), maxTime), category))).slice(0, 8);
     mealdbSafeCount = fallback.length;
     console.log(`[recipes] themealdb: total=${mealdbCount} safe=${mealdbSafeCount}`);
     if (fallback.length) return Response.json({ provider: "themealdb", recipes: fallback }, { headers: headers(origin) });
@@ -390,7 +402,7 @@ Deno.serve(async (request) => {
     try {
       const mealdbRecipes = await fetchTheMealDbRecipes(query, mood);
       mealdbCount = mealdbRecipes.length;
-      const fallback = dedupeRecipes(filterRecipesByCategory(filterRecipesByMaxTime(filterRecipesForProfile(safetyFilter(mealdbRecipes, profile.allergies ?? []), profile), maxTime), category)).slice(0, 8);
+      const fallback = dedupeRecipes(filterRecipesWithCompleteInstructions(filterRecipesByCategory(filterRecipesByMaxTime(filterRecipesForProfile(safetyFilter(mealdbRecipes, profile.allergies ?? []), hardProfile), maxTime), category))).slice(0, 8);
       mealdbSafeCount = fallback.length;
       console.log(`[recipes] themealdb fallback after exception: total=${mealdbCount} safe=${mealdbSafeCount}`);
       if (fallback.length) return Response.json({ provider: "themealdb", recipes: fallback }, { headers: headers(origin) });

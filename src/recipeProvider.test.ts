@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dedupeRecipes, fetchTheMealDbRecipes, filterRecipesByCategory, filterRecipesByMaxTime, filterRecipesForProfile, normalizeSpoonacularRecipe } from "../supabase/functions/recipes/provider";
+import { applyCuratedRanking, dedupeRecipes, fetchTheMealDbRecipes, filterRecipesByCategory, filterRecipesByMaxTime, filterRecipesForProfile, filterRecipesWithCompleteInstructions, normalizeSpoonacularRecipe } from "../supabase/functions/recipes/provider";
 
 describe("fetchTheMealDbRecipes", () => {
   it("returns normalized real recipes when the primary provider is unavailable", async () => {
@@ -189,5 +189,37 @@ describe("fetchTheMealDbRecipes", () => {
     const [recipe] = await fetchTheMealDbRecipes("salmon", "Cozy", 1, fetcher);
 
     expect(recipe.diets).toContain("Pescatarian");
+  });
+
+  it("applies AI ranking without duplicating curated recipes", () => {
+    const recipes = [{ id: "1", title: "First" }, { id: "2", title: "Second" }];
+
+    expect(applyCuratedRanking(recipes, [
+      { i: 1, reason: "Best fit" },
+      { i: 0, reason: "Also fits" },
+    ])).toEqual([
+      { id: "2", title: "Second", reason: "Best fit" },
+      { id: "1", title: "First", reason: "Also fits" },
+    ]);
+  });
+
+  it("rejects recipes with missing or placeholder-only instructions", () => {
+    const recipes = [
+      { title: "Complete", steps: [{ text: "Chop onions." }, { text: "Cook until soft." }] },
+      { title: "Missing", steps: [] },
+      { title: "Placeholder", steps: [{ text: "See full instructions on the recipe source." }] },
+    ];
+
+    expect(filterRecipesWithCompleteInstructions(recipes).map(recipe => recipe.title)).toEqual(["Complete"]);
+  });
+
+  it("enforces every restrictive household diet server-side", () => {
+    const recipes = [
+      { title: "Vegan keto", ingredients: ["tofu"], diets: ["Vegan", "Ketogenic"] },
+      { title: "Vegan only", ingredients: ["beans"], diets: ["Vegan"] },
+      { title: "Keto meat", ingredients: ["chicken"], diets: ["Ketogenic"] },
+    ];
+
+    expect(filterRecipesForProfile(recipes, { diet: "Vegan + Keto", allergies: [], dietReligious: [] }).map(recipe => recipe.title)).toEqual(["Vegan keto"]);
   });
 });
