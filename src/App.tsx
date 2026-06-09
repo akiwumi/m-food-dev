@@ -1020,7 +1020,7 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
           style={{ width: "100%", marginTop: 18, minHeight: 54 }}
           onClick={beginResults}
         >
-          {mealCategory ? `Find ${mealCategory} recipes` : "Find tonight’s dinner"} <ArrowRight size={18} />
+          Search <ArrowRight size={18} />
         </button>
       </div>
 
