@@ -1014,10 +1014,12 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
             >{cat}</button>
           ))}
         </div>
+        {!mealCategory && <p className="meal-type-hint">Pick a meal type to search</p>}
 
         <button
           className="primary"
-          style={{ width: "100%", marginTop: 18, minHeight: 54 }}
+          style={{ width: "100%", marginTop: 10, minHeight: 54 }}
+          disabled={!mealCategory}
           onClick={beginResults}
         >
           Search <ArrowRight size={18} />
