@@ -140,7 +140,15 @@ export default function App() {
   const [recipeNonce, setRecipeNonce] = useState(0); // bump to force a re-fetch (Retry)
   const safeRecipes = useMemo(() => applySafety(catalog, sharedProfile), [catalog, sharedProfile]);
   const localRanked = useMemo(() => recommend(catalog, sharedProfile, mood, energy, time).map(item => item.recipe), [catalog, sharedProfile, mood, energy, time]);
-  const ranked = aiRanked ?? localRanked;
+  const ACCESSORY_TYPES = useMemo(() => new Set(["dessert", "desserts", "snack", "snacks", "drink", "drinks", "beverage", "beverages", "sweet", "sweets"]), []);
+  const ranked = useMemo(() => {
+    const base = aiRanked ?? localRanked;
+    if (searchRequest?.filters?.type) return base; // explicit type filter in search → show as-is
+    return base.filter(r => {
+      const types = (r.mealTypes ?? []).map((t: string) => t.toLowerCase());
+      return !types.length || !types.every((t: string) => ACCESSORY_TYPES.has(t));
+    });
+  }, [aiRanked, localRanked, searchRequest?.filters?.type, ACCESSORY_TYPES]);
 
   // What the user has actually cooked, logged, and saved — so the AI learns from
   // behaviour, not just the stated profile. Recomputed as those change.

@@ -124,6 +124,22 @@ export function applyCuratedRanking(recipes: any[], ranking: any[]): any[] {
   return [...ranked, ...recipes.filter((_, index) => !rankedIndexes.has(index))];
 }
 
+// Meal types that should not appear in default "Find tonight's dinner" results.
+// They remain available as explicit search filter selections.
+const ACCESSORY_TYPES = new Set([
+  "dessert", "desserts", "snack", "snacks",
+  "drink", "drinks", "beverage", "beverages",
+  "sweet", "sweets",
+]);
+
+export function filterOutAccessoryTypes(recipes: any[]): any[] {
+  return recipes.filter(recipe => {
+    const types = (recipe.mealTypes ?? []).map((t: string) => t.toLowerCase());
+    if (!types.length) return true; // no type info → keep
+    return !types.every((t: string) => ACCESSORY_TYPES.has(t));
+  });
+}
+
 export function filterRecipesWithCompleteInstructions(recipes: any[]): any[] {
   const placeholder = /\b(see|view|find)\b.*\b(full|original|source)\b.*\binstructions?\b/i;
   return recipes.filter(recipe =>

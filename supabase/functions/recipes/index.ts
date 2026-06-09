@@ -29,7 +29,7 @@
 // sortDirection, ignorePantry, plus full recipe info/nutrition/instructions.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { applyCuratedRanking, dedupeRecipes, fetchTheMealDbRecipes, filterRecipesByCategory, filterRecipesByMaxTime, filterRecipesForProfile, filterRecipesWithCompleteInstructions, normalizeSpoonacularRecipe } from "./provider.ts";
+import { applyCuratedRanking, dedupeRecipes, fetchTheMealDbRecipes, filterOutAccessoryTypes, filterRecipesByCategory, filterRecipesByMaxTime, filterRecipesForProfile, filterRecipesWithCompleteInstructions, normalizeSpoonacularRecipe } from "./provider.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
@@ -372,7 +372,8 @@ Deno.serve(async (request) => {
       const data = await res.json();
       const normalized = (data.results ?? []).map((r: any) => normalizeSpoonacularRecipe(r, mood));
       spoonCount = normalized.length;
-      const safe = dedupeRecipes(filterRecipesWithCompleteInstructions(filterRecipesByCategory(filterRecipesByMaxTime(filterRecipesForProfile(safetyFilter(normalized, profile.allergies ?? []), hardProfile), maxTime), category))).slice(0, 8);
+      const categoryFiltered = filterRecipesByCategory(filterRecipesByMaxTime(filterRecipesForProfile(safetyFilter(normalized, profile.allergies ?? []), hardProfile), maxTime), category);
+      const safe = dedupeRecipes(filterRecipesWithCompleteInstructions(category ? categoryFiltered : filterOutAccessoryTypes(categoryFiltered))).slice(0, 8);
       spoonSafeCount = safe.length;
       console.log(`[recipes] spoonacular: status=${res.status} total=${spoonCount} safe=${spoonSafeCount}`);
       if (safe.length) {
@@ -386,7 +387,8 @@ Deno.serve(async (request) => {
 
     const mealdbRecipes = await fetchTheMealDbRecipes(query, mood);
     mealdbCount = mealdbRecipes.length;
-    const fallback = dedupeRecipes(filterRecipesWithCompleteInstructions(filterRecipesByCategory(filterRecipesByMaxTime(filterRecipesForProfile(safetyFilter(mealdbRecipes, profile.allergies ?? []), hardProfile), maxTime), category))).slice(0, 8);
+    const mealdbCategoryFiltered = filterRecipesByCategory(filterRecipesByMaxTime(filterRecipesForProfile(safetyFilter(mealdbRecipes, profile.allergies ?? []), hardProfile), maxTime), category);
+    const fallback = dedupeRecipes(filterRecipesWithCompleteInstructions(category ? mealdbCategoryFiltered : filterOutAccessoryTypes(mealdbCategoryFiltered))).slice(0, 8);
     mealdbSafeCount = fallback.length;
     console.log(`[recipes] themealdb: total=${mealdbCount} safe=${mealdbSafeCount}`);
     if (fallback.length) return Response.json({ provider: "themealdb", recipes: fallback }, { headers: headers(origin) });
@@ -402,7 +404,8 @@ Deno.serve(async (request) => {
     try {
       const mealdbRecipes = await fetchTheMealDbRecipes(query, mood);
       mealdbCount = mealdbRecipes.length;
-      const fallback = dedupeRecipes(filterRecipesWithCompleteInstructions(filterRecipesByCategory(filterRecipesByMaxTime(filterRecipesForProfile(safetyFilter(mealdbRecipes, profile.allergies ?? []), hardProfile), maxTime), category))).slice(0, 8);
+      const mealdbCategoryFiltered2 = filterRecipesByCategory(filterRecipesByMaxTime(filterRecipesForProfile(safetyFilter(mealdbRecipes, profile.allergies ?? []), hardProfile), maxTime), category);
+      const fallback = dedupeRecipes(filterRecipesWithCompleteInstructions(category ? mealdbCategoryFiltered2 : filterOutAccessoryTypes(mealdbCategoryFiltered2))).slice(0, 8);
       mealdbSafeCount = fallback.length;
       console.log(`[recipes] themealdb fallback after exception: total=${mealdbCount} safe=${mealdbSafeCount}`);
       if (fallback.length) return Response.json({ provider: "themealdb", recipes: fallback }, { headers: headers(origin) });

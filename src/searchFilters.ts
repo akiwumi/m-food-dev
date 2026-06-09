@@ -13,7 +13,7 @@ export const SPOON_CUISINES = [
 
 // Spoonacular `type` (meal type) values surfaced in search.
 export const MEAL_TYPES = [
-  "main", "starter", "dessert", "snack",
+  "main", "starter", "dessert", "snack", "drink",
 ];
 
 // Diet override choices in search (label sent straight to the edge function,
