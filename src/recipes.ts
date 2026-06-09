@@ -64,45 +64,59 @@ export async function fetchCuratedRecipes(
   offset = 0,
 ): Promise<Recipe[] | null> {
   if (!supabase) { console.info("[recipes] Supabase not configured (.env.local) — showing local recipes."); return null; }
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) { console.info("[recipes] Not signed in — live recipes need an authenticated session."); return null; }
 
-    const body = JSON.stringify({
-      profile: recipeProfilePayload(profile),
-      mood, energy, time, query, filters, history, offset,
-    });
+  const run = async (): Promise<Recipe[] | null> => {
+    try {
+      const { data: { session } } = await supabase!.auth.getSession();
+      if (!session) { console.info("[recipes] Not signed in — live recipes need an authenticated session."); return null; }
 
-    const post = (token: string) => fetch(ENDPOINT, {
-      method: "POST",
-      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body,
-      signal: AbortSignal.timeout(15_000),
-    });
+      const body = JSON.stringify({
+        profile: recipeProfilePayload(profile),
+        mood, energy, time, query, filters, history, offset,
+      });
 
-    let res = await post(session.access_token);
-    // A stale/expired access token returns 401 — refresh once and retry before
-    // giving up (otherwise we'd silently fall back to local recipes).
-    if (res.status === 401) {
-      const { data: { session: fresh } } = await supabase.auth.refreshSession();
-      if (fresh?.access_token) res = await post(fresh.access_token);
-    }
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      console.warn(`[recipes] Live curation failed (HTTP ${res.status}):`, body);
+      const post = (token: string) => fetch(ENDPOINT, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body,
+        signal: AbortSignal.timeout(22_000),
+      });
+
+      let res = await post(session.access_token);
+      // A stale/expired access token returns 401 — refresh once and retry before
+      // giving up (otherwise we'd silently fall back to local recipes).
+      if (res.status === 401) {
+        const { data: { session: fresh } } = await supabase!.auth.refreshSession();
+        if (fresh?.access_token) res = await post(fresh.access_token);
+      }
+      if (!res.ok) {
+        const errBody = await res.text().catch(() => "");
+        console.warn(`[recipes] Live curation failed (HTTP ${res.status}):`, errBody);
+        return null;
+      }
+      const data = await res.json();
+      if (!Array.isArray(data.recipes) || !data.recipes.length) {
+        console.warn("[recipes] Edge function returned no recipes:", JSON.stringify(data).slice(0, 300));
+        return null;
+      }
+      console.info(`[recipes] Got ${data.recipes.length} recipes from ${data.provider ?? "unknown"}`);
+      return data.recipes as Recipe[];
+    } catch (e) {
+      console.warn("[recipes] Live curation request failed — showing local recipes.", e);
       return null;
     }
-    const data = await res.json();
-    if (!Array.isArray(data.recipes) || !data.recipes.length) {
-      console.warn("[recipes] Edge function returned no recipes:", JSON.stringify(data).slice(0, 300));
-      return null;
-    }
-    console.info(`[recipes] Got ${data.recipes.length} recipes from ${data.provider ?? "unknown"}`);
-    return data.recipes as Recipe[];
-  } catch (e) {
-    console.warn("[recipes] Live curation request failed — showing local recipes.", e);
-    return null;
-  }
+  };
+
+  // Hard ceiling: Supabase auth calls have no built-in timeout and can hang
+  // indefinitely under network stress. This ensures we always fall back to
+  // local recipes within 25 seconds no matter what.
+  return Promise.race([
+    run(),
+    new Promise<null>(resolve => setTimeout(() => {
+      console.warn("[recipes] Hard timeout (25 s) — falling back to local recipes.");
+      resolve(null);
+    }, 25_000)),
+  ]);
 }
 
 // Summarise what the user has actually cooked, logged, and saved so the AI can
