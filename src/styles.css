@@ -573,8 +573,8 @@ form,.search-box,.search-actions,.search-filters,.entry,.auth-modern{max-width:1
 @media(max-width:480px){.search-actions,.detail-actions{display:grid;grid-template-columns:1fr}.search-actions{padding:0}.search-filters{margin-left:0;margin-right:0}}
 
 /* ── Recipe video + share, AI search, composer recipe chip ───────────────── */
-.detail-play{position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);width:64px;height:64px;border-radius:50%;border:0;background:#fffef0e6;color:var(--olive);display:grid;place-items:center;box-shadow:0 8px 28px rgba(0,0,0,.28);backdrop-filter:blur(4px)}
-.detail-play:active{transform:translate(-50%,-50%) scale(.94)}
+.detail-video-bar{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);border:0;border-radius:99px;background:#fffef0ee;color:var(--olive);display:flex;align-items:center;gap:7px;padding:9px 18px;font-size:13px;font-weight:700;box-shadow:0 4px 16px rgba(0,0,0,.22);backdrop-filter:blur(6px);white-space:nowrap}
+.detail-video-bar:active{transform:translateX(-50%) scale(.96)}
 .detail-video-hero{position:absolute;inset:0;width:100%;height:100%;background:#000}
 .detail-video-hero iframe{width:100%;height:100%;border:0}
 .detail-video{position:relative;width:100%;aspect-ratio:16/9;border-radius:16px;overflow:hidden;margin:4px 0 14px;background:#000}
