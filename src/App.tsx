@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, createContext, useContext } from "react";
+import { useEffect, useMemo, useRef, useState, createContext, useContext } from "react";
 import {
   ArrowLeft, ArrowRight, Bell, BookOpen, CalendarDays, Check, ChefHat, ChevronRight,
   Clock3, Heart, Home, ListChecks, Menu, MoreVertical, Play, RotateCcw, Search,
@@ -1710,6 +1710,11 @@ function MoodyPanel({ recipe, profile, picks, close, open }: { recipe?: Recipe; 
   const [input, setInput] = useState("");
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [busy, setBusy] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [turns, busy]);
 
   const send = async (text: string) => {
     const message = text.trim();
@@ -1725,13 +1730,13 @@ function MoodyPanel({ recipe, profile, picks, close, open }: { recipe?: Recipe; 
       const reply = await aiChat(message, context, history);
       setTurns(prev => [...prev, { role: "assistant", content: reply }]);
     } catch {
-      setTurns(prev => [...prev, { role: "assistant", content: "I can't reach my brain right now — sign in (or once AI is connected) and I'll be back. Meanwhile, your safe pick below is a solid bet." }]);
+      setTurns(prev => [...prev, { role: "assistant", content: "I can’t reach my brain right now — sign in (or once AI is connected) and I’ll be back. Meanwhile, your safe pick below is a solid bet." }]);
     } finally {
       setBusy(false);
     }
   };
 
-  return <div className="panel-bg" onClick={close}><aside className="moody-panel" onClick={e => e.stopPropagation()}><header><Moody /><div><b>Moody</b><span>Your dinner co-pilot</span></div><button onClick={close}><X /></button></header><div className="chat"><p>I can choose dinner, explain a recommendation, or help rescue the step you’re on.</p>{turns.map((t, i) => <p key={i} className={t.role === "user" ? "user-message" : "moody-message"}>{t.content}</p>)}{busy && <p className="moody-message">…</p>}{recipe && <button className="moody-pick" onClick={open}><img src={recipe.image} alt="" /><span><small>MY SAFE PICK RIGHT NOW</small><b>{recipe.title}</b><em>{recipe.time} min · {recipe.reason}</em></span></button>}</div><div className="prompt-row"><button onClick={() => send("Pick the easiest safe dinner.")}>Pick the easiest</button><button onClick={() => send("I only have 15 minutes.")}>Only 15 minutes</button>{recipe && <button onClick={() => send(`Why are you recommending ${recipe.title}?`)}>Explain this pick</button>}</div><form onSubmit={e => { e.preventDefault(); send(input); }}><input value={input} onChange={e => setInput(e.target.value)} placeholder="Tell Moody what you need..." /><button disabled={busy}><ArrowRight /></button></form></aside></div>;
+  return <div className="panel-bg" onClick={close}><aside className="moody-panel" onClick={e => e.stopPropagation()}><header><Moody /><div><b>Moody</b><span>Your dinner co-pilot</span></div><button onClick={close}><X /></button></header><div className="chat"><p>I can choose dinner, explain a recommendation, or help rescue the step you’re on.</p>{turns.map((t, i) => <p key={i} className={t.role === "user" ? "user-message" : "moody-message"}>{t.content}</p>)}{busy && <p className="moody-message">…</p>}{recipe && <button className="moody-pick" onClick={open}><img src={recipe.image} alt="" /><span><small>MY SAFE PICK RIGHT NOW</small><b>{recipe.title}</b><em>{recipe.time} min · {recipe.reason}</em></span></button>}<div ref={bottomRef} /></div><div className="prompt-row"><button onClick={() => send("Pick the easiest safe dinner.")}>Pick the easiest</button><button onClick={() => send("I only have 15 minutes.")}>Only 15 minutes</button>{recipe && <button onClick={() => send(`Why are you recommending ${recipe.title}?`)}>Explain this pick</button>}</div><form onSubmit={e => { e.preventDefault(); send(input); }}><input value={input} onChange={e => setInput(e.target.value)} placeholder="Tell Moody what you need..." /><button disabled={busy}><ArrowRight /></button></form></aside></div>;
 }
 
 function NotificationsPanel({ close, profile, save, refresh }: { close: () => void; profile: Profile; save: (p: Profile) => void; refresh: () => void }) {
