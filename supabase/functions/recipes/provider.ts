@@ -90,12 +90,24 @@ const CATEGORY_TYPES: Record<string, string[]> = {
   // Legacy search values
   main: ["main course"],
   starter: ["appetizer", "salad", "soup", "side dish"],
-  // Meal-time categories (home screen + search)
+  // Meal-time categories (home screen + search).
+  // Each list covers both Spoonacular dishTypes AND TheMealDb strCategory values
+  // (lowercase) so the fallback path isn't silently emptied.
   breakfast: ["breakfast", "morning meal", "brunch"],
-  lunch: ["main course", "lunch", "salad", "soup", "side dish", "sandwich"],
-  dinner: ["main course", "dinner"],
-  snacks: ["snack", "appetizer", "finger food"],
-  snack: ["snack", "appetizer", "finger food"],
+  lunch: [
+    "main course", "lunch", "salad", "soup", "side dish", "sandwich",
+    // TheMealDb categories that are reasonable lunch options
+    "chicken", "beef", "lamb", "pork", "pasta", "seafood",
+    "vegetarian", "vegan", "miscellaneous", "side", "starter", "goat",
+  ],
+  dinner: [
+    "main course", "dinner",
+    // TheMealDb categories
+    "beef", "chicken", "lamb", "pasta", "pork", "seafood",
+    "vegetarian", "vegan", "miscellaneous", "goat",
+  ],
+  snacks: ["snack", "appetizer", "finger food", "starter", "side", "fingerfood"],
+  snack:  ["snack", "appetizer", "finger food", "starter", "side", "fingerfood"],
   dessert: ["dessert"],
   drink: ["beverage", "drink"],
 };
@@ -103,7 +115,13 @@ const CATEGORY_TYPES: Record<string, string[]> = {
 export function filterRecipesByCategory(recipes: any[], category: string): any[] {
   const allowed = CATEGORY_TYPES[(category ?? "").toLowerCase()];
   if (!allowed) return recipes;
-  return recipes.filter(recipe => (recipe.mealTypes ?? []).some((type: string) => allowed.includes(type.toLowerCase())));
+  return recipes.filter(recipe => {
+    const types = (recipe.mealTypes ?? []).map((t: string) => t.toLowerCase());
+    // No type metadata (Spoonacular sometimes returns empty dishTypes even when
+    // the `type` param was used) — pass through and trust the upstream filter.
+    if (!types.length) return true;
+    return types.some((t: string) => allowed.includes(t));
+  });
 }
 
 export function dedupeRecipes(recipes: any[]): any[] {
