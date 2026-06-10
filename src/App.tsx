@@ -23,6 +23,7 @@ import { displayStepDetail, displayStepTitle, formatTimer, stepImageSources } fr
 import { RecipeImage } from "./RecipeImage";
 import { finalizeSearchResults } from "./searchResults";
 import { Landing } from "./Landing";
+import { readDevTestState } from "./devTestState";
 import gsap from "gsap";
 
 const SUPABASE_FN = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
@@ -94,9 +95,11 @@ const nav = [
   ["grocery", "Grocery", ShoppingCart], ["planner", "Planner", CalendarDays],
 ] as const;
 export default function App() {
+  const testState = readDevTestState(window.location.search, import.meta.env.DEV);
   const [splash, setSplash] = useState(true);
   const [entry, setEntry] = useStoredState<Entry>("moodfood-entry", "welcome");
   const [storedProfile, setProfile] = useStoredState<Profile>("moodfood-profile", defaultProfile);
+  useEffect(() => { window.scrollTo(0, 0); }, [entry]);
   // Memoized so its reference is stable across renders. Without this, every
   // render produced a new `profile` object, which cascaded into `sharedProfile`
   // and re-fired the recipe-fetch effect on a loop, hammering the edge function
@@ -127,6 +130,19 @@ export default function App() {
   const [selectedDiners, setSelectedDiners] = useState<string[]>(["self"]);
   const [eaterCount, setEaterCount] = useStoredState<number>("moodfood-eater-count", 1);
   const sharedProfile = useMemo(() => profileForDiners(profile, diners.filter(d => selectedDiners.includes(d.id) && d.id !== "self")), [profile, diners, selectedDiners]);
+
+  // Browser automation cannot use javascript: URLs to mutate localStorage.
+  // Development-only test states provide explicit, repeatable access instead.
+  useEffect(() => {
+    if (!testState) return;
+    setSplash(false);
+    if (testState === "home") {
+      setProfile(prev => ({ ...prev, name: prev.name || "Test Cook", email: prev.email || "test@example.com", onboarded: true, accountCreated: true }));
+      setEntry("app");
+    } else {
+      setEntry("account");
+    }
+  }, [testState]);
   // catalog = bundled recipes plus any fetched from the AI-curated recipes API.
   // aiRanked = the API's curated order when available; null falls back to local ranking.
   const [catalog, setCatalog] = useState<Recipe[]>([]);
@@ -222,6 +238,7 @@ export default function App() {
   //    (genuine new signups). Returning users whose data is missing (cleared
   //    browser, new device) go straight to the app, never re-onboard.
   useEffect(() => onAuthChange(async (event, session) => {
+    if (testState) return;
     if (event === "SIGNED_OUT") { setEntry("welcome"); return; }
     if (!session) {
       setEntry(prev => prev === "app" ? "login" : prev);
@@ -274,7 +291,7 @@ export default function App() {
     if (storedProfile.onboarded && storedProfile.accountCreated) {
       setEntry(prev => (prev === "welcome" || prev === "login") ? "app" : prev);
     }
-  }), [storedProfile.onboarded, storedProfile.accountCreated, storedProfile]);
+  }), [storedProfile.onboarded, storedProfile.accountCreated, storedProfile, testState]);
 
   // Debounced upsert: save the full profile to Supabase 1.5 s after any change.
   // This keeps preferences_json current so the user's profile is restored when
@@ -355,7 +372,7 @@ export default function App() {
   }
   if (entry === "login") return <LoginScreen back={() => setEntry("welcome")} onSignedIn={() => {}} />;
   if (entry === "onboarding") return <Onboarding profile={profile} save={setProfile} finish={(next) => { setProfile({ ...next, onboarded: true }); clearStored("moodfood-onboarding-step"); setEntry("account"); }} />;
-  if (entry === "account") return <AccountSetupScreen profile={profile} back={() => setEntry("onboarding")} submit={(patch, opts) => {
+  if (entry === "account") return <AccountSetupScreen profile={profile} back={() => setEntry("onboarding")} simulate={testState === "account"} submit={(patch, opts) => {
     const confirmed = !!opts?.hasSession; // session present = email confirmation is OFF, so they're in
     const next = { ...profile, ...patch, accountCreated: true, emailVerified: confirmed };
     setProfile(next);
@@ -426,7 +443,7 @@ const SECTION_PHOTOS: Record<string, string> = {
   "Habits & values":      "https://images.unsplash.com/photo-1466637574441-749b8f19452f?auto=format&fit=crop&w=900&q=80",
 };
 
-function AccountSetupScreen({ profile, back, submit }: { profile: Profile; back: () => void; submit: (patch: Partial<Profile>, opts?: { hasSession: boolean }) => void }) {
+function AccountSetupScreen({ profile, back, submit, simulate = false }: { profile: Profile; back: () => void; submit: (patch: Partial<Profile>, opts?: { hasSession: boolean }) => void; simulate?: boolean }) {
   const [name, setName] = useState(profile.name);
   const [email, setEmail] = useState(profile.email);
   const [password, setPassword] = useState("");
@@ -434,11 +451,12 @@ function AccountSetupScreen({ profile, back, submit }: { profile: Profile; back:
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const upload = async (file?: File) => { if (!file) return; try { setAvatar(await readSafeImage(file)); setError(""); } catch (err) { setError((err as Error).message); } };
-  const valid = cleanText(name, 80) && /.+@.+\..+/.test(email) && password.length >= 6;
+  const valid = Boolean(cleanText(name, 80) && /.+@.+\..+/.test(email) && password.length >= 6);
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!valid) { setError("Add your name, a valid email, and a password of at least 6 characters."); return; }
     const patch = { name: cleanText(name, 80), email: email.trim(), avatar };
+    if (simulate) { submit(patch, { hasSession: true }); return; } // explicit QA route, no network side effects
     if (!isSupabaseConfigured) { submit(patch); return; } // pilot mode, simulated
     setBusy(true);
     const res = await authSignUp(email.trim(), password, patch.name);
@@ -458,9 +476,9 @@ function AccountSetupScreen({ profile, back, submit }: { profile: Profile; back:
       <label>Email address<input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" /></label>
       <label>Password<input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 6 characters" /></label>
       {error && <span className="err">{error}</span>}
-      <button className="primary" type="submit" disabled={busy}>{busy ? "Creating account…" : <>Create account <ArrowRight size={18} /></>}</button>
+      <button className="primary" type="submit" disabled={busy || !valid}>{busy ? "Creating account…" : <>Create account <ArrowRight size={18} /></>}</button>
     </form>
-    <small><Lock size={11} /> We never share your mood data.{isSupabaseConfigured ? "" : " For this local pilot, your password isn't stored."}</small>
+    <small><Lock size={11} /> We never share your mood data.{simulate || !isSupabaseConfigured ? " In this local test flow, your password isn't stored." : ""}</small>
   </div>;
 }
 
