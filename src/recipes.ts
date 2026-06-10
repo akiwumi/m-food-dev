@@ -6,7 +6,7 @@ import type { RecipeFilters } from "./searchFilters";
 // Fetches AI-curated, real recipes from the `recipes` edge function (Spoonacular
 // + hard safety filter + OpenAI ranking). Returns null on any failure (not signed
 // in, backend not configured, network error) so callers fall back to the local
-// deterministic ranking over the bundled recipes — the pilot keeps working.
+// deterministic ranking over the bundled recipes, the pilot keeps working.
 
 const ENDPOINT = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/recipes`;
 
@@ -63,12 +63,12 @@ export async function fetchCuratedRecipes(
   history: FoodHistory = {},
   offset = 0,
 ): Promise<Recipe[] | null> {
-  if (!supabase) { console.info("[recipes] Supabase not configured (.env.local) — showing local recipes."); return null; }
+  if (!supabase) { console.info("[recipes] Supabase not configured (.env.local), showing local recipes."); return null; }
 
   const run = async (): Promise<Recipe[] | null> => {
     try {
       const { data: { session } } = await supabase!.auth.getSession();
-      if (!session) { console.info("[recipes] Not signed in — live recipes need an authenticated session."); return null; }
+      if (!session) { console.info("[recipes] Not signed in, live recipes need an authenticated session."); return null; }
 
       const body = JSON.stringify({
         profile: recipeProfilePayload(profile),
@@ -83,7 +83,7 @@ export async function fetchCuratedRecipes(
       });
 
       let res = await post(session.access_token);
-      // A stale/expired access token returns 401 — refresh once and retry before
+      // A stale/expired access token returns 401, refresh once and retry before
       // giving up (otherwise we'd silently fall back to local recipes).
       if (res.status === 401) {
         const { data: { session: fresh } } = await supabase!.auth.refreshSession();
@@ -102,7 +102,7 @@ export async function fetchCuratedRecipes(
       console.info(`[recipes] Got ${data.recipes.length} recipes from ${data.provider ?? "unknown"}`);
       return data.recipes as Recipe[];
     } catch (e) {
-      console.warn("[recipes] Live curation request failed — showing local recipes.", e);
+      console.warn("[recipes] Live curation request failed, showing local recipes.", e);
       return null;
     }
   };
@@ -113,7 +113,7 @@ export async function fetchCuratedRecipes(
   return Promise.race([
     run(),
     new Promise<null>(resolve => setTimeout(() => {
-      console.warn("[recipes] Hard timeout (10 s) — falling back to local recipes.");
+      console.warn("[recipes] Hard timeout (10 s), falling back to local recipes.");
       resolve(null);
     }, 10_000)),
   ]);

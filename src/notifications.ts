@@ -16,8 +16,8 @@ export type InboxItem = {
   to?: string;                 // recipient for emails
   subject: string;
   body: string;
-  createdAt: string;           // ISO — when it was generated/sent
-  scheduledFor?: string;       // ISO — set while still pending
+  createdAt: string;           // ISO, when it was generated/sent
+  scheduledFor?: string;       // ISO, set while still pending
   status: "scheduled" | "sent";
   read: boolean;
   tag: "welcome" | "confirm" | "reminder" | "receipt";
@@ -71,13 +71,13 @@ export function scheduleTrial(email: string, plan: string, price: string, trialE
     kind: "push", to: email, tag: "reminder", status: "scheduled",
     createdAt: new Date().toISOString(), scheduledFor: remindAt,
     subject: "Your free trial ends tomorrow",
-    body: `Heads up — your MoodFood trial ends tomorrow. You'll be charged ${price} for the ${plan} plan unless you cancel before then.`,
+    body: `Heads up, your MoodFood trial ends tomorrow. You'll be charged ${price} for the ${plan} plan unless you cancel before then.`,
   });
   // Stash the pending charge details on a scheduled receipt item.
   items = add(items, {
     kind: "email", to: email, tag: "receipt", status: "scheduled",
     createdAt: new Date().toISOString(), scheduledFor: trialEndsAt,
-    subject: `Receipt — MoodFood ${plan} (${price})`,
+    subject: `Receipt: MoodFood ${plan} (${price})`,
     body: `Payment received: ${price} for your MoodFood ${plan} subscription. Thanks for cooking with us. Manage or cancel anytime in Settings → Subscription.`,
   });
   writeInbox(items);

@@ -12,7 +12,7 @@ export type Vitamin = {
 
 export type FoodPhoto = {
   id: string;
-  image: string;         // base64 data-URL — safe to store in localStorage
+  image: string;         // base64 data-URL, safe to store in localStorage
   dish: string;          // detected or user-supplied name
   calories: number;
   protein: number;       // grams
@@ -21,7 +21,7 @@ export type FoodPhoto = {
   fiber: number;         // grams
   vitamins: Vitamin[];   // notable micronutrients (vitamins + minerals)
   allergens: string[];   // allergens detected/likely in the dish
-  confidence: number;    // 0-100 — shown as "Estimated with X% confidence"
+  confidence: number;    // 0-100, shown as "Estimated with X% confidence"
   when: string;          // human-readable datetime
   recipeId?: string;     // if logged after cooking a specific recipe
   note?: string;
@@ -120,7 +120,7 @@ export async function analyzeFood(
       };
     }
   } catch {
-    // Not signed in, AI not configured, or the call failed — use simulation.
+    // Not signed in, AI not configured, or the call failed, use simulation.
   }
   return simulateAnalysis(image, hint);
 }

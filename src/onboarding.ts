@@ -68,7 +68,7 @@ export type OnboardingQuestion = {
 
 const ALLERGY_GROUPS: OptionGroup[] = [
   { group: "Grains & gluten", note: "Gluten is in wheat, barley, rye, and some oats", items: ["Wheat", "Gluten (all sources)", "Barley", "Rye", "Oats (gluten-sensitive)"] },
-  { group: "Dairy & eggs", note: "Dairy allergy and lactose intolerance differ — pick what applies", items: ["Dairy (allergy)", "Lactose intolerance", "Eggs"] },
+  { group: "Dairy & eggs", note: "Dairy allergy and lactose intolerance differ, pick what applies", items: ["Dairy (allergy)", "Lactose intolerance", "Eggs"] },
   { group: "Tree nuts", note: "Choose 'All tree nuts' if unsure", items: ["All tree nuts", "Cashews", "Walnuts", "Almonds", "Pistachios", "Hazelnuts", "Pecans", "Macadamia", "Brazil nuts", "Pine nuts"] },
   { group: "Peanuts & seeds", items: ["Peanuts", "Sesame", "Sunflower seeds", "Poppy seeds"] },
   { group: "Fish & seafood", note: "Fish and shellfish are separate allergens", items: ["All fish", "Salmon", "Tuna", "Cod / white fish", "All shellfish", "Crustaceans", "Molluscs"] },
@@ -101,41 +101,41 @@ export const onboardingQuestions: OnboardingQuestion[] = [
   {
     id: "cooking-moods", section: "Your moods", eyebrow: "HOW YOU COOK",
     title: "Which cooking moods feel like you?", type: "moodcards", key: "cookingMoods",
-    text: "These are the headspaces you cook from. Pick the ones you recognise — you'll check in with one each time you open Moody.",
+    text: "These are the headspaces you cook from. Pick the ones you recognise, you'll check in with one each time you open Moody.",
   },
   {
     id: "mc-stress", section: "Your moods", eyebrow: "MOOD & FOOD",
     title: "When you're stressed, what does food do for you?", type: "record-single",
     key: "moodContext", subKey: "stress_response",
-    text: "There's no wrong answer — this just helps Moody read your stressed-day check-ins.",
-    options: ["Cooking is therapy — it helps me decompress", "I just need to eat fast and get back to it", "I reach for comfort food without thinking", "I often forget to eat or lose my appetite", "I usually just order something"],
+    text: "There's no wrong answer, this just helps Moody read your stressed-day check-ins.",
+    options: ["Cooking is therapy, it helps me decompress", "I just need to eat fast and get back to it", "I reach for comfort food without thinking", "I often forget to eat or lose my appetite", "I usually just order something"],
   },
   {
     id: "mc-tired", section: "Your moods", eyebrow: "MOOD & FOOD",
     title: "On your most exhausted days, what's most likely?", type: "record-single",
     key: "moodContext", subKey: "tired_response",
     text: "So low-energy nights still end in something you'll actually eat.",
-    options: ["I cobble together whatever is easiest", "Toast, cereal, or barely-cooking", "I order in — no shame", "I eat something I made earlier in the week", "I sometimes just don't eat properly"],
+    options: ["I cobble together whatever is easiest", "Toast, cereal, or barely-cooking", "I order in, no shame", "I eat something I made earlier in the week", "I sometimes just don't eat properly"],
   },
   {
     id: "mc-happy", section: "Your moods", eyebrow: "MOOD & FOOD",
     title: "When you're in a great mood, cooking feels like…", type: "record-single",
     key: "moodContext", subKey: "happy_response",
-    text: "Good days are a chance to stretch — or not. Your call.",
-    options: ["A celebration — I make something special", "Creative time — I experiment", "The same as usual", "A reason to cook for someone else", "Still quick"],
+    text: "Good days are a chance to stretch, or not. Your call.",
+    options: ["A celebration, I make something special", "Creative time, I experiment", "The same as usual", "A reason to cook for someone else", "Still quick"],
   },
   {
     id: "food-relationship", section: "Your moods", eyebrow: "WHAT FOOD MEANS",
     title: "Which best describes your relationship with food?", type: "single", key: "foodRelationship",
     text: "The lens you bring to eating shapes everything Moody suggests.",
-    options: ["Food is fuel — functional more than emotional", "One of life's great pleasures", "Deeply tied to my culture and identity", "About sharing and being with people", "My primary tool for managing my health", "A creative outlet — I love the craft"],
+    options: ["Food is fuel, functional more than emotional", "One of life's great pleasures", "Deeply tied to my culture and identity", "About sharing and being with people", "My primary tool for managing my health", "A creative outlet, I love the craft"],
   },
   {
     id: "mc-variety", section: "Your moods", eyebrow: "VARIETY",
     title: "How do you feel about variety?", type: "record-single",
     key: "moodContext", subKey: "variety_vs_routine",
     text: "How hard should Moody push new things versus reliable favourites?",
-    options: ["I crave variety — repetition bores me", "A balance of reliables and new things", "I like my rotation — fewer decisions", "Routine weekdays, exploratory weekends"],
+    options: ["I crave variety, repetition bores me", "A balance of reliables and new things", "I like my rotation, fewer decisions", "Routine weekdays, exploratory weekends"],
   },
 
   // ────────────────────────────────────────────────── Section 1: Food & safety
@@ -149,7 +149,7 @@ export const onboardingQuestions: OnboardingQuestion[] = [
     id: "diet-religious", section: "Food & safety", eyebrow: "PRACTICE & ETHICS",
     title: "Any religious or ethical food practice?", type: "multi", key: "dietReligious",
     text: "These become firm rules Moody never breaks. Skip if none apply.",
-    options: ["Halal", "Kosher", "Kosher — strict meat/dairy separation", "Hindu Vegetarian", "Hindu — no beef", "Jain", "Jain — strict", "Seventh-Day Adventist", "Buddhist Vegetarian", "Rastafarian / Ital", "Eastern Orthodox Fasting", "No pork", "No alcohol in cooking", "No beef", "Traditional / Indigenous diet"],
+    options: ["Halal", "Kosher", "Kosher (strict meat/dairy separation)", "Hindu Vegetarian", "Hindu (no beef)", "Jain", "Jain (strict)", "Seventh-Day Adventist", "Buddhist Vegetarian", "Rastafarian / Ital", "Eastern Orthodox Fasting", "No pork", "No alcohol in cooking", "No beef", "Traditional / Indigenous diet"],
     allowCustom: true, optional: true,
   },
   {
@@ -269,7 +269,7 @@ export const onboardingQuestions: OnboardingQuestion[] = [
     id: "emotional-triggers", section: "Food psychology", eyebrow: "MOOD & FOOD",
     title: "What changes how you eat?", type: "multi", key: "emotionalTriggers",
     text: "Emotions shift our cravings. Naming yours lets Moody support you instead of working against you.",
-    options: ["Stress", "Sadness", "Boredom", "Celebration", "Tiredness", "Loneliness", "Anxiety", "Rewarding myself", "Social settings", "None — I eat on a schedule"],
+    options: ["Stress", "Sadness", "Boredom", "Celebration", "Tiredness", "Loneliness", "Anxiety", "Rewarding myself", "Social settings", "None (I eat on a schedule)"],
     optional: true,
   },
 

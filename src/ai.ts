@@ -1,16 +1,16 @@
 import { supabase } from "./supabase";
 
 // Browser-side client for the ai-gateway edge function. The OpenAI key never
-// touches the browser — we send the user's Supabase session token, and the
+// touches the browser, we send the user's Supabase session token, and the
 // gateway calls OpenAI. Every function throws on failure so callers can fall
 // back gracefully (e.g. to the local simulation) while auth/AI isn't wired yet.
 
 const GATEWAY_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-gateway`;
 
 async function callGateway<T>(payload: Record<string, unknown>): Promise<T> {
-  if (!supabase) throw new Error("Supabase not configured — set .env.local to enable AI.");
+  if (!supabase) throw new Error("Supabase not configured, set .env.local to enable AI.");
   const { data: { session } } = await supabase.auth.getSession();
-  if (!session) throw new Error("Not signed in — AI needs an authenticated session.");
+  if (!session) throw new Error("Not signed in, AI needs an authenticated session.");
 
   const body = JSON.stringify(payload);
   const post = (token: string) => fetch(GATEWAY_URL, {

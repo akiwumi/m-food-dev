@@ -22,16 +22,10 @@ import { supabase } from "./supabase";
 import { displayStepDetail, displayStepTitle, formatTimer, stepImageSources } from "./cooking";
 import { RecipeImage } from "./RecipeImage";
 import { finalizeSearchResults } from "./searchResults";
+import { Landing } from "./Landing";
+import gsap from "gsap";
 
 const SUPABASE_FN = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
-
-// Capture Chrome/Android's install prompt as early as possible so the welcome
-// screen can offer a one-tap "Add to Home Screen". On browsers that don't fire
-// this (notably iOS Safari) we fall back to short instructions instead.
-let deferredInstallPrompt: (Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> }) | null = null;
-if (typeof window !== "undefined") {
-  window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); deferredInstallPrompt = e as typeof deferredInstallPrompt; });
-}
 
 async function callFn<T>(fn: string, body: unknown): Promise<T> {
   if (!supabase) throw new Error("Backend not configured.");
@@ -62,7 +56,7 @@ async function deleteAccount(): Promise<{ ok: boolean; error?: string }> {
   catch (e) { return { ok: false, error: (e as Error).message }; }
 }
 
-// Every localStorage key MoodFood owns — wiped when an account is cancelled.
+// Every localStorage key MoodFood owns, wiped when an account is cancelled.
 const MOODFOOD_KEYS = [
   "moodfood-entry", "moodfood-profile", "moodfood-saved", "moodfood-diary",
   "moodfood-groceries", "moodfood-posts", "moodfood-connections", "moodfood-diners",
@@ -91,8 +85,8 @@ type Page = "home" | "search" | "results" | "diary" | "grocery" | "planner" | "d
 type SearchRequest = { query: string; filters: RecipeFilters };
 type Entry = "welcome" | "login" | "onboarding" | "account" | "verify" | "verified" | "subscription" | "app";
 const PLANS = [
-  { id: "annual", name: "Annual", price: "$120/year", note: "Best value — about 2 months free" },
-  { id: "quarterly", name: "Quarterly", price: "$36/quarter", note: "Save 20% — billed every 3 months" },
+  { id: "annual", name: "Annual", price: "$120/year", note: "Best value, about 2 months free" },
+  { id: "quarterly", name: "Quarterly", price: "$36/quarter", note: "Save 20%, billed every 3 months" },
   { id: "monthly", name: "Monthly", price: "$15/month", note: "Cancel anytime" },
 ] as const;
 const nav = [
@@ -105,7 +99,7 @@ export default function App() {
   const [storedProfile, setProfile] = useStoredState<Profile>("moodfood-profile", defaultProfile);
   // Memoized so its reference is stable across renders. Without this, every
   // render produced a new `profile` object, which cascaded into `sharedProfile`
-  // and re-fired the recipe-fetch effect on a loop — hammering the edge function
+  // and re-fired the recipe-fetch effect on a loop, hammering the edge function
   // into 502s and silently falling back to local recipes.
   const profile = useMemo(() => ({ ...defaultProfile, ...storedProfile }), [storedProfile]);
   const [page, setPage] = useState<Page>("home");
@@ -116,6 +110,7 @@ export default function App() {
   const [time, setTime] = useState(30);
   const [mealCategory, setMealCategory] = useState("");
   const [cuisine, setCuisine] = useState("");
+  const [homeDiet, setHomeDiet] = useState("Any");
   const [results, setResults] = useState(false);
   const [searchRequest, setSearchRequest] = useState<SearchRequest | null>(null);
   const [searchResults, setSearchResults] = useState<Recipe[]>([]);
@@ -144,7 +139,7 @@ export default function App() {
   const localRanked = useMemo(() => recommend(catalog, sharedProfile, mood, energy, time).map(item => item.recipe), [catalog, sharedProfile, mood, energy, time]);
   const ACCESSORY_TYPES = useMemo(() => new Set(["dessert", "desserts", "snack", "snacks", "drink", "drinks", "beverage", "beverages", "sweet", "sweets"]), []);
   const ranked = useMemo(() => {
-    // AI results only — no session cache fallback.
+    // AI results only, no session cache fallback.
     const base = aiRanked ?? [];
     if (mealCategory) return base;
     return base.filter(r => {
@@ -153,7 +148,7 @@ export default function App() {
     });
   }, [aiRanked, mealCategory, ACCESSORY_TYPES]);
 
-  // What the user has actually cooked, logged, and saved — so the AI learns from
+  // What the user has actually cooked, logged, and saved, so the AI learns from
   // behaviour, not just the stated profile. Recomputed as those change.
   const foodHistory = useMemo(
     () => buildFoodHistory(diary, profile.photoLogs, catalog.filter(r => saved.includes(r.id))),
@@ -183,7 +178,7 @@ export default function App() {
     setCurating(true);
     setAiRanked(null); // clear stale results immediately so loading state shows
     setMoreOffset(0);
-    fetchCuratedRecipes(sharedProfile, mood, energy, time, "", { type: mealCategory || undefined, cuisines: cuisine ? [cuisine] : undefined }, foodHistory, 0)
+    fetchCuratedRecipes(sharedProfile, mood, energy, time, "", { type: mealCategory || undefined, cuisines: cuisine ? [cuisine] : undefined, diet: homeDiet !== "Any" ? homeDiet : undefined }, foodHistory, 0)
       .then(list => {
         if (cancelled) return;
         if (list?.length) {
@@ -195,16 +190,16 @@ export default function App() {
       })
       .finally(() => { if (!cancelled) { setCurating(false); setHasFetched(true); } });
     return () => { cancelled = true; };
-  }, [results, mood, energy, time, sharedProfile, entry, recipeNonce, mealCategory, cuisine]);
+  }, [results, mood, energy, time, sharedProfile, entry, recipeNonce, mealCategory, cuisine, homeDiet]);
 
-  // "Show me 5 more" — fetch a fresh page (next offset) and append. Falls back to
+  // "Show me 5 more", fetch a fresh page (next offset) and append. Falls back to
   // simply revealing more of the local ranking when the backend isn't available.
   const loadMore = async () => {
     setCurating(true);
     const nextOffset = moreOffset + 10;
     setMoreOffset(nextOffset);
     try {
-      const list = await fetchCuratedRecipes(sharedProfile, mood, energy, time, "", { type: mealCategory || undefined, cuisines: cuisine ? [cuisine] : undefined }, foodHistory, nextOffset);
+      const list = await fetchCuratedRecipes(sharedProfile, mood, energy, time, "", { type: mealCategory || undefined, cuisines: cuisine ? [cuisine] : undefined, diet: homeDiet !== "Any" ? homeDiet : undefined }, foodHistory, nextOffset);
       if (list?.length) {
         setCatalog(prev => { const ids = new Set(prev.map(r => r.id)); return [...prev, ...list.filter(r => !ids.has(r.id))]; });
         setAiRanked(prev => { const seen = new Set((prev ?? []).map(r => r.id)); return [...(prev ?? []), ...list.filter(r => !seen.has(r.id))]; });
@@ -221,11 +216,11 @@ export default function App() {
   useEffect(() => { const { charged } = runDue(); if (charged) setProfile(p => ({ ...p, subscriptionStatus: "active" })); refreshNotifs(); }, []);
   // Real auth: keep the entry flow in sync with the session.
   //  • Sign out anywhere → back to welcome.
-  //  • On sign-in, Supabase is the source of truth — restore preferences_json
+  //  • On sign-in, Supabase is the source of truth, restore preferences_json
   //    if it has a completed profile, otherwise push local data up.
   //  • Only route to onboarding for accounts created in the last 10 minutes
   //    (genuine new signups). Returning users whose data is missing (cleared
-  //    browser, new device) go straight to the app — never re-onboard.
+  //    browser, new device) go straight to the app, never re-onboard.
   useEffect(() => onAuthChange(async (event, session) => {
     if (event === "SIGNED_OUT") { setEntry("welcome"); return; }
     if (!session) {
@@ -241,7 +236,7 @@ export default function App() {
       const prefs = data?.preferences_json as Record<string, unknown> | null;
 
       if (prefs && prefs.onboarded === true) {
-        // Supabase has a completed profile — restore it (handles new-device login).
+        // Supabase has a completed profile, restore it (handles new-device login).
         const restored = { ...defaultProfile, ...prefs, email: session.user.email ?? "" } as Profile;
         setProfile(restored);
         setEntry(prev => (prev === "welcome" || prev === "login") ? "app" : prev);
@@ -250,7 +245,7 @@ export default function App() {
 
       // Supabase profile is empty/incomplete. Check local storage first.
       if (storedProfile.onboarded) {
-        // Local profile is complete — push it to Supabase now we have a session.
+        // Local profile is complete, push it to Supabase now we have a session.
         supabase.from("profiles").upsert({
           id: session.user.id,
           display_name: storedProfile.name,
@@ -275,7 +270,7 @@ export default function App() {
       return;
     }
 
-    // Supabase not configured (pilot/local mode) — use localStorage signal.
+    // Supabase not configured (pilot/local mode), use localStorage signal.
     if (storedProfile.onboarded && storedProfile.accountCreated) {
       setEntry(prev => (prev === "welcome" || prev === "login") ? "app" : prev);
     }
@@ -314,7 +309,7 @@ export default function App() {
           setProfile(p => ({ ...p, subscriptionStatus: sub.status as any, plan: sub.plan, trialEndsAt: sub.currentPeriodEnd }));
           setEntry("app");
         } else {
-          // Webhook hasn't fired yet — optimistically mark as trialing and enter.
+          // Webhook hasn't fired yet, optimistically mark as trialing and enter.
           setProfile(p => ({ ...p, subscriptionStatus: "trialing" }));
           setEntry("app");
         }
@@ -349,8 +344,15 @@ export default function App() {
     return { ok: true };
   };
 
-  if (splash && entry !== "app") return <Splash proceed={() => setSplash(false)} signin={() => { setSplash(false); setEntry("login"); }} />;
-  if (entry === "welcome") return <Welcome start={() => setEntry("onboarding")} signin={() => setEntry("login")} />;
+  // The landing doubles as the splash: brand-new visitors (entry === "welcome")
+  // begin onboarding from it; returning visitors mid-flow (splash still true)
+  // resume whatever entry step they were on.
+  if ((splash && entry !== "app") || entry === "welcome") {
+    return <Landing
+      begin={() => { setSplash(false); if (entry === "welcome") setEntry("onboarding"); }}
+      signin={() => { setSplash(false); setEntry("login"); }}
+    />;
+  }
   if (entry === "login") return <LoginScreen back={() => setEntry("welcome")} onSignedIn={() => {}} />;
   if (entry === "onboarding") return <Onboarding profile={profile} save={setProfile} finish={(next) => { setProfile({ ...next, onboarded: true }); clearStored("moodfood-onboarding-step"); setEntry("account"); }} />;
   if (entry === "account") return <AccountSetupScreen profile={profile} back={() => setEntry("onboarding")} submit={(patch, opts) => {
@@ -367,12 +369,12 @@ export default function App() {
   return <MenuCtx.Provider value={() => setMenuOpen(true)}><div className={page === "cook" ? "app cooking" : "app"}>
     {page !== "cook" && <DesktopNav page={page} go={go} />}
     <main>
-      {page === "home" && <HomeScreen profile={profile} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} results={false} setResults={setResults} beginResults={() => { setSearchRequest(null); setCurating(true); setAiRanked(null); setHasFetched(false); setResults(true); go("results"); }} ranked={ranked} curating={curating} loadMore={loadMore} live={aiRanked !== null} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} />}
+      {page === "home" && <HomeScreen profile={profile} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results={false} setResults={setResults} beginResults={() => { setSearchRequest(null); setCurating(true); setAiRanked(null); setHasFetched(false); setResults(true); go("results"); }} ranked={ranked} curating={curating} loadMore={loadMore} live={aiRanked !== null} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} />}
       {page === "search" && <SearchScreen profile={sharedProfile} onSearch={request => runSearch(request)} />}
       {page === "results" && (searchRequest
         ? <SearchResultsScreen results={searchResults} loading={searchLoading} request={searchRequest} more={() => runSearch(searchRequest, true)} home={() => go("home")} search={() => go("search")} open={open} saved={saved} setSaved={setSaved} />
         : results
-          ? <HomeScreen profile={profile} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} results setResults={v => { setResults(v); if (!v) go("home"); }} beginResults={() => {}} ranked={ranked} curating={curating} hasFetched={hasFetched} loadMore={loadMore} live={aiRanked !== null} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} />
+          ? <HomeScreen profile={profile} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results setResults={v => { setResults(v); if (!v) go("home"); }} beginResults={() => {}} ranked={ranked} curating={curating} hasFetched={hasFetched} loadMore={loadMore} live={aiRanked !== null} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} />
           : <EmptyResultsScreen home={() => go("home")} search={() => go("search")} />)}
       {page === "detail" && selected && <DetailScreen recipe={selected} servings={eaterCount} back={() => go(detailReturnPage)} cook={() => go("cook")} saved={saved.includes(selected.id)} toggleSave={() => setSaved(toggle(saved, selected.id))} addGroceries={() => setGroceries(v => [...new Set([...v, ...selected.ingredients])])} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} shareToCommunity={() => shareRecipe(selected)} allergies={profile.allergies} />}
       {page === "cook" && selected && <CookScreen recipe={selected} exit={() => go("detail")} allergies={profile.allergies} finish={(rating, photo) => { setDiary(v => [{ recipe: selected, rating, when: "Today" }, ...v]); if (photo) setProfile(p => ({ ...p, photoLogs: [photo, ...p.photoLogs] })); go("diary"); }} />}
@@ -409,9 +411,8 @@ export default function App() {
 
 function toggle(values: string[], value: string) { return values.includes(value) ? values.filter(v => v !== value) : [...values, value]; }
 
-const SPLASH_PHOTO   = "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1100&q=85";
-const WELCOME_PHOTO  = "https://images.unsplash.com/photo-1490645935967-10de6ba17061?auto=format&fit=crop&w=1100&q=85";
 const FALLBACK_FOOD  = "https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?auto=format&fit=crop&w=900&q=80";
+const LOGIN_PHOTO    = "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1400&q=85";
 
 // One curated food photo per onboarding section.
 const SECTION_PHOTOS: Record<string, string> = {
@@ -424,109 +425,6 @@ const SECTION_PHOTOS: Record<string, string> = {
   "Kitchen, time & table":"https://images.unsplash.com/photo-1490645935967-10de6ba17061?auto=format&fit=crop&w=900&q=80",
   "Habits & values":      "https://images.unsplash.com/photo-1466637574441-749b8f19452f?auto=format&fit=crop&w=900&q=80",
 };
-
-function Splash({ proceed, signin }: { proceed: () => void; signin: () => void }) {
-  return (
-    <div className="splash">
-      <img className="splash-photo" src={SPLASH_PHOTO} alt="Delicious food" />
-      <div className="splash-veil" />
-      <div className="splash-logo-center">
-        <img src="/images/logo-1.png" alt="MoodFood" />
-        <span>MoodFood</span>
-      </div>
-      <div className="splash-copy">
-        <span className="splash-eyebrow">YOUR PERSONAL FOOD COMPANION</span>
-        <strong>Eat for the way<br />you feel.</strong>
-        <p>One safe, perfectly matched meal — chosen for your mood, energy, and taste.</p>
-        <div className="splash-actions">
-          <button className="splash-cta" onClick={proceed}>Get started <ArrowRight size={16} /></button>
-          <button className="splash-signin" onClick={signin}>I already have an account</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Gentle nudge on the welcome screen: this is a PWA, so invite the user to add
-// it to their home screen. Uses Chrome's install prompt when available, and
-// shows iOS Safari instructions otherwise. Dismissible and remembered.
-function AddToHomeScreenHint() {
-  const standalone = typeof window !== "undefined" &&
-    (window.matchMedia?.("(display-mode: standalone)").matches || (navigator as { standalone?: boolean }).standalone === true);
-  const isIOS = typeof navigator !== "undefined" && /iphone|ipad|ipod/i.test(navigator.userAgent);
-  const [dismissed, setDismissed] = useStoredState("moodfood-a2hs-dismissed", false);
-  const [show, setShow] = useState(false);
-  const [canPrompt, setCanPrompt] = useState(!!deferredInstallPrompt);
-
-  useEffect(() => {
-    if (standalone || dismissed) return;
-    const onPrompt = () => setCanPrompt(true);
-    const onInstalled = () => setDismissed(true);
-    window.addEventListener("beforeinstallprompt", onPrompt);
-    window.addEventListener("appinstalled", onInstalled);
-    const t = setTimeout(() => setShow(true), 700); // let the welcome screen settle first
-    return () => { clearTimeout(t); window.removeEventListener("beforeinstallprompt", onPrompt); window.removeEventListener("appinstalled", onInstalled); };
-  }, [standalone, dismissed]);
-
-  if (standalone || dismissed || !show) return null;
-
-  const install = async () => {
-    if (!deferredInstallPrompt) return;
-    await deferredInstallPrompt.prompt();
-    try { await deferredInstallPrompt.userChoice; } catch { /* user dismissed */ }
-    deferredInstallPrompt = null;
-    setDismissed(true);
-  };
-
-  return (
-    <div className="a2hs" role="status">
-      <div className="a2hs-icon"><img src="/images/logo-1.png" alt="" /></div>
-      <div className="a2hs-body">
-        <b>Add MoodFood to your home screen</b>
-        {isIOS
-          ? <p>Tap <Share2 size={13} /> Share, then <b>Add to Home Screen</b> for one-tap access.</p>
-          : <p>Install it for a faster, full-screen experience — no app store needed.</p>}
-      </div>
-      {canPrompt && !isIOS && <button className="a2hs-cta" onClick={install}>Add</button>}
-      <button className="a2hs-x" onClick={() => setDismissed(true)} aria-label="Dismiss"><X size={16} /></button>
-    </div>
-  );
-}
-function Welcome({ start, signin }: { start: () => void; signin: () => void }) {
-  return (
-    <div className="welcome-modern">
-      <AddToHomeScreenHint />
-      <div className="wm-logo"><img src="/images/logo-1.png" alt="" /><span>MoodFood</span></div>
-      <div className="hero">
-        <img src={WELCOME_PHOTO} alt="A fresh, colourful meal" />
-        <div className="wm-badge"><ShieldCheck size={14} /> Safety always first</div>
-      </div>
-      <div className="copy">
-        <span className="wm-eye">WELCOME TO MOODFOOD</span>
-        <h1>Hello, and welcome.</h1>
-        <p>MoodFood is your personal food companion. Tell us how you feel and what you love, and we'll match you to one safe, doable meal — so dinner feels like care, not another decision.</p>
-      </div>
-
-      <div className="wm-explain">
-        <h2><Sparkles size={18} /> A few quick questions first</h2>
-        <p>The next part may feel a little long — and that's on purpose. Every answer helps us truly understand your tastes, your needs, and the way you eat.</p>
-        <ul>
-          <li><span className="wm-dot"><Heart size={14} /></span><div><b>It learns what matters to you</b><p>Allergies, cravings, comfort foods, the time you have — nothing one-size-fits-all.</p></div></li>
-          <li><span className="wm-dot"><ChefHat size={14} /></span><div><b>It trains your MoodFood</b><p>The more it knows, the smarter and more personal every suggestion becomes.</p></div></li>
-          <li><span className="wm-dot"><Check size={14} /></span><div><b>You start in a great place</b><p>From day one you get picks that genuinely fit you — not generic guesses.</p></div></li>
-        </ul>
-        <p className="wm-note">Short on time? Answer what you can — the more you share, the better MoodFood gets, but nothing is set in stone. You can revisit and refine everything any time from your Food Profile.</p>
-      </div>
-
-      <div className="actions">
-        <button className="primary" style={{ width: "100%", minHeight: 54 }} onClick={start}>
-          Let's build my food profile <ArrowRight size={18} />
-        </button>
-        <button className="ghost" onClick={signin}>I already have an account</button>
-      </div>
-    </div>
-  );
-}
 
 function AccountSetupScreen({ profile, back, submit }: { profile: Profile; back: () => void; submit: (patch: Partial<Profile>, opts?: { hasSession: boolean }) => void }) {
   const [name, setName] = useState(profile.name);
@@ -541,7 +439,7 @@ function AccountSetupScreen({ profile, back, submit }: { profile: Profile; back:
     e.preventDefault();
     if (!valid) { setError("Add your name, a valid email, and a password of at least 6 characters."); return; }
     const patch = { name: cleanText(name, 80), email: email.trim(), avatar };
-    if (!isSupabaseConfigured) { submit(patch); return; } // pilot mode — simulated
+    if (!isSupabaseConfigured) { submit(patch); return; } // pilot mode, simulated
     setBusy(true);
     const res = await authSignUp(email.trim(), password, patch.name);
     setBusy(false);
@@ -553,7 +451,7 @@ function AccountSetupScreen({ profile, back, submit }: { profile: Profile; back:
     <div className="auth-logo"><img src="/images/logo-1.png" alt="" /><span>MoodFood</span></div>
     <span className="eyebrow">CREATE YOUR ACCOUNT</span>
     <h1>Save your profile.</h1>
-    <p className="lede">Your food profile is ready. Create an account so it's yours on every device — we'll send a confirmation email to finish.</p>
+    <p className="lede">Your food profile is ready. Create an account so it's yours on every device, we'll send a confirmation email to finish.</p>
     <div className="avatar-pick"><label>{avatar ? <span className="ring"><img src={avatar} alt="" /></span> : <span className="ring"><span>{(name || "You").slice(0, 1).toUpperCase()}</span></span>}<span className="cam"><Camera size={16} /></span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => upload(e.target.files?.[0])} /></label><em>Add a profile photo</em></div>
     <form onSubmit={onSubmit}>
       <label>Name<input value={name} maxLength={80} onChange={e => setName(e.target.value)} placeholder="Jessica" /></label>
@@ -579,7 +477,7 @@ function VerifyEmailScreen({ email, realAuth, onVerified, resend, back }: { emai
   }, [realAuth]);
 
   const handleClick = async () => {
-    if (!realAuth) { onVerified(); return; } // pilot — simulate confirmation
+    if (!realAuth) { onVerified(); return; } // pilot, simulate confirmation
     setChecking(true);
     const ok = await isEmailConfirmed();
     setChecking(false);
@@ -594,7 +492,7 @@ function VerifyEmailScreen({ email, realAuth, onVerified, resend, back }: { emai
     <p className="lede">We sent a confirmation link to <span className="maskmail">{email}</span>. Open it to verify your account and continue.</p>
     <button className="primary" onClick={handleClick} disabled={checking}>{checking ? "Checking…" : <>I've opened the link <ArrowRight size={18} /></>}</button>
     <button className="ghost" onClick={() => { resend(); setSent(true); }}>{sent ? "Sent again ✓" : "Resend confirmation email"}</button>
-    {notYet && <span className="err">We can't see a confirmation yet — open the link in the email, then tap again.</span>}
+    {notYet && <span className="err">We can't see a confirmation yet, open the link in the email, then tap again.</span>}
     <small>{realAuth ? "Tap the link in the email we just sent, then come back here." : "In a production build this button is the link inside the email. Here, tapping it simulates the confirmation."}</small>
   </div>;
 }
@@ -604,6 +502,18 @@ function LoginScreen({ back, onSignedIn }: { back: () => void; onSignedIn: (emai
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const mm = gsap.matchMedia();
+    mm.add("(prefers-reduced-motion: no-preference)", () => {
+      const ctx = gsap.context(() => {
+        gsap.from(".ap-sheet", { y: 30, opacity: 0, duration: 0.8, ease: "power3.out" });
+        gsap.from("[data-auth]", { y: 20, opacity: 0, duration: 0.7, ease: "power3.out", stagger: 0.08, delay: 0.15 });
+      }, rootRef);
+      return () => ctx.revert();
+    });
+    return () => mm.revert();
+  }, []);
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!/.+@.+\..+/.test(email) || !password) { setError("Enter your email and password."); return; }
@@ -614,18 +524,25 @@ function LoginScreen({ back, onSignedIn }: { back: () => void; onSignedIn: (emai
     if (!res.ok) { setError(res.error || "Could not sign in. Check your details."); return; }
     onSignedIn(email.trim());
   };
-  return <div className="auth-modern center">
-    <button className="back" onClick={back} aria-label="Back"><ArrowLeft /></button>
-    <div className="auth-logo"><img src="/images/logo-1.png" alt="" /><span>MoodFood</span></div>
-    <span className="eyebrow">WELCOME BACK</span>
-    <h1>Sign in.</h1>
-    <p className="lede">Pick up where you left off — your food profile and recommendations are waiting.</p>
-    <form onSubmit={onSubmit} style={{ width: "100%" }}>
-      <label>Email address<input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" /></label>
-      <label>Password<input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Your password" /></label>
-      {error && <span className="err">{error}</span>}
-      <button className="primary" type="submit" disabled={busy}>{busy ? "Signing in…" : <>Sign in <ArrowRight size={18} /></>}</button>
-    </form>
+  return <div className="auth-photo" ref={rootRef}>
+    <div className="ap-hero">
+      <img src={LOGIN_PHOTO} alt="A bowl of fresh food" />
+      <div className="ap-veil" />
+      <button className="ap-back" onClick={back} aria-label="Back"><ArrowLeft size={19} /></button>
+      <div className="ap-logo"><img src="/images/logo-1.png" alt="" /><span>MoodFood</span></div>
+    </div>
+    <div className="ap-sheet">
+      <span className="ap-eyebrow" data-auth>WELCOME BACK</span>
+      <h1 data-auth>Sign in.</h1>
+      <p className="ap-lede" data-auth>Pick up where you left off, your food profile and recommendations are waiting.</p>
+      <form onSubmit={onSubmit} data-auth>
+        <label>Email address<input type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" /></label>
+        <label>Password<input type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Your password" /></label>
+        {error && <span className="err" role="alert">{error}</span>}
+        <button className="primary" type="submit" disabled={busy}>{busy ? "Signing in…" : <>Sign in <ArrowRight size={18} /></>}</button>
+      </form>
+      <p className="ap-alt" data-auth>New here? <button type="button" onClick={back}>Build your food profile</button></p>
+    </div>
   </div>;
 }
 
@@ -651,14 +568,14 @@ function Onboarding({ profile, save, finish }: { profile: Profile; save: (p: Pro
 
   if (onReview) {
     const summary: [string, string][] = [
-      ["Cooking moods", profile.cookingMoods.slice(0, 5).join(", ") || "—"],
+      ["Cooking moods", profile.cookingMoods.slice(0, 5).join(", ") || "-"],
       ["Diet", [profile.diet, ...profile.dietReligious].join(", ")],
       ["Hard exclusions", profile.allergies.join(", ") || "None"],
       ["Won't eat", profile.dislikedIngredients.join(", ") || "Open to most things"],
       ["Loves", [...profile.flavorLikes, ...profile.textureLikes].slice(0, 5).join(", ") || "Still learning"],
       ["Cuisines", profile.cuisines.slice(0, 6).join(", ") || "Open to anything"],
-      ["Drawn to food for", profile.foodValues.slice(0, 4).join(", ") || "—"],
-      ["Comfort means", profile.comfortFoods.slice(0, 4).join(", ") || "—"],
+      ["Drawn to food for", profile.foodValues.slice(0, 4).join(", ") || "-"],
+      ["Comfort means", profile.comfortFoods.slice(0, 4).join(", ") || "-"],
       ["Cooking", `${profile.skill} · serves ${profile.servings} · ${profile.weeknightTime}`],
       ["Working toward", profile.nutritionGoals.join(", ") || "No specific goal"],
     ];
@@ -702,11 +619,11 @@ function Onboarding({ profile, save, finish }: { profile: Profile; save: (p: Pro
 
   return (
     <div className="onboarding">
-      {/* Photo hero — like the person/hero photo in the reference */}
+      {/* Photo hero, like the person/hero photo in the reference */}
       <div className="onboarding-photo">
         <img src={sectionPhoto} alt={q.section} />
         <div className="op-veil" />
-        {/* Logo + step chip overlaid on photo — faithful to reference Image 1 */}
+        {/* Logo + step chip overlaid on photo, faithful to reference Image 1 */}
         <div className="op-bar">
           <div className="op-logo">
             <img src="/images/logo-1.png" alt="MoodFood" />
@@ -719,7 +636,7 @@ function Onboarding({ profile, save, finish }: { profile: Profile; save: (p: Pro
         </div>
       </div>
 
-      {/* White bottom sheet — slides up over the photo */}
+      {/* White bottom sheet, slides up over the photo */}
       <div className="onboarding-sheet">
         <div className="drag-h" />
         {/* Section progress bar */}
@@ -784,7 +701,7 @@ function GroupedMultiField({ q, values, update }: { q: OnboardingQuestion; value
     </div>)}
     {q.allowCustom && <form className="add-cue" onSubmit={e => { e.preventDefault(); const c = cleanText(custom, 40); if (c) { update(q.key, [...new Set([...values, c])]); setCustom(""); } }}><input value={custom} onChange={e => setCustom(e.target.value)} placeholder="Add your own" /><button><Plus /></button></form>}
     {!!extras.length && <div className="choice" style={{ marginTop: 8 }}>{extras.map(v => <button className="custom-cue" onClick={() => update(q.key, values.filter(x => x !== v))} key={v}>{v}<X size={13} /></button>)}</div>}
-    <p className="multi-hint">{values.length ? `${values.length} selected — pick as many as you like` : "Select all that apply"}</p>
+    <p className="multi-hint">{values.length ? `${values.length} selected, pick as many as you like` : "Select all that apply"}</p>
   </>;
 }
 function MoodCardsField({ values, update }: { values: string[]; update: (v: string[]) => void }) {
@@ -807,7 +724,7 @@ function MoodCardsField({ values, update }: { values: string[]; update: (v: stri
         </div>}
       </div>;
     })}</div>
-    <p className="multi-hint">{values.length ? `${values.length} selected — pick as many as you like` : "Pick at least one"}</p>
+    <p className="multi-hint">{values.length ? `${values.length} selected, pick as many as you like` : "Pick at least one"}</p>
   </>;
 }
 function SkillCardsField({ active, pick }: { active: string; pick: (v: string) => void }) {
@@ -824,7 +741,7 @@ function MultiField({ q, values, update }: { q: OnboardingQuestion; values: stri
     <div className="choice">{q.options!.map(v => <button className={values.includes(v) ? "active" : ""} onClick={() => update(q.key, toggle(values, v))} key={v}>{v}</button>)}</div>
     {q.allowCustom && <form className="add-cue" onSubmit={e => { e.preventDefault(); const c = cleanText(custom, 40); if (c) { update(q.key, [...new Set([...values, c])]); setCustom(""); } }}><input value={custom} onChange={e => setCustom(e.target.value)} placeholder="Add your own" /><button><Plus /></button></form>}
     {extras.map(v => <button className="custom-cue" onClick={() => update(q.key, values.filter(x => x !== v))} key={v}>{v}<X size={13} /></button>)}
-    <p className="multi-hint">{values.length ? `${values.length} selected — pick as many as you like` : "Select all that apply"}</p>
+    <p className="multi-hint">{values.length ? `${values.length} selected, pick as many as you like` : "Select all that apply"}</p>
   </>;
 }
 function SetupStep({ eyebrow, title, text, children }: { eyebrow: string; title: string; text: string; children: React.ReactNode }) { return <section className="setup-step"><span>{eyebrow}</span><h1>{title}</h1><p>{text}</p>{children}</section>; }
@@ -836,7 +753,7 @@ function DesktopNav({ page, go }: { page: Page; go: (p: Page) => void }) {
 function BottomNav({ page, go }: { page: Page; go: (p: Page) => void }) {
   return <nav className="bottom-nav">{nav.map(([id, label, Icon]) => <button className={page === id ? "active" : ""} onClick={() => go(id)} key={id}><Icon size={19} /><span>{label}</span></button>)}</nav>;
 }
-// Full-height slide-in drawer surfacing every part of the app — the single
+// Full-height slide-in drawer surfacing every part of the app, the single
 // place to reach settings, food profile, camera log, health, billing, and more.
 function MainMenu({ profile, page, go, close, openNotifs, unread, logout }: { profile: Profile; page: Page; go: (p: Page) => void; close: () => void; openNotifs: () => void; unread: number; logout: () => void }) {
   const nav = (p: Page) => { go(p); close(); };
@@ -880,10 +797,11 @@ function AppHeader({ openNotifs, unread, profile }: { openNotifs?: () => void; u
   );
 }
 
-function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, mealCategory, setMealCategory, cuisine, setCuisine, results, setResults, beginResults, ranked, curating, hasFetched, loadMore, live, retry, open, go, diners, selectedDiners, setSelectedDiners, eaterCount, setEaterCount, openNotifs, unread, addPhoto }: {
+function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, mealCategory, setMealCategory, cuisine, setCuisine, diet, setDiet, results, setResults, beginResults, ranked, curating, hasFetched, loadMore, live, retry, open, go, diners, selectedDiners, setSelectedDiners, eaterCount, setEaterCount, openNotifs, unread, addPhoto }: {
   profile: Profile; mood: string; setMood: (v: string) => void; energy: number; setEnergy: (v: number) => void; time: number; setTime: (v: number) => void;
   mealCategory: string; setMealCategory: (v: string) => void;
   cuisine: string; setCuisine: (v: string) => void;
+  diet: string; setDiet: (v: string) => void;
   results: boolean; setResults: (v: boolean) => void; beginResults: () => void; ranked: Recipe[]; curating?: boolean; hasFetched?: boolean; loadMore?: () => void; live?: boolean; retry?: () => void; open: (r: Recipe) => void; go: (p: Page) => void;
   diners: Diner[]; selectedDiners: string[]; setSelectedDiners: (v: string[]) => void;
   eaterCount: number; setEaterCount: (v: number) => void; openNotifs?: () => void; unread?: number;
@@ -895,7 +813,7 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
   // Reset rejections whenever a fresh set of picks arrives.
   useEffect(() => { setRejected([]); }, [results]);
 
-  // Results view — same layout container, different content
+  // Results view, same layout container, different content
   if (results) return (
     <div className="home-screen">
       <AppHeader profile={profile} openNotifs={openNotifs} unread={unread} />
@@ -926,7 +844,7 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
           <ChefHat />
           <h2>{rejected.length ? "Want a fresh set?" : "No results from Moody"}</h2>
           <p>{rejected.length
-            ? "None of those landed — Moody can pull a completely new batch that still respects your profile and safety rules."
+            ? "None of those landed, Moody can pull a completely new batch that still respects your profile and safety rules."
             : "Moody couldn't find matching recipes right now. Try adjusting your mood, time, or cuisine and search again."}</p>
           {rejected.length && loadMore
             ? <button className="primary" disabled={curating} onClick={loadMore}>{curating ? "Finding more…" : <>Show me 5 more <RotateCcw size={16} /></>}</button>
@@ -942,19 +860,19 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
 
   return (
     <div className="home-screen">
-      {/* Header: avatar/logo + greeting + bell — cloned from reference */}
+      {/* Header: avatar/logo + greeting + bell, cloned from reference */}
       <AppHeader profile={profile} openNotifs={openNotifs} unread={unread} />
 
       <div className="home-greeting">
         <h1>What’s for dinner?</h1>
-        <p>Tell Moody how you feel — get one perfect match.</p>
+        <p>Tell Moody how you feel, get one perfect match.</p>
       </div>
 
       {/* ── Hero recipe photo (45vh, rounded, like the fitness hero image) ── */}
       <div className="home-hero" onClick={hero ? () => open(hero) : undefined}>
         <img src={hero?.image || FALLBACK_FOOD} alt={hero?.title || "Tonight’s dinner"} />
         <div className="hveil" />
-        {/* Frosted glass chips top-left — copied from reference overlay chips */}
+        {/* Frosted glass chips top-left, copied from reference overlay chips */}
         <div className="hero-chips">
           <span className="hero-chip"><Clock3 size={13} /> {time} min</span>
           <span className="hero-chip">{mood}</span>
@@ -967,7 +885,7 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
               <b>{hero.title}</b>
               <span>{hero.reason}</span>
             </div>
-            {/* Blue circular arrow — "Start" button from reference */}
+            {/* Blue circular arrow, "Start" button from reference */}
             <button className="hero-go" aria-label="View recipe" onClick={e => { e.stopPropagation(); open(hero); }}>
               <Play size={18} fill="currentColor" />
             </button>
@@ -979,10 +897,10 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
         )}
       </div>
 
-      {/* ── Check-in card — bottom-sheet style glass card ── */}
+      {/* ── Check-in card, bottom-sheet style glass card ── */}
       <div className="home-checkin">
         <span className="section-label">How are you feeling?</span>
-        {/* Mood pill row — all 9 moods */}
+        {/* Mood pill row, all 9 moods */}
         <div className="mood-pills">
           {moods.map(v => (
             <button key={v} className={mood === v ? "active" : ""} onClick={() => setMood(v)}>{v}</button>
@@ -990,7 +908,7 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
         </div>
 
         <span className="section-label">Time available</span>
-        {/* Number-pill selector — faithful to 10·20·30·40·50 in reference */}
+        {/* Number-pill selector, faithful to 10·20·30·40·50 in reference */}
         <div className="time-pills">
           {[15, 20, 30, 45, 60].map(v => (
             <button key={v} className={time === v ? "active" : ""} onClick={() => setTime(v)}>
@@ -1002,9 +920,9 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
           <span>15 min</span><span style={{ color: "var(--blue-deep)", fontWeight: 700 }}>{time} min selected</span><span>60 min</span>
         </div>
 
-        <span className="section-label">Energy level — {energy}%</span>
+        <span className="section-label">Energy level: {energy}%</span>
         <input type="range" value={energy} onChange={e => setEnergy(+e.target.value)} style={{ width: "100%" }} />
-        <div className="range-label"><span>Low — easy recipes</span><span>High — adventurous</span></div>
+        <div className="range-label"><span>Low: easy recipes</span><span>High: adventurous</span></div>
 
         <span className="section-label">Meal type</span>
         <div className="meal-category-pills">
@@ -1028,6 +946,15 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
           {SPOON_CUISINES.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
 
+        <span className="section-label" style={{ marginTop: 14 }}>Dietary preference</span>
+        <select
+          className="cuisine-select"
+          value={diet}
+          onChange={e => setDiet(e.target.value)}
+        >
+          {SEARCH_DIETS.map(d => <option key={d} value={d}>{d}</option>)}
+        </select>
+
         <button
           className="primary"
           style={{ width: "100%", marginTop: 14, minHeight: 54 }}
@@ -1038,7 +965,7 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
         </button>
       </div>
 
-      {/* ── Stat cards — today’s logged nutrition + Moody’s pick ── */}
+      {/* ── Stat cards, today’s logged nutrition + Moody’s pick ── */}
       {(() => {
         const today = new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" });
         const todayLogs = profile.photoLogs.filter(l => l.when.startsWith(today));
@@ -1066,7 +993,7 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
       {/* ── Photo log shortcut ── */}
       <FoodCamera label="Log a meal with photo" onSave={addPhoto} allergies={profile.allergies} style={{ margin: "10px 16px 0" }} />
 
-      {/* ── Quick-link cards — styled like the bottom rows in reference ── */}
+      {/* ── Quick-link cards, styled like the bottom rows in reference ── */}
       <div className="home-links">
         <button className="home-link-card" onClick={() => go("food-log")}>
           <span className="hlc-icon"><Camera size={20} /></span>
@@ -1162,8 +1089,11 @@ function SearchScreen({ profile, onSearch }: { profile: Profile; onSearch: (requ
         <div className="choice">{SORT_OPTIONS.map(o => <button key={o.id} className={sort === o.id ? "active" : ""} onClick={() => setSort(o.id)} title={o.hint}>{o.label}</button>)}</div>
       </div>
       <div className="filter-block">
-        <span className="filter-label">Course — results never mix courses</span>
-        <div className="choice">{MEAL_TYPES.map(t => <button key={t} className={type === t ? "active" : ""} onClick={() => setType(type === t ? "" : t)}>{t[0].toUpperCase() + t.slice(1)}</button>)}</div>
+        <span className="filter-label">Course (results never mix courses)</span>
+        <select className="cuisine-select" value={type} onChange={e => setType(e.target.value)}>
+          <option value="">Any course</option>
+          {MEAL_TYPES.map(t => <option key={t} value={t}>{t[0].toUpperCase() + t.slice(1)}</option>)}
+        </select>
       </div>
       <div className="filter-block">
         <span className="filter-label">Cuisine</span>
@@ -1171,18 +1101,20 @@ function SearchScreen({ profile, onSearch }: { profile: Profile; onSearch: (requ
       </div>
       <div className="filter-block">
         <span className="filter-label">Additional diet filter</span>
-        <div className="choice">{SEARCH_DIETS.map(d => <button key={d} className={diet === d ? "active" : ""} onClick={() => setDiet(d)}>{d}</button>)}</div>
+        <select className="cuisine-select" value={diet} onChange={e => setDiet(e.target.value)}>
+          {SEARCH_DIETS.map(d => <option key={d} value={d}>{d}</option>)}
+        </select>
       </div>
       <div className="filter-block">
-        <span className="filter-label">Max cook time — {maxTime} min</span>
+        <span className="filter-label">Max cook time: {maxTime} min</span>
         <input type="range" min={10} max={120} step={5} value={maxTime} onChange={e => setMaxTime(+e.target.value)} style={{ width: "100%" }} />
       </div>
       <div className="filter-block">
-        <span className="filter-label">Max calories {maxCalories ? `— ${maxCalories} kcal` : "— off"}</span>
+        <span className="filter-label">Max calories: {maxCalories ? `${maxCalories} kcal` : "off"}</span>
         <input type="range" min={0} max={1200} step={50} value={maxCalories} onChange={e => setMaxCalories(+e.target.value)} style={{ width: "100%" }} />
       </div>
       <div className="filter-block">
-        <span className="filter-label">Min protein {minProtein ? `— ${minProtein} g` : "— off"}</span>
+        <span className="filter-label">Min protein: {minProtein ? `${minProtein} g` : "off"}</span>
         <input type="range" min={0} max={60} step={5} value={minProtein} onChange={e => setMinProtein(+e.target.value)} style={{ width: "100%" }} />
       </div>
       <div className="filter-block">
@@ -1315,7 +1247,7 @@ function GroceryScreen({ items, setItems }: { items: string[]; setItems: (v: str
   const add = (e: React.FormEvent) => { e.preventDefault(); const item = cleanText(entry, 80); if (item && !items.includes(item)) setItems([...items, item]); setEntry(""); };
   return <div className="screen"><TopBar title="Grocery" /><div className="grocery-hero"><ShoppingCart /><div><b>{items.length - checked.length} items left</b><p>One calm lap around the store.</p></div></div>{items.length ? <div className="grocery-list"><small>YOUR LIST</small>{items.map(i => <button className={checked.includes(i) ? "checked" : ""} onClick={() => setChecked(toggle(checked, i))} key={i}><span><Check /></span><p>{i}</p></button>)}</div> : <div className="empty-state" style={{ margin: "18px 0" }}><ShoppingCart /><h2>Your list is empty</h2><p>Add ingredients here, or send them straight from any recipe.</p></div>}<form className="add-cue" onSubmit={add}><input value={entry} onChange={e => setEntry(e.target.value)} placeholder="Add an item" /><button aria-label="Add item"><Plus /></button></form></div>;
 }
-// Pantry — a maintainable inventory of what the user has at home. Backed by the
+// Pantry, a maintainable inventory of what the user has at home. Backed by the
 // profile's pantryStaples so it both seeds from onboarding and feeds Moody's
 // recommendations ("suggest meals from what I already have").
 function PantryScreen({ items, setItems, addToGrocery }: { items: string[]; setItems: (v: string[]) => void; addToGrocery: (item: string) => void }) {
@@ -1348,7 +1280,7 @@ function InsightsScreen({ diary }: { diary: { recipe: Recipe; rating: number; wh
       </div>
     </div>
   );
-  return <div className="screen"><TopBar title="Weekly reflection" /><section className="insight-lead"><span>VARIETY SCORE</span><b>{varietyScore}</b><em>Looking balanced</em><p>You cooked {diary.length} meal{diary.length !== 1 ? "s" : ""} across {cuisines} cuisine{cuisines !== 1 ? "s" : ""}. {avgTime ? `Average cook time: ${avgTime} min.` : ""}</p></section><div className="insight-cards"><article><Sparkles /><b>Your profile</b><h2>Personalised picks</h2><p>Every recommendation is ranked against your food-psychology profile. The more you cook, the sharper it gets.</p></article><article><Clock3 /><b>Your rhythm</b><h2>{avgTime ? `~${avgTime} min average` : "Build your rhythm"}</h2><p>{avgTime < 30 ? "Quick meals are your sweet spot. Moody will protect that on low-energy nights." : avgTime < 45 ? "You strike a good balance between speed and depth." : "You invest real time in cooking — Moody will keep surfacing recipes worth it."}</p></article><article><ShieldCheck /><b>Informational only</b><h2>Nutrition, without judgment</h2><p>These reflections use recipe snapshots and are not medical advice.</p></article></div></div>;
+  return <div className="screen"><TopBar title="Weekly reflection" /><section className="insight-lead"><span>VARIETY SCORE</span><b>{varietyScore}</b><em>Looking balanced</em><p>You cooked {diary.length} meal{diary.length !== 1 ? "s" : ""} across {cuisines} cuisine{cuisines !== 1 ? "s" : ""}. {avgTime ? `Average cook time: ${avgTime} min.` : ""}</p></section><div className="insight-cards"><article><Sparkles /><b>Your profile</b><h2>Personalised picks</h2><p>Every recommendation is ranked against your food-psychology profile. The more you cook, the sharper it gets.</p></article><article><Clock3 /><b>Your rhythm</b><h2>{avgTime ? `~${avgTime} min average` : "Build your rhythm"}</h2><p>{avgTime < 30 ? "Quick meals are your sweet spot. Moody will protect that on low-energy nights." : avgTime < 45 ? "You strike a good balance between speed and depth." : "You invest real time in cooking, Moody will keep surfacing recipes worth it."}</p></article><article><ShieldCheck /><b>Informational only</b><h2>Nutrition, without judgment</h2><p>These reflections use recipe snapshots and are not medical advice.</p></article></div></div>;
 }
 function LibraryScreen({ title, source, open, remove }: { title: string; source: Recipe[]; open: (r: Recipe) => void; remove?: (r: Recipe) => void }) {
   return <div className="screen"><TopBar title={title} /><div className="search-grid">{source.length ? source.map(r => <article key={r.id}>{remove && <button className="remove-saved" aria-label={`Remove ${r.title} from saved`} onClick={() => remove(r)}><Trash2 size={17} /></button>}<img src={r.image} alt="" /><div><h2>{r.title}</h2><p>{r.reason}</p><button className="primary" onClick={() => open(r)}>View recipe</button></div></article>) : <div className="empty-state"><Heart /><h2>No saved recipes yet</h2><p>Save recipes that feel like good future answers.</p></div>}</div></div>;
@@ -1382,7 +1314,7 @@ function SubscriptionScreen({ profile, save, proceed, onStarted }: { profile: Pr
     setCheckoutLoading(true);
     setCheckoutError("");
     if (isSupabaseConfigured) {
-      // Real Stripe Checkout — redirects user to Stripe's hosted page.
+      // Real Stripe Checkout, redirects user to Stripe's hosted page.
       const result = await startCheckout(plan);
       if (result.url) {
         window.location.href = result.url;
@@ -1391,7 +1323,7 @@ function SubscriptionScreen({ profile, save, proceed, onStarted }: { profile: Pr
       setCheckoutError(result.error ?? "Could not start checkout. Please try again.");
       setCheckoutLoading(false);
     } else {
-      // No backend — local pilot simulation.
+      // No backend, local pilot simulation.
       const now = new Date();
       const endsAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
       save({ ...profile, plan, trialStartedAt: now.toISOString(), trialEndsAt: endsAt, subscriptionStatus: "trialing" });
@@ -1432,11 +1364,11 @@ function SubscriptionScreen({ profile, save, proceed, onStarted }: { profile: Pr
             <button className="primary" onClick={start} disabled={checkoutLoading}>
               {checkoutLoading ? "Opening checkout…" : <>Start free trial <ArrowRight /></>}
             </button>
-            <small>7 days free, then {chosen?.price}. Card required — cancel anytime before trial ends.</small>
+            <small>7 days free, then {chosen?.price}. Card required, cancel anytime before trial ends.</small>
           </>
         ) : (
           <>
-            <p>If you received an invite code, enter it below to unlock a full year of MoodFood — no payment required.</p>
+            <p>If you received an invite code, enter it below to unlock a full year of MoodFood, no payment required.</p>
             <input
               className="invite-code-input"
               value={inviteInput}
@@ -1483,7 +1415,7 @@ function BillingScreen({ profile, save }: { profile: Profile; save: (p: Profile)
     <div className="screen">
       <TopBar title="Subscription" />
       <section className="billing">
-        <span>{profile.inviteCode ? "INVITE — 1 YEAR ACCESS" : "7-DAY FULL ACCESS"}</span>
+        <span>{profile.inviteCode ? "INVITE: 1 YEAR ACCESS" : "7-DAY FULL ACCESS"}</span>
         <h1>Keep dinner feeling lighter.</h1>
         {profile.inviteCode ? (
           <p>Your invite code <b>{profile.inviteCode}</b> is active. Access expires {profile.inviteSubEnd ? new Date(profile.inviteSubEnd).toLocaleDateString() : "in 1 year"}.</p>
@@ -1507,15 +1439,15 @@ function BillingScreen({ profile, save }: { profile: Profile; save: (p: Profile)
                 }}>
                   {profile.subscriptionStatus === "active" || profile.subscriptionStatus === "trialing"
                     ? "Manage subscription on Stripe"
-                    : `Start free trial — ${chosen?.name}`}
+                    : `Start free trial: ${chosen?.name}`}
                 </button>
                 <small>Managed securely by Stripe. Cancel anytime.</small>
               </>
             ) : inviteSuccess ? (
-              <p className="invite-success"><Check size={18} /> Code redeemed — you now have 1 year of full access.</p>
+              <p className="invite-success"><Check size={18} /> Code redeemed, you now have 1 year of full access.</p>
             ) : (
               <>
-                <p>Enter an invite code to unlock a full year of MoodFood — no payment required.</p>
+                <p>Enter an invite code to unlock a full year of MoodFood, no payment required.</p>
                 <input
                   className="invite-code-input"
                   value={inviteInput}
@@ -1578,7 +1510,7 @@ function CommunityScreen({ profile, posts, setPosts, connections, setConnections
     if (initialRecipeId) {
       const r = findRecipe(initialRecipeId);
       setComposer(true); setRecipeId(initialRecipeId);
-      setText(t => t || (r ? `Just found ${r.title} on MoodFood — looks perfect. ` : ""));
+      setText(t => t || (r ? `Just found ${r.title} on MoodFood, looks perfect. ` : ""));
       clearInitial?.();
     }
   }, [initialRecipeId]);
@@ -1597,7 +1529,7 @@ function HealthDetail({ kind, diary, back }: { kind: "nutrition" | "variety" | "
   const n = diary.length;
   const avgCal   = n ? Math.round(diary.reduce((a, d) => a + d.recipe.calories, 0) / n) : 0;
   const avgTime  = n ? Math.round(diary.reduce((a, d) => a + d.recipe.time, 0) / n) : 0;
-  const avgRating = n ? (diary.reduce((a, d) => a + d.rating, 0) / n).toFixed(1) : "—";
+  const avgRating = n ? (diary.reduce((a, d) => a + d.rating, 0) / n).toFixed(1) : "-";
   const cuisineCount = new Set(diary.map(d => d.recipe.cuisine)).size;
   const uniqueRecipes = new Set(diary.map(d => d.recipe.id)).size;
   const repeated = n - uniqueRecipes;
@@ -1630,7 +1562,7 @@ function HealthDetail({ kind, diary, back }: { kind: "nutrition" | "variety" | "
     <div className="screen"><TopBar title={content.title} back={back} />
       <div className="empty-state" style={{ margin: "40px 16px" }}>
         <BarChart3 /><h2>No meals logged yet</h2>
-        <p>Cook a recipe and log it to your diary — your real patterns will appear here.</p>
+        <p>Cook a recipe and log it to your diary, your real patterns will appear here.</p>
       </div>
     </div>
   );
@@ -1639,13 +1571,13 @@ function HealthDetail({ kind, diary, back }: { kind: "nutrition" | "variety" | "
 function FamilyHealth({ diary, diners, back }: { diary: { recipe: Recipe; rating: number; when: string }[]; diners: Diner[]; back: () => void }) {
   const familySize = Math.max(1, diners.length);
   const safeCoverage = Math.round((diners.filter(d => d.allergies.length || d.diet !== "Anything").length / familySize) * 100);
-  // All metrics below are derived from real logged meals — no placeholder data.
+  // All metrics below are derived from real logged meals, no placeholder data.
   const n = diary.length;
   const uniqueRecipes = new Set(diary.map(d => d.recipe.id)).size;
   const plantForward = n ? Math.round(diary.filter(d => d.recipe.diets?.some(x => ["Vegetarian", "Vegan"].includes(x))).length / n * 100) : 0;
   const avgTime = n ? Math.round(diary.reduce((a, d) => a + d.recipe.time, 0) / n) : 0;
   const avgRating = n ? diary.reduce((a, d) => a + d.rating, 0) / n : 0;
-  const varietyLabel = !n ? "—" : uniqueRecipes >= 8 ? "Excellent" : uniqueRecipes >= 4 ? "Good" : "Building";
+  const varietyLabel = !n ? "-" : uniqueRecipes >= 8 ? "Excellent" : uniqueRecipes >= 4 ? "Good" : "Building";
   return <div className="screen family-health"><TopBar title="Family health" back={back} /><section className="family-hero"><Users /><span>HOUSEHOLD PROFILE</span><h1>How family meals are trending.</h1><p>Aggregate analytics only. Individual moods, psychological profiles, and private diaries are not shown here.</p><div><b>{familySize}</b><small>registered diners</small><b>{diary.length}</b><small>family meals logged</small></div></section>{n ? <><div className="metric-grid"><article><span>Shared meal variety</span><b>{varietyLabel}</b></article><article><span>Plant-forward meals</span><b>{plantForward}%</b></article><article><span>Average family cook</span><b>{avgTime} min</b></article><article><span>Safety profiles complete</span><b>{safeCoverage}%</b></article></div><section className="trend-preview"><h2>Family meal balance</h2><Trend label="Plant-forward meals" value={plantForward} /><Trend label="Recipe variety" value={Math.min(100, uniqueRecipes * 12)} /><Trend label="Home-cooked rhythm" value={Math.min(100, n * 18)} /><Trend label="Shared appeal" value={Math.round(avgRating * 20)} /></section></> : <div className="empty-state" style={{ margin: "18px 0" }}><Users /><h2>No family meals logged yet</h2><p>Cook and log meals with household diners selected, and their trends will appear here.</p></div>}<section className="family-members"><h2>Household coverage</h2>{diners.map(d => <div key={d.id}><Avatar name={d.name} /><span><b>{d.name}</b><small>{d.relationship} · {d.diet}</small></span><em>{d.allergies.length ? `${d.allergies.length} safety rule${d.allergies.length > 1 ? "s" : ""}` : "Basic profile"}</em></div>)}</section></div>;
 }
 function DinersScreen({ diners, save, back }: { diners: Diner[]; save: (d: Diner[]) => void; back: () => void }) {
@@ -1694,7 +1626,7 @@ function EditableCues({ values, suggestions, save }: { values: string[]; suggest
   return <><div className="choice">{suggestions.map(v => <button className={values.includes(v) ? "active" : ""} onClick={() => save(toggle(values, v))} key={v}>{v}</button>)}</div><form className="add-cue" onSubmit={e => { e.preventDefault(); if (custom.trim()) { save([...new Set([...values, custom.trim()])]); setCustom(""); } }}><input value={custom} onChange={e => setCustom(e.target.value)} placeholder="Add your own cue" /><button><Plus /></button></form>{values.filter(v => !suggestions.includes(v)).map(v => <button className="custom-cue" onClick={() => save(values.filter(x => x !== v))} key={v}>{v}<X size={13} /></button>)}</>;
 }
 // Editable view of every onboarding answer, grouped by section. This is the same
-// set of questions the user saw at first launch — they can refine anything here
+// set of questions the user saw at first launch, they can refine anything here
 // any time, which is why returning users never have to repeat onboarding.
 function FoodProfileScreen({ profile, save, back }: { profile: Profile; save: (p: Profile) => void; back: () => void }) {
   const update = (key: OnboardingKey, value: ProfileValue) => save({ ...profile, [key]: value });
@@ -1704,7 +1636,7 @@ function FoodProfileScreen({ profile, save, back }: { profile: Profile; save: (p
     <section className="fp-intro">
       <span>YOUR FOOD PROFILE</span>
       <h1>Fine-tune what MoodFood knows.</h1>
-      <p>These are the same questions from onboarding — change anything, any time, and your recommendations update to match. Everything saves automatically.</p>
+      <p>These are the same questions from onboarding, change anything, any time, and your recommendations update to match. Everything saves automatically.</p>
     </section>
     {onboardingSections.map(section => {
       const qs = visible.filter(q => q.section === section);
@@ -1744,7 +1676,7 @@ function MoodyPanel({ recipe, profile, picks, close, open }: { recipe?: Recipe; 
       const reply = await aiChat(message, context, history);
       setTurns(prev => [...prev, { role: "assistant", content: reply }]);
     } catch {
-      setTurns(prev => [...prev, { role: "assistant", content: "I can’t reach my brain right now — sign in (or once AI is connected) and I’ll be back. Meanwhile, your safe pick below is a solid bet." }]);
+      setTurns(prev => [...prev, { role: "assistant", content: "I can’t reach my brain right now, sign in (or once AI is connected) and I’ll be back. Meanwhile, your safe pick below is a solid bet." }]);
     } finally {
       setBusy(false);
     }
@@ -1840,11 +1772,11 @@ function FoodCamera({
             <MacroBar label="Fat"     value={result.fat}     color="#ef9a6a" max={50} />
             <MacroBar label="Fibre"   value={result.fiber}   color="#6acd8c" max={20} />
           </div>
-          {/* Allergen warning — flag anything matching the user's profile first. */}
+          {/* Allergen warning, flag anything matching the user's profile first. */}
           {!!flagged.length && (
             <div className="fac-allergen-alert">
               <ShieldCheck size={15} />
-              <span>Heads up — may contain <b>{flagged.join(", ")}</b>, which you flagged as an allergy. Always double-check.</span>
+              <span>Heads up, may contain <b>{flagged.join(", ")}</b>, which you flagged as an allergy. Always double-check.</span>
             </div>
           )}
           {!!result.allergens.length && (
@@ -1873,7 +1805,7 @@ function FoodCamera({
             </button>
             <button className="secondary" onClick={() => { setState("idle"); setResult(null); }}>Discard</button>
           </div>
-          <small className="fac-disclaimer">Estimates only — not medical or nutritional advice.</small>
+          <small className="fac-disclaimer">Estimates only, not medical or nutritional advice.</small>
         </div>
       </div>
     );
@@ -1929,7 +1861,7 @@ function FoodLogScreen({ logs, addPhoto, back, allergies }: { logs: FoodPhoto[];
         <div className="empty-state" style={{ marginTop: 24 }}>
           <Camera size={36} style={{ color: "var(--blue-deep)" }} />
           <h2>No meals logged yet</h2>
-          <p>Photograph a meal above — Moody estimates the calories and macros so you can track without counting.</p>
+          <p>Photograph a meal above, Moody estimates the calories and macros so you can track without counting.</p>
         </div>
       )}
       {Object.entries(grouped).map(([day, items]) => {
@@ -1970,7 +1902,7 @@ const FAQ_DATA = [
     section: "Getting started",
     items: [
       { q: "What is MoodFood?", a: "MoodFood is a personal dinner companion that matches you with one safe, perfectly suited meal based on how you feel, your energy, time available, and your food profile. It removes the 'what's for dinner?' decision entirely." },
-      { q: "What is the onboarding for?", a: `The in-depth onboarding (${onboardingQuestions.length} questions across ${onboardingSections.length} chapters) builds your food psychology profile — covering your cooking moods, taste phenotype (flavours and textures you love or avoid), emotional eating patterns, comfort food, kitchen setup, habits, values, and nutrition goals. Every answer shapes your recommendations.` },
+      { q: "What is the onboarding for?", a: `The in-depth onboarding (${onboardingQuestions.length} questions across ${onboardingSections.length} chapters) builds your food psychology profile, covering your cooking moods, taste phenotype (flavours and textures you love or avoid), emotional eating patterns, comfort food, kitchen setup, habits, values, and nutrition goals. Every answer shapes your recommendations.` },
       { q: "Can I change my profile later?", a: "Yes. Go to Settings → Psychological food profile to edit every answer. Changes take effect immediately on your next recommendation." },
       { q: "How do I reset and start fresh?", a: "Tap Settings → Sign out and replay first launch. This clears all stored data and takes you back to the welcome screen." },
     ],
@@ -1980,7 +1912,7 @@ const FAQ_DATA = [
     items: [
       { q: "How does the mood check-in work?", a: "Select your mood, how long you have, and your energy level on the home screen, then tap 'Find tonight's dinner'. Moody scores every recipe against your profile and surfaces the best match." },
       { q: "What does the energy slider do?", a: "Low energy nudges Moody toward one-pot, minimal-prep, easy recipes. High energy opens up more adventurous, multi-step dishes." },
-      { q: "Are my allergies always enforced?", a: "Yes — always. Allergens and dietary restrictions set during onboarding are hard filters that are never relaxed, regardless of mood or any other setting." },
+      { q: "Are my allergies always enforced?", a: "Yes, always. Allergens and dietary restrictions set during onboarding are hard filters that are never relaxed, regardless of mood or any other setting." },
       { q: "What does 'Not tonight' do on a pick card?", a: "It hides that recipe for the current session only. It comes back next time." },
     ],
   },
@@ -1988,7 +1920,7 @@ const FAQ_DATA = [
     section: "Food photo & calorie log",
     items: [
       { q: "How do I log a meal with a photo?", a: "Tap the camera button on the Home screen, in the Diary, on a Recipe detail page, or after finishing Cook mode. Choose a photo from your camera roll, and Moody will estimate the dish, calories, and macros in about 2 seconds." },
-      { q: "How accurate are the calorie estimates?", a: "Estimates are derived from visual analysis of your photo matched against a food database. Accuracy is typically within 15–25% for single-dish meals. Results are shown with a confidence score. They are informational only — not medical or nutritional advice." },
+      { q: "How accurate are the calorie estimates?", a: "Estimates are derived from visual analysis of your photo matched against a food database. Accuracy is typically within 15–25% for single-dish meals. Results are shown with a confidence score. They are informational only, not medical or nutritional advice." },
       { q: "Can I edit the calorie count?", a: "You can discard the result and retake the photo from a different angle or better lighting for a more accurate reading." },
       { q: "Where are my logged meals stored?", a: "Photo logs are saved on your device in localStorage. They appear in the Food photo log screen (Settings → Food photo log) and feed the 'Today's calories' stat on your home screen." },
     ],
@@ -2003,7 +1935,7 @@ const FAQ_DATA = [
   {
     section: "Household & safety",
     items: [
-      { q: "How do household diners work?", a: "Add family members or frequent diners under Settings → Household diners. On the home screen, select who is eating tonight. MoodFood combines every selected person's allergens and dietary requirements — so if anyone in the group has a peanut allergy, no recipe containing peanuts will appear." },
+      { q: "How do household diners work?", a: "Add family members or frequent diners under Settings → Household diners. On the home screen, select who is eating tonight. MoodFood combines every selected person's allergens and dietary requirements, so if anyone in the group has a peanut allergy, no recipe containing peanuts will appear." },
       { q: "What does 'Shared safety is active' mean?", a: "It means you have selected one or more household diners in addition to yourself, and their safety constraints are merged with yours for tonight's recommendations." },
     ],
   },
@@ -2018,7 +1950,7 @@ const FAQ_DATA = [
   {
     section: "Privacy",
     items: [
-      { q: "Where is my mood and psychological data stored?", a: "During the local pilot, all data is stored in your browser's localStorage — it never leaves your device. The psychological food profile, raw mood entries, and private diary are never shown to other users." },
+      { q: "Where is my mood and psychological data stored?", a: "During the local pilot, all data is stored in your browser's localStorage, it never leaves your device. The psychological food profile, raw mood entries, and private diary are never shown to other users." },
       { q: "What can other users see?", a: "Only what you share publicly: your display name, bio, profile photo, and any meal posts you explicitly choose to share in the Community tab. Your mood selections, food psychology profile, and diary are always private." },
     ],
   },
@@ -2036,7 +1968,7 @@ function HelpScreen({ back }: { back: () => void }) {
         <div className="help-tutorial-header">
           <BookMarked size={20} />
           <div>
-            <b>Quick start — 5 steps</b>
+            <b>Quick start, 5 steps</b>
             <span>Get your first recommendation in under 2 minutes</span>
           </div>
         </div>
@@ -2057,11 +1989,11 @@ function HelpScreen({ back }: { back: () => void }) {
       {/* Feature cards */}
       <div className="help-features">
         {[
-          { icon: <Sparkles size={20} />, title: "Moody AI", desc: "Your dinner co-pilot. Tap the floating sparkle button anytime to ask Moody anything — get a pick, rescue a step, or find the easiest safe option." },
+          { icon: <Sparkles size={20} />, title: "Moody AI", desc: "Your dinner co-pilot. Tap the floating sparkle button anytime to ask Moody anything, get a pick, rescue a step, or find the easiest safe option." },
           { icon: <Camera size={20} />, title: "Food photo log", desc: "Photograph any meal for an instant calorie + macro estimate. Logged photos feed your health trends and today's calorie total on the home screen." },
-          { icon: <ShieldCheck size={20} />, title: "Safety first — always", desc: "Allergen and diet filters are hard constraints. They apply to every recommendation, every household diner, and are never softened by any setting." },
-          { icon: <Users size={20} />, title: "Household diners", desc: "Add family members with their own profiles. Select them at check-in and safety constraints merge automatically — no meal reaches the table that's unsafe for anyone at it." },
-          { icon: <Activity size={20} />, title: "Health trends", desc: "Tracks your logged diary entries and photo logs across nutrition, dietary variety, eating patterns, and family meal balance. Informational only — never medical advice." },
+          { icon: <ShieldCheck size={20} />, title: "Safety first, always", desc: "Allergen and diet filters are hard constraints. They apply to every recommendation, every household diner, and are never softened by any setting." },
+          { icon: <Users size={20} />, title: "Household diners", desc: "Add family members with their own profiles. Select them at check-in and safety constraints merge automatically, no meal reaches the table that's unsafe for anyone at it." },
+          { icon: <Activity size={20} />, title: "Health trends", desc: "Tracks your logged diary entries and photo logs across nutrition, dietary variety, eating patterns, and family meal balance. Informational only, never medical advice." },
           { icon: <Dna size={20} />, title: "Food psychology profile", desc: "Powered by the Food Choice Questionnaire (FCQ) and Three-Factor Eating Questionnaire (TFEQ). Your flavour phenotype, emotional triggers, and comfort cues all shape what Moody suggests." },
         ].map(f => (
           <div className="help-feature-card" key={f.title}>
