@@ -8,6 +8,7 @@ import {
   HelpCircle, FlameKindling, Dna, BookMarked, Share2, Trash2,
 } from "lucide-react";
 import { moods, cookingMoods, skillLevels, type Recipe } from "./data";
+import { bundledRecipes } from "./bundledRecipes";
 import { clearStored, defaultDiners, defaultProfile, readStored, useStoredState, writeStored, type Diner, type Profile, type SocialPost } from "./store";
 import { profileForDiners, recommend, safeRecipes as applySafety } from "./recommendation";
 import { cleanText, readSafeImage } from "./security";
@@ -145,7 +146,9 @@ export default function App() {
   }, [testState]);
   // catalog = bundled recipes plus any fetched from the AI-curated recipes API.
   // aiRanked = the API's curated order when available; null falls back to local ranking.
-  const [catalog, setCatalog] = useState<Recipe[]>([]);
+  // Seeded with the offline catalog so the app always has real recipes to rank,
+  // even before (or without) a live fetch.
+  const [catalog, setCatalog] = useState<Recipe[]>(bundledRecipes);
   const [aiRanked, setAiRanked] = useState<Recipe[] | null>(null);
   const [curating, setCurating] = useState(false);
   const [hasFetched, setHasFetched] = useState(false);
@@ -154,15 +157,23 @@ export default function App() {
   const safeRecipes = useMemo(() => applySafety(catalog, sharedProfile), [catalog, sharedProfile]);
   const localRanked = useMemo(() => recommend(catalog, sharedProfile, mood, energy, time).map(item => item.recipe), [catalog, sharedProfile, mood, energy, time]);
   const ACCESSORY_TYPES = useMemo(() => new Set(["dessert", "desserts", "snack", "snacks", "drink", "drinks", "beverage", "beverages", "sweet", "sweets"]), []);
+  // Offline fallback: rank the bundled catalog for this profile so a failed/empty
+  // live fetch never dead-ends. Relax the time cap if the strict pass is empty so
+  // we always return something safe for the profile.
+  const localFallback = useMemo(() => {
+    const strict = recommend(bundledRecipes, sharedProfile, mood, energy, time).map(item => item.recipe);
+    return strict.length ? strict : recommend(bundledRecipes, sharedProfile, mood, energy, 999).map(item => item.recipe);
+  }, [sharedProfile, mood, energy, time]);
+
   const ranked = useMemo(() => {
-    // AI results only, no session cache fallback.
-    const base = aiRanked ?? [];
+    // Prefer live AI results; fall back to the offline catalog when there are none.
+    const base = aiRanked ?? localFallback;
     if (mealCategory) return base;
     return base.filter(r => {
       const types = (r.mealTypes ?? []).map((t: string) => t.toLowerCase());
       return !types.length || !types.every((t: string) => ACCESSORY_TYPES.has(t));
     });
-  }, [aiRanked, mealCategory, ACCESSORY_TYPES]);
+  }, [aiRanked, localFallback, mealCategory, ACCESSORY_TYPES]);
 
   // What the user has actually cooked, logged, and saved, so the AI learns from
   // behaviour, not just the stated profile. Recomputed as those change.
@@ -181,7 +192,15 @@ export default function App() {
     window.scrollTo(0, 0);
     try {
       const live = await fetchCuratedRecipes(sharedProfile, mood, 50, request.filters.maxReadyTime ?? 60, request.query, request.filters, foodHistory, offset);
-      setSearchResults(live ?? []);
+      // Offline fallback: if the live search returns nothing, search the bundled
+      // catalog so the user always gets safe, on-profile matches. Relax to the raw
+      // safety-filtered set if the filters over-narrow the small offline catalog.
+      let results = live ?? [];
+      if (!results.length && !nextPage) {
+        const offline = finalizeSearchResults(bundledRecipes, sharedProfile, request.filters);
+        results = offline.length ? offline : applySafety(bundledRecipes, sharedProfile).slice(0, 8);
+      }
+      setSearchResults(results);
     } finally {
       setSearchLoading(false);
     }
@@ -846,6 +865,7 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
         <h1>{mealCategory ? `${mealCategory[0].toUpperCase()}${mealCategory.slice(1)} picks.` : "Tonight’s picks."}</h1>
         <p>{energy < 50 ? "Low-effort" : "Interesting"}, {mood.toLowerCase()}{mealCategory ? `, ${mealCategory}` : ""}{cuisine ? `, ${cuisine}` : ""}, within {time} min · {eaterCount} {eaterCount === 1 ? "person" : "people"}</p>
         {live && <p className="source-note live"><Check size={13} /> Live picks, freshly curated for you.</p>}
+        {!live && hasFetched && visible.length > 0 && <p className="source-note">Offline picks from your cookbook — live curation is unavailable right now.</p>}
       </div>
       {visible.length ? (
         <div style={{ padding: "0 16px", display: "grid", gap: 14 }}>

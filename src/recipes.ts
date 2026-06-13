@@ -79,7 +79,11 @@ export async function fetchCuratedRecipes(
         method: "POST",
         headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
         body,
-        signal: AbortSignal.timeout(8_000),
+        // Must exceed the edge function's own worst case: identity check (5s) +
+        // up to TWO Spoonacular calls (the relax-and-retry path) + AI curation
+        // (5s). An 8s budget here aborted slow-but-successful searches before the
+        // server could answer, surfacing a false "no results".
+        signal: AbortSignal.timeout(22_000),
       });
 
       let res = await post(session.access_token);
@@ -108,14 +112,15 @@ export async function fetchCuratedRecipes(
   };
 
   // Hard ceiling: Supabase auth calls have no built-in timeout and can hang
-  // indefinitely under network stress. This ensures we always fall back to
-  // local recipes within 25 seconds no matter what.
+  // indefinitely under network stress. Set just above the fetch budget (22s) so
+  // a genuinely successful-but-slow search isn't cut short, while still
+  // guaranteeing we give up rather than hang forever.
   return Promise.race([
     run(),
     new Promise<null>(resolve => setTimeout(() => {
-      console.warn("[recipes] Hard timeout (10 s), falling back to local recipes.");
+      console.warn("[recipes] Hard timeout (25 s), falling back to local recipes.");
       resolve(null);
-    }, 10_000)),
+    }, 25_000)),
   ]);
 }
 

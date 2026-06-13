@@ -130,19 +130,6 @@ function mapCuisines(cuisines: string[]): string[] {
   return [...out];
 }
 
-// Mood → Spoonacular query keywords so different moods surface different recipes.
-const MOOD_QUERY_TERMS: Record<string, string> = {
-  tired:        "easy quick simple",
-  stressed:     "comforting easy simple",
-  cozy:         "comforting hearty warm",
-  celebratory:  "special impressive festive",
-  energised:    "light fresh healthy",
-  focused:      "protein nutritious healthy",
-  adventurous:  "exotic unique international",
-  sad:          "comforting warming soothing",
-  happy:        "bright fresh colorful",
-};
-
 // App meal-type label → Spoonacular `type`.
 const MEAL_TYPE_MAP: Record<string, string> = {
   main: "main course", starter: "appetizer",
@@ -318,11 +305,12 @@ Deno.serve(async (request) => {
     offset: String(num(body?.offset, 0, 900) ?? 0),
     maxReadyTime: String(maxTime),
   });
-  // When no explicit query is given, inject mood keywords so Spoonacular returns
-  // different recipe sets for different moods (not the same popularity-sorted top-20).
-  const moodTerms = !query ? (MOOD_QUERY_TERMS[(mood ?? "").toLowerCase()] ?? "") : "";
-  const effectiveQuery = query || moodTerms;
-  if (effectiveQuery) params.set("query", effectiveQuery);
+  // Only a real, user-typed query becomes a Spoonacular `query` (a hard title
+  // match). Mood must NOT be injected here: multi-word vibe phrases like
+  // "comforting hearty warm" match almost no recipe titles and made Spoonacular
+  // return zero results for every mood-based check-in. Mood still personalises
+  // results via normalizeSpoonacularRecipe(r, mood) and the AI curation step.
+  if (query) params.set("query", query);
 
   // Sort: explicit search sort wins, else the profile's ranking preference.
   const { sort, dir } = mapSort(filters.sort ?? profile.rankingPreference ?? "popularity");
@@ -384,28 +372,54 @@ Deno.serve(async (request) => {
   let spoonErr = "";
 
   try {
-    const res = await fetch(`https://api.spoonacular.com/recipes/complexSearch?${params}`, { signal: AbortSignal.timeout(10_000) });
-    spoonStatus = res.status;
-    if (res.ok) {
+    // One Spoonacular search + the full safety/quality filter stack. `maxTimeCap`
+    // and `cat` let the relaxed retry below loosen the soft filters. Allergen
+    // safety + diet (filterRecipesForProfile/safetyFilter) are ALWAYS applied.
+    const spoon = async (sp: URLSearchParams, maxTimeCap: number, cat: string): Promise<any[]> => {
+      const res = await fetch(`https://api.spoonacular.com/recipes/complexSearch?${sp}`, { signal: AbortSignal.timeout(10_000) });
+      spoonStatus = res.status;
+      if (!res.ok) {
+        spoonErr = await res.text().catch(() => "");
+        console.warn(`[recipes] spoonacular failed: status=${res.status} body=${spoonErr.slice(0, 200)}`);
+        return [];
+      }
       const data = await res.json();
       const normalized = (data.results ?? []).map((r: any) => normalizeSpoonacularRecipe(r, mood));
-      spoonCount = normalized.length;
-      const categoryFiltered = filterRecipesByCategory(filterRecipesByMaxTime(filterRecipesForProfile(safetyFilter(normalized, profile.allergies ?? []), hardProfile), maxTime), category);
-      const safe = dedupeRecipes(filterRecipesWithCompleteInstructions(category ? categoryFiltered : filterOutAccessoryTypes(categoryFiltered))).slice(0, 8);
-      spoonSafeCount = safe.length;
-      console.log(`[recipes] spoonacular: status=${res.status} total=${spoonCount} safe=${spoonSafeCount}`);
-      if (safe.length) {
-        const curated = await curate(safe, profile, mood, history);
-        return Response.json({ provider: "spoonacular", recipes: curated }, { headers: headers(origin) });
-      }
-    } else {
-      spoonErr = await res.text().catch(() => "");
-      console.warn(`[recipes] spoonacular failed: status=${res.status} body=${spoonErr.slice(0, 200)}`);
+      spoonCount = Math.max(spoonCount, normalized.length);
+      const byProfile = filterRecipesForProfile(safetyFilter(normalized, profile.allergies ?? []), hardProfile);
+      const byTime = Number.isFinite(maxTimeCap) ? filterRecipesByMaxTime(byProfile, maxTimeCap) : byProfile;
+      const byCategory = filterRecipesByCategory(byTime, cat);
+      return dedupeRecipes(filterRecipesWithCompleteInstructions(cat ? byCategory : filterOutAccessoryTypes(byCategory))).slice(0, 8);
+    };
+
+    // Attempt 1 — honour the full request (cuisine, time, nutrient targets, query).
+    let safe = await spoon(params, maxTime, category);
+    let relaxed = false;
+
+    // Attempt 2 — if nothing safe survived, drop the SOFT narrowing filters
+    // (cuisine, max time, nutrient targets, query, pantry/equipment) while keeping
+    // the HARD ones (diet, allergen intolerances, excluded ingredients) and the
+    // meal-type intent. Turns a "no matches" dead end into the closest safe set.
+    if (!safe.length) {
+      const loose = new URLSearchParams(params);
+      for (const key of ["query", "cuisine", "maxReadyTime", "includeIngredients", "equipment", "minServings", "minProtein", "maxCalories", "minFiber", "maxSaturatedFat"]) loose.delete(key);
+      safe = await spoon(loose, Infinity, category);
+      relaxed = safe.length > 0;
     }
 
+    spoonSafeCount = safe.length;
+    console.log(`[recipes] spoonacular: status=${spoonStatus} total=${spoonCount} safe=${spoonSafeCount} relaxed=${relaxed}`);
+    if (safe.length) {
+      const curated = await curate(safe, profile, mood, history);
+      return Response.json({ provider: "spoonacular", relaxed, recipes: curated }, { headers: headers(origin) });
+    }
+
+    // Both Spoonacular attempts empty (or it errored) → TheMealDB. No max-time cap
+    // here: TheMealDB has no real timing data, so a tight maxReadyTime would wrongly
+    // empty the last-resort fallback.
     const mealdbRecipes = await fetchTheMealDbRecipes(query, mood);
     mealdbCount = mealdbRecipes.length;
-    const mealdbCategoryFiltered = filterRecipesByCategory(filterRecipesByMaxTime(filterRecipesForProfile(safetyFilter(mealdbRecipes, profile.allergies ?? []), hardProfile), maxTime), category);
+    const mealdbCategoryFiltered = filterRecipesByCategory(filterRecipesForProfile(safetyFilter(mealdbRecipes, profile.allergies ?? []), hardProfile), category);
     const fallback = dedupeRecipes(filterRecipesWithCompleteInstructions(category ? mealdbCategoryFiltered : filterOutAccessoryTypes(mealdbCategoryFiltered))).slice(0, 8);
     mealdbSafeCount = fallback.length;
     console.log(`[recipes] themealdb: total=${mealdbCount} safe=${mealdbSafeCount}`);
@@ -422,7 +436,7 @@ Deno.serve(async (request) => {
     try {
       const mealdbRecipes = await fetchTheMealDbRecipes(query, mood);
       mealdbCount = mealdbRecipes.length;
-      const mealdbCategoryFiltered2 = filterRecipesByCategory(filterRecipesByMaxTime(filterRecipesForProfile(safetyFilter(mealdbRecipes, profile.allergies ?? []), hardProfile), maxTime), category);
+      const mealdbCategoryFiltered2 = filterRecipesByCategory(filterRecipesForProfile(safetyFilter(mealdbRecipes, profile.allergies ?? []), hardProfile), category);
       const fallback = dedupeRecipes(filterRecipesWithCompleteInstructions(category ? mealdbCategoryFiltered2 : filterOutAccessoryTypes(mealdbCategoryFiltered2))).slice(0, 8);
       mealdbSafeCount = fallback.length;
       console.log(`[recipes] themealdb fallback after exception: total=${mealdbCount} safe=${mealdbSafeCount}`);
