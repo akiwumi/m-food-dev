@@ -157,13 +157,20 @@ export default function App() {
   const safeRecipes = useMemo(() => applySafety(catalog, sharedProfile), [catalog, sharedProfile]);
   const localRanked = useMemo(() => recommend(catalog, sharedProfile, mood, energy, time).map(item => item.recipe), [catalog, sharedProfile, mood, energy, time]);
   const ACCESSORY_TYPES = useMemo(() => new Set(["dessert", "desserts", "snack", "snacks", "drink", "drinks", "beverage", "beverages", "sweet", "sweets"]), []);
-  // Offline fallback: rank the bundled catalog for this profile so a failed/empty
-  // live fetch never dead-ends. Relax the time cap if the strict pass is empty so
-  // we always return something safe for the profile.
+  // Offline fallback: rank the bundled catalog for this profile when a live fetch
+  // fails/empties. Honors the home check-in's cuisine / course / diet selections
+  // as hard filters (so offline picks match what the user asked for), then
+  // mood-ranks what remains — relaxing the time cap if the strict pass is empty.
   const localFallback = useMemo(() => {
-    const strict = recommend(bundledRecipes, sharedProfile, mood, energy, time).map(item => item.recipe);
-    return strict.length ? strict : recommend(bundledRecipes, sharedProfile, mood, energy, 999).map(item => item.recipe);
-  }, [sharedProfile, mood, energy, time]);
+    const filters = {
+      cuisines: cuisine ? [cuisine] : undefined,
+      type: mealCategory || undefined,
+      diet: homeDiet !== "Any" ? homeDiet : undefined,
+    };
+    const pool = finalizeSearchResults(bundledRecipes, sharedProfile, filters, 999);
+    const strict = recommend(pool, sharedProfile, mood, energy, time).map(item => item.recipe);
+    return strict.length ? strict : recommend(pool, sharedProfile, mood, energy, 999).map(item => item.recipe);
+  }, [sharedProfile, mood, energy, time, cuisine, mealCategory, homeDiet]);
 
   const ranked = useMemo(() => {
     // Prefer live AI results; fall back to the offline catalog when there are none.
