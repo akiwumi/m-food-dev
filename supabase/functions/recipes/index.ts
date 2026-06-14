@@ -291,6 +291,11 @@ Deno.serve(async (request) => {
     : typeof filters?.query === "string" ? filters.query.slice(0, 80) : "";
   const num = (v: unknown, lo: number, hi: number) => Number.isFinite(v) ? Math.max(lo, Math.min(hi, Math.round(v as number))) : null;
   const maxTime = num(filters.maxReadyTime, 5, 180) ?? time;
+  // relax=false (explicit filtered search) means "honor the filters exactly, even
+  // to zero results". relax=true (default; the mood-based home feed) lets us loosen
+  // quantitative limits to keep results flowing. Cuisine/course/diet are never
+  // dropped either way — only numeric limits are.
+  const relax = body?.relax !== false;
 
   const params = new URLSearchParams({
     apiKey: SPOONACULAR_API_KEY,
@@ -396,13 +401,14 @@ Deno.serve(async (request) => {
     let safe = await spoon(params, maxTime, category);
     let relaxed = false;
 
-    // Attempt 2 — if nothing safe survived, drop the SOFT narrowing filters
-    // (cuisine, max time, nutrient targets, query, pantry/equipment) while keeping
-    // the HARD ones (diet, allergen intolerances, excluded ingredients) and the
-    // meal-type intent. Turns a "no matches" dead end into the closest safe set.
-    if (!safe.length) {
+    // Attempt 2 — only when relaxation is allowed (the home feed, not an explicit
+    // filtered search). Loosen the QUANTITATIVE limits (time, calories, protein,
+    // fibre, sat-fat, required ingredients, equipment, servings, free-text query)
+    // but KEEP cuisine, course/type, diet, allergens and exclusions — so a relaxed
+    // result still matches the kind of food the user asked for, never random.
+    if (!safe.length && relax) {
       const loose = new URLSearchParams(params);
-      for (const key of ["query", "cuisine", "maxReadyTime", "includeIngredients", "equipment", "minServings", "minProtein", "maxCalories", "minFiber", "maxSaturatedFat"]) loose.delete(key);
+      for (const key of ["query", "maxReadyTime", "includeIngredients", "equipment", "minServings", "minProtein", "maxCalories", "minFiber", "maxSaturatedFat"]) loose.delete(key);
       safe = await spoon(loose, Infinity, category);
       relaxed = safe.length > 0;
     }
@@ -414,18 +420,22 @@ Deno.serve(async (request) => {
       return Response.json({ provider: "spoonacular", relaxed, recipes: curated }, { headers: headers(origin) });
     }
 
-    // Both Spoonacular attempts empty (or it errored) → TheMealDB. No max-time cap
-    // here: TheMealDB has no real timing data, so a tight maxReadyTime would wrongly
-    // empty the last-resort fallback.
-    const mealdbRecipes = await fetchTheMealDbRecipes(query, mood);
-    mealdbCount = mealdbRecipes.length;
-    const mealdbCategoryFiltered = filterRecipesByCategory(filterRecipesForProfile(safetyFilter(mealdbRecipes, profile.allergies ?? []), hardProfile), category);
-    const fallback = dedupeRecipes(filterRecipesWithCompleteInstructions(category ? mealdbCategoryFiltered : filterOutAccessoryTypes(mealdbCategoryFiltered))).slice(0, 8);
-    mealdbSafeCount = fallback.length;
-    console.log(`[recipes] themealdb: total=${mealdbCount} safe=${mealdbSafeCount}`);
-    if (fallback.length) return Response.json({ provider: "themealdb", recipes: fallback }, { headers: headers(origin) });
+    // Both Spoonacular attempts empty (or it errored). For the mood feed (relax),
+    // fall back to TheMealDB to keep results flowing. For an explicit filtered
+    // search (relax=false) we SKIP it — TheMealDB can't honor cuisine/nutrition
+    // filters, so returning its results would silently ignore the user's filters.
+    // The client then shows "No exact matches" (or its own filtered offline set).
+    if (relax) {
+      const mealdbRecipes = await fetchTheMealDbRecipes(query, mood);
+      mealdbCount = mealdbRecipes.length;
+      const mealdbCategoryFiltered = filterRecipesByCategory(filterRecipesForProfile(safetyFilter(mealdbRecipes, profile.allergies ?? []), hardProfile), category);
+      const fallback = dedupeRecipes(filterRecipesWithCompleteInstructions(category ? mealdbCategoryFiltered : filterOutAccessoryTypes(mealdbCategoryFiltered))).slice(0, 8);
+      mealdbSafeCount = fallback.length;
+      console.log(`[recipes] themealdb: total=${mealdbCount} safe=${mealdbSafeCount}`);
+      if (fallback.length) return Response.json({ provider: "themealdb", recipes: fallback }, { headers: headers(origin) });
+    }
 
-    console.error(`[recipes] both sources empty — diet=${profile.diet} allergies=${JSON.stringify(profile.allergies)}`);
+    console.error(`[recipes] sources empty — relax=${relax} diet=${profile.diet} allergies=${JSON.stringify(profile.allergies)}`);
     return Response.json({
       error: "Recipe sources failed",
       diag: { spoonStatus, spoonCount, spoonSafeCount, spoonErr: spoonErr.slice(0, 100), mealdbCount, mealdbSafeCount },
@@ -433,7 +443,9 @@ Deno.serve(async (request) => {
   } catch (e) {
     const errMsg = e instanceof Error ? e.message : String(e);
     console.error(`[recipes] exception: ${errMsg}`);
-    try {
+    // Same rule as above: only substitute TheMealDB for the relaxable mood feed,
+    // never for an explicit filtered search.
+    if (relax) try {
       const mealdbRecipes = await fetchTheMealDbRecipes(query, mood);
       mealdbCount = mealdbRecipes.length;
       const mealdbCategoryFiltered2 = filterRecipesByCategory(filterRecipesForProfile(safetyFilter(mealdbRecipes, profile.allergies ?? []), hardProfile), category);

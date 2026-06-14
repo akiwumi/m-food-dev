@@ -191,14 +191,15 @@ export default function App() {
     setPage("results");
     window.scrollTo(0, 0);
     try {
-      const live = await fetchCuratedRecipes(sharedProfile, mood, 50, request.filters.maxReadyTime ?? 60, request.query, request.filters, foodHistory, offset);
-      // Offline fallback: if the live search returns nothing, search the bundled
-      // catalog so the user always gets safe, on-profile matches. Relax to the raw
-      // safety-filtered set if the filters over-narrow the small offline catalog.
+      // Explicit search honors the filters exactly — relax:false tells the backend
+      // not to silently drop cuisine/course/time to force a result.
+      const live = await fetchCuratedRecipes(sharedProfile, mood, 50, request.filters.maxReadyTime ?? 60, request.query, request.filters, foodHistory, offset, false);
+      // If the live search is unavailable/empty, search the bundled catalog with
+      // the SAME filters applied. If nothing matches, leave it empty so the results
+      // screen shows "No exact matches" rather than recipes that ignore the filters.
       let results = live ?? [];
       if (!results.length && !nextPage) {
-        const offline = finalizeSearchResults(bundledRecipes, sharedProfile, request.filters);
-        results = offline.length ? offline : applySafety(bundledRecipes, sharedProfile).slice(0, 8);
+        results = finalizeSearchResults(bundledRecipes, sharedProfile, request.filters);
       }
       setSearchResults(results);
     } finally {

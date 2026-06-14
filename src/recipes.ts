@@ -62,6 +62,7 @@ export async function fetchCuratedRecipes(
   filters: RecipeFilters = {},
   history: FoodHistory = {},
   offset = 0,
+  relax = true,
 ): Promise<Recipe[] | null> {
   if (!supabase) { console.info("[recipes] Supabase not configured (.env.local), showing local recipes."); return null; }
 
@@ -72,7 +73,7 @@ export async function fetchCuratedRecipes(
 
       const body = JSON.stringify({
         profile: recipeProfilePayload(profile),
-        mood, energy, time, query, filters, history, offset,
+        mood, energy, time, query, filters, history, offset, relax,
       });
 
       const post = (token: string) => fetch(ENDPOINT, {
