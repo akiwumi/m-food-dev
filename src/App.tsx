@@ -11,7 +11,7 @@ import { moods, cookingMoods, skillLevels, type Recipe } from "./data";
 import { bundledRecipes } from "./bundledRecipes";
 import { clearStored, defaultDiners, defaultProfile, readStored, useStoredState, writeStored, type Diner, type Profile, type SocialPost } from "./store";
 import { profileForDiners, recommend, safeRecipes as applySafety } from "./recommendation";
-import { cleanText, readSafeImage } from "./security";
+import { cleanText, readSafeImage, validateEmail } from "./security";
 import { onboardingQuestions, onboardingSections, PANTRY_GROUPS, type OnboardingKey, type OnboardingQuestion, type ProfileValue } from "./onboarding";
 import { SPOON_CUISINES, MEAL_TYPES, SEARCH_DIETS, SORT_OPTIONS, type RecipeFilters } from "./searchFilters";
 import { sendConfirmationEmail, sendWelcomeEmail, scheduleTrial, runDue, readInbox, unreadCount, markAllRead, cancelScheduled, simulateTrialEnd, type InboxItem } from "./notifications";
@@ -478,10 +478,16 @@ function AccountSetupScreen({ profile, back, submit, simulate = false }: { profi
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const upload = async (file?: File) => { if (!file) return; try { setAvatar(await readSafeImage(file)); setError(""); } catch (err) { setError((err as Error).message); } };
-  const valid = Boolean(cleanText(name, 80) && /.+@.+\..+/.test(email) && password.length >= 6);
+  // Validate the email locally before signup so we never ask the backend to send
+  // a confirmation to a malformed/undeliverable/typo'd address (which would bounce).
+  const emailCheck = validateEmail(email);
+  const showEmailHint = email.includes("@") && email.includes(".") && !emailCheck.ok;
+  const valid = Boolean(cleanText(name, 80) && emailCheck.ok && password.length >= 6);
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!valid) { setError("Add your name, a valid email, and a password of at least 6 characters."); return; }
+    if (!cleanText(name, 80)) { setError("Add your name to continue."); return; }
+    if (!emailCheck.ok) { setError(emailCheck.reason ?? "Enter a valid email address."); return; }
+    if (password.length < 6) { setError("Use a password of at least 6 characters."); return; }
     const patch = { name: cleanText(name, 80), email: email.trim(), avatar };
     if (simulate) { submit(patch, { hasSession: true }); return; } // explicit QA route, no network side effects
     if (!isSupabaseConfigured) { submit(patch); return; } // pilot mode, simulated
@@ -500,7 +506,8 @@ function AccountSetupScreen({ profile, back, submit, simulate = false }: { profi
     <div className="avatar-pick"><label>{avatar ? <span className="ring"><img src={avatar} alt="" /></span> : <span className="ring"><span>{(name || "You").slice(0, 1).toUpperCase()}</span></span>}<span className="cam"><Camera size={16} /></span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => upload(e.target.files?.[0])} /></label><em>Add a profile photo</em></div>
     <form onSubmit={onSubmit}>
       <label>Name<input value={name} maxLength={80} onChange={e => setName(e.target.value)} placeholder="Jessica" /></label>
-      <label>Email address<input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" /></label>
+      <label>Email address<input type="email" value={email} onChange={e => { setEmail(e.target.value); setError(""); }} placeholder="you@example.com" /></label>
+      {showEmailHint && <span className="err">{emailCheck.reason}{emailCheck.suggestion && <> <button type="button" onClick={() => { setEmail(emailCheck.suggestion!); setError(""); }} style={{ background: "none", border: 0, padding: 0, color: "var(--olive)", fontWeight: 700, textDecoration: "underline", cursor: "pointer" }}>Use {emailCheck.suggestion}</button></>}</span>}
       <label>Password<input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 6 characters" /></label>
       {error && <span className="err">{error}</span>}
       <button className="primary" type="submit" disabled={busy || !valid}>{busy ? "Creating account…" : <>Create account <ArrowRight size={18} /></>}</button>

@@ -1,6 +1,31 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { cleanText, validateImage } from "./security";
+import { cleanText, validateImage, validateEmail } from "./security";
+
+describe("validateEmail (signup bounce prevention)", () => {
+  it("accepts well-formed real addresses", () => {
+    for (const e of ["akiwumi@gmail.com", "a.b+tag@sub.domain.co.uk", "x@outlook.com"]) {
+      expect(validateEmail(e).ok).toBe(true);
+    }
+  });
+  it("rejects malformed addresses", () => {
+    for (const e of ["", "nope", "no@domain", "a b@gmail.com", "@gmail.com", "a@@b.com"]) {
+      expect(validateEmail(e).ok).toBe(false);
+    }
+  });
+  it("rejects undeliverable placeholder domains", () => {
+    expect(validateEmail("you@example.com").ok).toBe(false);
+    expect(validateEmail("dev@test.com").ok).toBe(false);
+    expect(validateEmail("ci@foo.test").ok).toBe(false);
+  });
+  it("flags common domain typos and suggests the fix", () => {
+    const r = validateEmail("jess@gmail.con");
+    expect(r.ok).toBe(false);
+    expect(r.suggestion).toBe("jess@gmail.com");
+    expect(validateEmail("sam@hotmial.com").suggestion).toBe("sam@hotmail.com");
+    expect(validateEmail("k@yaho.com").suggestion).toBe("k@yahoo.com");
+  });
+});
 
 describe("client security controls", () => {
   it("bounds and strips control characters from public text", () => {
