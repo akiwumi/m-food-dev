@@ -7,10 +7,16 @@ import { supabase } from "./supabase";
 
 const GATEWAY_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-gateway`;
 
+export class MoodyError extends Error {
+  constructor(public code: "not-configured" | "not-signed-in" | "unavailable") {
+    super(code);
+  }
+}
+
 async function callGateway<T>(payload: Record<string, unknown>): Promise<T> {
-  if (!supabase) throw new Error("Supabase not configured, set .env.local to enable AI.");
+  if (!supabase) throw new MoodyError("not-configured");
   const { data: { session } } = await supabase.auth.getSession();
-  if (!session) throw new Error("Not signed in, AI needs an authenticated session.");
+  if (!session) throw new MoodyError("not-signed-in");
 
   const body = JSON.stringify(payload);
   const post = (token: string) => fetch(GATEWAY_URL, {
@@ -26,7 +32,7 @@ async function callGateway<T>(payload: Record<string, unknown>): Promise<T> {
     const { data: { session: fresh } } = await supabase.auth.refreshSession();
     if (fresh?.access_token) res = await post(fresh.access_token);
   }
-  if (!res.ok) throw new Error(`AI gateway error ${res.status}`);
+  if (!res.ok) throw new MoodyError("unavailable");
   return res.json() as Promise<T>;
 }
 

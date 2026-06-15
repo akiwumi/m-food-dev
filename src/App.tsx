@@ -17,7 +17,7 @@ import { onboardingQuestions, onboardingSections, PANTRY_GROUPS, type Onboarding
 import { SPOON_CUISINES, MEAL_TYPES, SEARCH_DIETS, SORT_OPTIONS, type RecipeFilters } from "./searchFilters";
 import { sendConfirmationEmail, sendWelcomeEmail, scheduleTrial, runDue, readInbox, unreadCount, markAllRead, cancelScheduled, simulateTrialEnd, type InboxItem } from "./notifications";
 import { analyzeFood, sumNutrition, flaggedAllergens, type FoodPhoto } from "./foodAnalysis";
-import { aiChat, type ChatTurn } from "./ai";
+import { aiChat, MoodyError, type ChatTurn } from "./ai";
 import { fetchCuratedRecipes, buildFoodHistory } from "./recipes";
 import { signUp as authSignUp, signIn as authSignIn, signOut as authSignOut, isEmailConfirmed, onAuthChange, isSupabaseConfigured } from "./auth";
 import { supabase } from "./supabase";
@@ -29,6 +29,7 @@ import { getConsents, setConsent, resetLearningData, exportMyData, NO_CONSENT, t
 import { deterministicTasteSummary, fetchTasteSummary } from "./tasteSummary";
 import { Landing } from "./Landing";
 import { readDevTestState } from "./devTestState";
+import { appendUniqueRecipes, RESULT_BATCH_SIZE, takeUniqueBatch } from "./resultBatches";
 import gsap from "gsap";
 
 const SUPABASE_FN = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
@@ -122,6 +123,7 @@ export default function App() {
   const [results, setResults] = useState(false);
   const [searchRequest, setSearchRequest] = useState<SearchRequest | null>(null);
   const [searchResults, setSearchResults] = useState<Recipe[]>([]);
+  const [searchCandidates, setSearchCandidates] = useState<Recipe[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchOffset, setSearchOffset] = useState(0);
   const [moodyOpen, setMoodyOpen] = useState(false);
@@ -233,10 +235,13 @@ export default function App() {
   );
 
   const runSearch = async (request: SearchRequest, nextPage = false) => {
-    const offset = nextPage ? searchOffset + 8 : 0;
+    const offset = nextPage ? searchOffset + 20 : 0;
     setSearchRequest(request);
     setSearchOffset(offset);
-    setSearchResults([]);
+    if (!nextPage) {
+      setSearchResults([]);
+      setSearchCandidates([]);
+    }
     setSearchLoading(true);
     setPage("results");
     window.scrollTo(0, 0);
@@ -248,12 +253,18 @@ export default function App() {
       // If the live search is unavailable/empty, search the bundled catalog with
       // the SAME filters applied. If nothing matches, leave it empty so the results
       // screen shows "No exact matches" rather than recipes that ignore the filters.
-      let results = live ?? [];
-      let fallbackUsed = false;
-      if (!results.length && !nextPage) {
-        results = finalizeSearchResults(bundledRecipes, sharedProfile, request.filters);
-        fallbackUsed = true;
-      }
+      const liveCandidates = finalizeSearchResults(live ?? [], sharedProfile, request.filters, Infinity);
+      const offlineCandidates = finalizeSearchResults(bundledRecipes, sharedProfile, request.filters, Infinity);
+      const candidates = appendUniqueRecipes(
+        nextPage ? searchCandidates : [],
+        [...liveCandidates, ...offlineCandidates],
+        Infinity,
+      );
+      const results = nextPage
+        ? appendUniqueRecipes(searchResults, candidates, RESULT_BATCH_SIZE)
+        : takeUniqueBatch(candidates);
+      const fallbackUsed = !liveCandidates.length && offlineCandidates.length > 0;
+      setSearchCandidates(candidates);
       setSearchResults(results);
       // Slice 0 telemetry: operational only, fire-and-forget (never awaited).
       trackSearch({
@@ -261,8 +272,8 @@ export default function App() {
         durationMs: Math.round(performance.now() - startedAt),
         resultCount: results.length,
         source: live?.length ? "spoonacular" : fallbackUsed && results.length ? "local" : "none",
-        aiAttempted: true,
-        aiSucceeded: !!live?.length,
+        aiAttempted: false,
+        aiSucceeded: false,
         fallbackUsed,
         rankingConfigVersion: RANKING_CONFIG_VERSION,
         hasQuery: !!request.query,
@@ -532,7 +543,7 @@ export default function App() {
   if (entry === "verified") return <VerifiedScreen name={profile.name} proceed={() => setEntry("subscription")} />;
   if (entry === "subscription") return <SubscriptionScreen profile={profile} save={setProfile} onStarted={refreshNotifs} proceed={() => setEntry("app")} />;
   return <MenuCtx.Provider value={() => setMenuOpen(true)}><div className={page === "cook" ? "app cooking" : "app"}>
-    {page !== "cook" && <DesktopNav page={page} go={go} />}
+    {page !== "cook" && <DesktopNav page={page} go={go} openMoody={() => setMoodyOpen(true)} />}
     <main>
       {page === "home" && <HomeScreen profile={profile} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results={false} setResults={setResults} beginResults={() => { setSearchRequest(null); setCurating(true); setAiRanked(null); setHasFetched(false); setResults(true); go("results"); }} ranked={ranked} curating={curating} loadMore={loadMore} live={aiRanked !== null || deterministicLive !== null} curated={aiRanked !== null} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} />}
       {page === "search" && <SearchScreen profile={sharedProfile} onSearch={request => runSearch(request)} />}
@@ -921,8 +932,8 @@ function MultiField({ q, values, update }: { q: OnboardingQuestion; values: stri
 function SetupStep({ eyebrow, title, text, children }: { eyebrow: string; title: string; text: string; children: React.ReactNode }) { return <section className="setup-step"><span>{eyebrow}</span><h1>{title}</h1><p>{text}</p>{children}</section>; }
 function Choice({ values, active, pick, multi }: { values: string[]; active: string | string[]; pick: (v: string) => void; multi?: boolean }) { return <div className="choice">{values.map(v => <button className={(multi ? (active as string[]).includes(v) : active === v) ? "active" : ""} onClick={() => pick(v)} key={v}>{v}</button>)}</div>; }
 
-function DesktopNav({ page, go }: { page: Page; go: (p: Page) => void }) {
-  return <aside className="desktop-nav"><img src="/images/logo-1.png" alt="" /><nav>{nav.map(([id, label, Icon]) => <button className={page === id ? "active" : ""} onClick={() => go(id)} key={id}><Icon size={19} />{label}</button>)}<button className={page === "community" ? "active" : ""} onClick={() => go("community")}><Users size={19} />Community</button><button onClick={() => go("insights")}><BarChart3 size={19} />Insights</button><button onClick={() => go("favorites")}><Heart size={19} />Favorites</button><button onClick={() => go("import")}><Upload size={19} />Import</button><button onClick={() => go("settings")}><UserRound size={19} />Profile</button></nav><button className="moody-side"><Sparkles size={18} />Ask Moody</button></aside>;
+function DesktopNav({ page, go, openMoody }: { page: Page; go: (p: Page) => void; openMoody: () => void }) {
+  return <aside className="desktop-nav"><img src="/images/logo-1.png" alt="" /><nav>{nav.map(([id, label, Icon]) => <button className={page === id ? "active" : ""} onClick={() => go(id)} key={id}><Icon size={19} />{label}</button>)}<button className={page === "community" ? "active" : ""} onClick={() => go("community")}><Users size={19} />Community</button><button onClick={() => go("insights")}><BarChart3 size={19} />Insights</button><button onClick={() => go("favorites")}><Heart size={19} />Favorites</button><button onClick={() => go("import")}><Upload size={19} />Import</button><button onClick={() => go("settings")}><UserRound size={19} />Profile</button></nav><button className="moody-side" onClick={openMoody}><Sparkles size={18} />Ask Moody</button></aside>;
 }
 function BottomNav({ page, go }: { page: Page; go: (p: Page) => void }) {
   return <nav className="bottom-nav">{nav.map(([id, label, Icon]) => <button className={page === id ? "active" : ""} onClick={() => go(id)} key={id}><Icon size={19} /><span>{label}</span></button>)}</nav>;
@@ -932,7 +943,7 @@ function BottomNav({ page, go }: { page: Page; go: (p: Page) => void }) {
 function MainMenu({ profile, page, go, close, openNotifs, unread, logout }: { profile: Profile; page: Page; go: (p: Page) => void; close: () => void; openNotifs: () => void; unread: number; logout: () => void }) {
   const nav = (p: Page) => { go(p); close(); };
   const groups: { title: string; items: [Page, string, typeof Home][] }[] = [
-    { title: "COOK & PLAN", items: [["home", "Home", Home], ["search", "Ask Moody", Sparkles], ["diary", "Diary", BookOpen], ["pantry", "My pantry", Salad], ["grocery", "Grocery", ShoppingCart], ["planner", "Planner", CalendarDays]] },
+    { title: "COOK & PLAN", items: [["home", "Home", Home], ["search", "Search recipes", Search], ["diary", "Diary", BookOpen], ["pantry", "My pantry", Salad], ["grocery", "Grocery", ShoppingCart], ["planner", "Planner", CalendarDays]] },
     { title: "DISCOVER", items: [["community", "Community", Users], ["favorites", "Saved recipes", Heart], ["import", "Import a recipe", Upload]] },
     { title: "TRACK", items: [["food-log", "Food photo log (camera)", Camera], ["insights", "Weekly reflections", BarChart3], ["health", "Health trends", Activity]] },
     { title: "YOUR PROFILE", items: [["food-profile", "Food profile & preferences", ClipboardCheck], ["psych-profile", "Psychological food profile", Sparkles], ["diners", "Household diners", UserPlus], ["account", "Account & public profile", UserRound]] },
@@ -982,10 +993,15 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
   addPhoto: (p: FoodPhoto) => void;
 }) {
   const [rejected, setRejected] = useState<string[]>([]);
-  const visible = ranked.filter(r => !rejected.includes(r.id));
+  const [shownCount, setShownCount] = useState(RESULT_BATCH_SIZE);
+  const visible = ranked.filter(r => !rejected.includes(r.id)).slice(0, shownCount);
   const hero = ranked[0];
   // Reset rejections whenever a fresh set of picks arrives.
-  useEffect(() => { setRejected([]); }, [results]);
+  useEffect(() => { setRejected([]); setShownCount(RESULT_BATCH_SIZE); }, [results]);
+  const showMore = async () => {
+    await loadMore?.();
+    setShownCount(count => count + RESULT_BATCH_SIZE);
+  };
 
   // Results view, same layout container, different content
   if (results) return (
@@ -1008,9 +1024,8 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
       {visible.length ? (
         <div style={{ padding: "0 16px", display: "grid", gap: 14 }}>
           {visible.map(r => <PickCard key={r.id} recipe={r} servings={eaterCount} open={() => open(r)} reject={() => setRejected([...rejected, r.id])} />)}
-          {/* Once they've rejected at least one, offer a fresh batch. */}
-          {!!rejected.length && loadMore && (
-            <button className="secondary" style={{ width: "100%" }} disabled={curating} onClick={loadMore}>
+          {loadMore && (
+            <button className="secondary" style={{ width: "100%" }} disabled={curating} onClick={showMore}>
               {curating ? "Finding more…" : <>Show me 5 more <RotateCcw size={16} /></>}
             </button>
           )}
@@ -1023,7 +1038,7 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
             ? "None of those landed, Moody can pull a completely new batch that still respects your profile and safety rules."
             : "Moody couldn't find matching recipes right now. Try adjusting your mood, time, or cuisine and search again."}</p>
           {rejected.length && loadMore
-            ? <button className="primary" disabled={curating} onClick={loadMore}>{curating ? "Finding more…" : <>Show me 5 more <RotateCcw size={16} /></>}</button>
+            ? <button className="primary" disabled={curating} onClick={showMore}>{curating ? "Finding more…" : <>Show me 5 more <RotateCcw size={16} /></>}</button>
             : <>{retry && <button className="primary" onClick={retry} style={{ marginBottom: 8 }}><RotateCcw size={16} /> Retry</button>}<button className="secondary" onClick={() => setResults(false)}>Adjust check-in</button></>}
         </div>
       )}
@@ -1246,8 +1261,8 @@ function SearchScreen({ profile, onSearch }: { profile: Profile; onSearch: (requ
   };
 
   return <div className="screen">
-    <TopBar title="Ask Moody" />
-    <div className="ai-search-intro"><Sparkles size={15} /><p>Describe what you want in your own words. Moody reads your food psychology profile and history on every search.</p></div>
+    <TopBar title="Search recipes" />
+    <div className="ai-search-intro"><Search size={15} /><p>Search with structured filters. Your saved diet, allergies, and exclusions always remain protected.</p></div>
     <form className="search-box" onSubmit={e => { e.preventDefault(); run(); }}>
       <Search />
       <input value={query} onChange={e => setQuery(e.target.value)} placeholder="“Something cozy and high-protein under 30 min”" />
@@ -1311,13 +1326,13 @@ function SearchScreen({ profile, onSearch }: { profile: Profile; onSearch: (requ
 function SearchResultsScreen({ results, loading, request, more, home, search, open, saved, setSaved }: { results: Recipe[]; loading: boolean; request: SearchRequest; more: () => void; home: () => void; search: () => void; open: (recipe: Recipe) => void; saved: string[]; setSaved: (values: string[]) => void }) {
   return <div className="screen">
     <TopBar title="Results" />
-    <div className="results-summary"><span>{request.filters.type ? `${request.filters.type.toUpperCase()} ONLY` : "PERSONALISED SEARCH"}</span><h1>{request.query || "Recipes matching your filters"}</h1><p>{results.length} unique matches · up to {request.filters.maxReadyTime ?? 60} min</p></div>
+    <div className="results-summary"><span>{request.filters.type ? `${request.filters.type.toUpperCase()} ONLY` : "FILTERED SEARCH"}</span><h1>{request.query || "Recipes matching your filters"}</h1><p>{results.length} unique options shown · up to {request.filters.maxReadyTime ?? 60} min</p></div>
     {loading && !results.length
       ? <div className="thinking-state"><div className="thinking-orbit"><Sparkles /><i /><i /><i /></div><span>SEARCHING</span><h1>Checking every hard rule.</h1><p>Diet, course, time, ingredients, and duplicates are being verified.</p></div>
       : results.length
         ? <div className="search-grid">{results.map(r => <article key={r.id}><RecipeImage sources={stepImageSources(undefined, r.image)} alt={r.title} /><button onClick={() => setSaved(toggle(saved, r.id))}><Heart fill={saved.includes(r.id) ? "currentColor" : "none"} /></button><div><h2>{r.title}</h2><p>{r.reason}</p><span><Clock3 size={13} /> {r.time} min · {r.difficulty}</span><button className="primary" onClick={() => open(r)}>View recipe</button></div></article>)}</div>
         : <div className="empty-state"><Search /><h2>No exact matches</h2><p>Adjust one filter and search again. Your saved diet and allergies remain protected.</p></div>}
-    <div className="results-actions"><button className="primary" onClick={more} disabled={loading}>{loading ? "Finding alternatives…" : "More alternatives"}</button><button className="secondary" onClick={search}>Change search</button><button className="secondary" onClick={home}><Home size={17} />Return home</button></div>
+    <div className="results-actions"><button className="primary" onClick={more} disabled={loading}>{loading ? "Finding 5 more…" : "Show 5 more options"}</button><button className="secondary" onClick={search}>Change search</button><button className="secondary" onClick={home}><Home size={17} />Return home</button></div>
   </div>;
 }
 
@@ -2000,8 +2015,13 @@ function MoodyPanel({ recipe, profile, picks, close, open }: { recipe?: Recipe; 
         : undefined;
       const reply = await aiChat(message, context, history);
       setTurns(prev => [...prev, { role: "assistant", content: reply }]);
-    } catch {
-      setTurns(prev => [...prev, { role: "assistant", content: "I can’t reach my brain right now, sign in (or once AI is connected) and I’ll be back. Meanwhile, your safe pick below is a solid bet." }]);
+    } catch (error) {
+      const content = error instanceof MoodyError && error.code === "not-signed-in"
+        ? "Please sign in to chat with Moody. Recipe search and your safety filters still work without chat."
+        : error instanceof MoodyError && error.code === "not-configured"
+          ? "Moody chat is not configured in this app environment yet. Recipe search remains available without AI."
+          : "Moody chat is temporarily unavailable. Recipe search and your safety filters are still working.";
+      setTurns(prev => [...prev, { role: "assistant", content }]);
     } finally {
       setBusy(false);
     }

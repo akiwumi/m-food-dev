@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { recipeProfilePayload } from "./recipes";
+import { recipeProfilePayload, withHardTimeout } from "./recipes";
 import { defaultProfile } from "./store";
 import { finalizeSearchResults } from "./searchResults";
 import type { Recipe } from "./data";
@@ -25,6 +25,17 @@ describe("recipeProfilePayload", () => {
   });
 });
 
+describe("withHardTimeout", () => {
+  it("does not report a timeout after the operation has already completed", async () => {
+    let timedOut = false;
+
+    await expect(withHardTimeout(Promise.resolve("done"), 1, "fallback", () => { timedOut = true; })).resolves.toBe("done");
+    await new Promise(resolve => setTimeout(resolve, 5));
+
+    expect(timedOut).toBe(false);
+  });
+});
+
 describe("finalizeSearchResults", () => {
   const recipe = (patch: Partial<Recipe>): Recipe => ({
     id: "1", title: "Bean Stew", image: "", time: 20, difficulty: "Easy", calories: 300,
@@ -33,14 +44,14 @@ describe("finalizeSearchResults", () => {
     ...patch,
   });
 
-  it("returns eight unique results matching the selected category", () => {
+  it("can return a full unique candidate pool for display batching", () => {
     const recipes = Array.from({ length: 10 }, (_, index) => recipe({ id: String(index), title: `Main ${index}` }));
     recipes.push(recipe({ id: "duplicate", title: " main 1 " }));
     recipes.push(recipe({ id: "dessert", title: "Cake", mealTypes: ["dessert"] }));
 
-    const results = finalizeSearchResults(recipes, defaultProfile, { type: "main" });
+    const results = finalizeSearchResults(recipes, defaultProfile, { type: "main" }, Infinity);
 
-    expect(results).toHaveLength(8);
+    expect(results).toHaveLength(10);
     expect(results.every(result => result.mealTypes?.includes("main course"))).toBe(true);
   });
 

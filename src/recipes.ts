@@ -19,6 +19,19 @@ export type FoodHistory = {
   topCuisines?: string[];   // most-cooked cuisines
 };
 
+export function withHardTimeout<T>(operation: Promise<T>, ms: number, fallback: T, onTimeout: () => void): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      onTimeout();
+      resolve(fallback);
+    }, ms);
+    operation.then(
+      value => { clearTimeout(timer); resolve(value); },
+      error => { clearTimeout(timer); reject(error); },
+    );
+  });
+}
+
 export function recipeProfilePayload(profile: Profile) {
   return {
     diet: profile.diet,
@@ -119,13 +132,9 @@ export async function fetchCuratedRecipes(
   // indefinitely under network stress. Set just above the fetch budget (22s) so
   // a genuinely successful-but-slow search isn't cut short, while still
   // guaranteeing we give up rather than hang forever.
-  return Promise.race([
-    run(),
-    new Promise<null>(resolve => setTimeout(() => {
+  return withHardTimeout(run(), 25_000, null, () => {
       console.warn("[recipes] Hard timeout (25 s), falling back to local recipes.");
-      resolve(null);
-    }, 25_000)),
-  ]);
+  });
 }
 
 // Summarise what the user has actually cooked, logged, and saved so the AI can
