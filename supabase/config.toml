@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.recipes]
 verify_jwt = false
+
+[functions.nutrition-lookup]
+verify_jwt = false
