@@ -82,7 +82,7 @@ describe("client security controls", () => {
   it("limits Moody recipe links to structured supplied catalog candidates", () => {
     const source = readFileSync("supabase/functions/ai-gateway/index.ts", "utf8");
     expect(source).toContain('response_format: { type: "json_object" }');
-    expect(source).toContain("candidateIds.has(parsed.recipeId)");
+    expect(source).toContain("allCandidateIds.has(rawRecipeId)");
     expect(source).toContain("recipeId: selectedRecipeId");
   });
 
