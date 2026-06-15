@@ -147,6 +147,7 @@ Deno.serve(async (request) => {
       ? body.context.candidates.filter((r: any) => typeof r?.id === "string")
       : [];
     const candidateIds = new Set(candidates.map((r: any) => r.id));
+    console.log(`[ai-gateway] chat: message="${message.slice(0, 80)}" candidates=${candidates.length}`);
     const res = await callOpenAI({
       model: CHAT_MODEL,
       response_format: { type: "json_object" },
@@ -162,7 +163,9 @@ Deno.serve(async (request) => {
     const data = await res.json();
     let parsed: { message?: unknown; recipeId?: unknown } = {};
     try { parsed = JSON.parse(data.choices?.[0]?.message?.content ?? "{}"); } catch { /* fall through */ }
-    const selectedRecipeId = typeof parsed.recipeId === "string" && candidateIds.has(parsed.recipeId) ? parsed.recipeId : undefined;
+    const rawRecipeId = typeof parsed.recipeId === "string" ? parsed.recipeId : null;
+    const selectedRecipeId = rawRecipeId && candidateIds.has(rawRecipeId) ? rawRecipeId : undefined;
+    console.log(`[ai-gateway] reply: rawRecipeId=${rawRecipeId} valid=${!!selectedRecipeId} candidates=${candidates.length}`);
     const reply = typeof parsed.message === "string" ? parsed.message : "I couldn't find a suitable catalog recipe right now.";
     return Response.json({ provider: "openai", message: reply, recipeId: selectedRecipeId }, { headers: headers(origin) });
   } catch (_err) {

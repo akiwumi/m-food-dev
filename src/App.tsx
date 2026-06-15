@@ -238,11 +238,20 @@ export default function App() {
     [diary, profile.photoLogs, saved, catalog],
   );
   const loadMoodyCatalog = useCallback(async (query = "") => {
-    const live = await fetchCuratedRecipes(sharedProfile, mood, 50, 180, query, {}, foodHistory, 0, false, false);
-    const merged = live?.length
-      ? [...live, ...catalog.filter(existing => !live.some(recipe => recipe.id === existing.id))]
+    // Strip conversational words so Spoonacular gets a clean food term (e.g. "Yaki Udon" not "show me a Yaki Udon recipe").
+    const foodQuery = query.replace(/\b(show|find|open|get|search|look|for|me|a|an|the|some|recipe|recipes|please|can|you|i|want|need|make|cook|like)\b/gi, " ").replace(/\s+/g, " ").trim().slice(0, 80);
+    const [moodLive, queryLive] = await Promise.all([
+      fetchCuratedRecipes(sharedProfile, mood, 20, 180, "", {}, foodHistory, 0, true, false),
+      foodQuery ? fetchCuratedRecipes(sharedProfile, mood, 10, 180, foodQuery, {}, foodHistory, 0, true, false) : Promise.resolve(null),
+    ]);
+    const combined = [
+      ...(queryLive ?? []),
+      ...(moodLive ?? []).filter(r => !queryLive?.some(q => q.id === r.id)),
+    ];
+    const merged = combined.length
+      ? [...combined, ...catalog.filter(existing => !combined.some(recipe => recipe.id === existing.id))]
       : catalog;
-    if (live?.length) setCatalog(merged);
+    if (combined.length) setCatalog(merged);
     return applySafety(merged, sharedProfile);
   }, [catalog, foodHistory, mood, sharedProfile]);
 
