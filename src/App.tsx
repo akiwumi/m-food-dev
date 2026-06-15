@@ -259,14 +259,19 @@ export default function App() {
     window.scrollTo(0, 0);
     const startedAt = performance.now();
     try {
+      // Show bundled matches immediately so the user sees results while the live
+      // search is in flight. The spinner only appears when there are zero local
+      // matches (niche queries). Live results arrive later and are ranked first.
+      const offlineCandidates = finalizeSearchResults(bundledRecipes, sharedProfile, request.filters, Infinity);
+      if (!nextPage && offlineCandidates.length) {
+        setSearchCandidates(offlineCandidates);
+        setSearchResults(takeUniqueBatch(offlineCandidates));
+      }
+
       // Explicit search honors the filters exactly — relax:false tells the backend
       // not to silently drop cuisine/course/time to force a result.
       const live = await fetchCuratedRecipes(sharedProfile, mood, 50, request.filters.maxReadyTime ?? 60, request.query, request.filters, foodHistory, offset, false);
-      // If the live search is unavailable/empty, search the bundled catalog with
-      // the SAME filters applied. If nothing matches, leave it empty so the results
-      // screen shows "No exact matches" rather than recipes that ignore the filters.
       const liveCandidates = finalizeSearchResults(live ?? [], sharedProfile, request.filters, Infinity);
-      const offlineCandidates = finalizeSearchResults(bundledRecipes, sharedProfile, request.filters, Infinity);
       const candidates = appendUniqueRecipes(
         nextPage ? searchCandidates : [],
         [...liveCandidates, ...offlineCandidates],
