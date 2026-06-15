@@ -10,7 +10,7 @@
 // Deploy: supabase functions deploy ai-gateway
 //
 // Request body (JSON), one of:
-//   { "task": "chat", "message": "...", "history": [...], "context": { profile, picks } }
+//   { "task": "chat", "message": "...", "history": [...], "context": { profile, picks, candidates } }
 //   { "task": "analyze-food", "image": "data:image/jpeg;base64,...", "hint": { recipeName, recipeCalories } }
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -42,6 +42,9 @@ function systemPrompt(context: any): string {
   const picks = Array.isArray(context?.picks)
     ? context.picks.map((r: any) => `- ${r.title} (${r.time} min): ${r.reason ?? ""}`).join("\n")
     : "";
+  const candidates = Array.isArray(context?.candidates)
+    ? context.candidates.map((r: any) => `- ID ${r.id}: ${r.title} | ${r.cuisine} | ${r.time} min | ${r.ingredients?.join(", ") ?? ""}`).join("\n")
+    : "";
   return [
     "You are Moody, MoodFood's warm, concise dinner co-pilot.",
     "You help the user choose a meal that fits how they feel, their tastes, and their safety needs.",
@@ -53,6 +56,10 @@ function systemPrompt(context: any): string {
     "- If the user signals disordered eating or distress, respond gently and suggest talking to a professional.",
     "Keep replies short (2-4 sentences), specific, and encouraging.",
     picks ? `Tonight's safe picks already computed for this user:\n${picks}` : "",
+    candidates ? `SEARCHABLE CATALOG CANDIDATES (the only recipes you may select):\n${candidates}` : "No searchable catalog candidates are available.",
+    "Reply ONLY with JSON: {\"message\":string,\"recipeId\":string|null}.",
+    "Set recipeId only when one final catalog recipe would clearly help. Use null for general questions, cooking help, alternatives without a final choice, or when no suitable candidate exists.",
+    "Never invent a recipe ID. If no candidate satisfies the request, say no safe match was found and suggest relaxing only non-safety preferences.",
   ].filter(Boolean).join("\n");
 }
 
@@ -132,10 +139,15 @@ Deno.serve(async (request) => {
     const message = typeof body.message === "string" ? body.message.slice(0, 2000) : "";
     if (!message) return Response.json({ error: "Missing message" }, { status: 400, headers: headers(origin) });
     const history = Array.isArray(body.history)
-      ? body.history.filter((m: any) => (m?.role === "user" || m?.role === "assistant") && typeof m?.content === "string").slice(-8)
+      ? body.history.filter((m: any) => (m?.role === "user" || m?.role === "assistant") && typeof m?.content === "string").slice(-8).map((m: any) => ({ role: m.role, content: m.content }))
       : [];
+    const candidates = Array.isArray(body?.context?.candidates)
+      ? body.context.candidates.filter((r: any) => typeof r?.id === "string")
+      : [];
+    const candidateIds = new Set(candidates.map((r: any) => r.id));
     const res = await callOpenAI({
       model: CHAT_MODEL,
+      response_format: { type: "json_object" },
       max_tokens: 350,
       temperature: 0.7,
       messages: [
@@ -146,7 +158,11 @@ Deno.serve(async (request) => {
     });
     if (!res.ok) return Response.json({ error: "AI request failed" }, { status: 502, headers: headers(origin) });
     const data = await res.json();
-    return Response.json({ provider: "openai", message: data.choices?.[0]?.message?.content ?? "" }, { headers: headers(origin) });
+    let parsed: { message?: unknown; recipeId?: unknown } = {};
+    try { parsed = JSON.parse(data.choices?.[0]?.message?.content ?? "{}"); } catch { /* fall through */ }
+    const selectedRecipeId = typeof parsed.recipeId === "string" && candidateIds.has(parsed.recipeId) ? parsed.recipeId : undefined;
+    const reply = typeof parsed.message === "string" ? parsed.message : "I couldn't find a suitable catalog recipe right now.";
+    return Response.json({ provider: "openai", message: reply, recipeId: selectedRecipeId }, { headers: headers(origin) });
   } catch (_err) {
     return Response.json({ error: "AI request failed" }, { status: 502, headers: headers(origin) });
   }

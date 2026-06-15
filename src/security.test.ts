@@ -79,6 +79,13 @@ describe("client security controls", () => {
     expect(source).not.toContain("attachVideos");
   });
 
+  it("limits Moody recipe links to structured supplied catalog candidates", () => {
+    const source = readFileSync("supabase/functions/ai-gateway/index.ts", "utf8");
+    expect(source).toContain('response_format: { type: "json_object" }');
+    expect(source).toContain("candidateIds.has(parsed.recipeId)");
+    expect(source).toContain("recipeId: selectedRecipeId");
+  });
+
   it("prevents mobile form focus zoom and horizontal form overflow", () => {
     const styles = readFileSync("src/styles.css", "utf8");
     expect(styles).toContain("font-size:16px");

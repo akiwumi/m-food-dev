@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useCallback, createContext, useContext } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback, createContext, useContext, Fragment } from "react";
 import {
   ArrowLeft, ArrowRight, Bell, BookOpen, CalendarDays, Check, ChefHat, ChevronRight,
   Clock3, Heart, Home, ListChecks, Menu, MoreVertical, Play, RotateCcw, Search,
@@ -30,6 +30,7 @@ import { deterministicTasteSummary, fetchTasteSummary } from "./tasteSummary";
 import { Landing } from "./Landing";
 import { readDevTestState } from "./devTestState";
 import { appendUniqueRecipes, RESULT_BATCH_SIZE, takeUniqueBatch } from "./resultBatches";
+import { moodyCandidates, resolveMoodyRecipe } from "./moodyRecipes";
 import gsap from "gsap";
 
 const SUPABASE_FN = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
@@ -127,6 +128,8 @@ export default function App() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchOffset, setSearchOffset] = useState(0);
   const [moodyOpen, setMoodyOpen] = useState(false);
+  const [moodyTurns, setMoodyTurns] = useState<ChatTurn[]>([]);
+  const [detailReturnMoody, setDetailReturnMoody] = useState(false);
   const [pendingShare, setPendingShare] = useState<string | undefined>(undefined);
   const [saved, setSaved] = useStoredState<string[]>("moodfood-saved", []);
   const [diary, setDiary] = useStoredState("moodfood-diary", [] as { recipe: Recipe; rating: number; when: string }[]);
@@ -233,6 +236,14 @@ export default function App() {
     () => buildFoodHistory(diary, profile.photoLogs, catalog.filter(r => saved.includes(r.id))),
     [diary, profile.photoLogs, saved, catalog],
   );
+  const loadMoodyCatalog = useCallback(async () => {
+    const live = await fetchCuratedRecipes(sharedProfile, mood, 50, 180, "", {}, foodHistory, 0, false, false);
+    const merged = live?.length
+      ? [...live, ...catalog.filter(existing => !live.some(recipe => recipe.id === existing.id))]
+      : catalog;
+    if (live?.length) setCatalog(merged);
+    return applySafety(merged, sharedProfile);
+  }, [catalog, foodHistory, mood, sharedProfile]);
 
   const runSearch = async (request: SearchRequest, nextPage = false) => {
     const offset = nextPage ? searchOffset + 20 : 0;
@@ -495,7 +506,21 @@ export default function App() {
   }, []);
 
   const go = (next: Page) => { setPage(next); window.scrollTo(0, 0); };
-  const open = (recipe: Recipe) => { setSelected(recipe); setDetailReturnPage(page); go("detail"); };
+  const open = (recipe: Recipe) => { setDetailReturnMoody(false); setSelected(recipe); setDetailReturnPage(page); go("detail"); };
+  const openFromMoody = (recipe: Recipe) => {
+    setSelected(recipe);
+    setDetailReturnPage(page);
+    setDetailReturnMoody(true);
+    setMoodyOpen(false);
+    go("detail");
+  };
+  const backFromDetail = () => {
+    go(detailReturnPage);
+    if (detailReturnMoody) {
+      setDetailReturnMoody(false);
+      setMoodyOpen(true);
+    }
+  };
   // Share a recipe into the community feed: make sure it's in the catalog so the
   // post can link it, preselect it in the composer, and jump to Community.
   const shareRecipe = (recipe: Recipe) => {
@@ -552,7 +577,7 @@ export default function App() {
         : results
           ? <HomeScreen profile={profile} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results setResults={v => { setResults(v); if (!v) go("home"); }} beginResults={() => {}} ranked={ranked} curating={curating} hasFetched={hasFetched} loadMore={loadMore} live={aiRanked !== null || deterministicLive !== null} curated={aiRanked !== null} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} />
           : <EmptyResultsScreen home={() => go("home")} search={() => go("search")} />)}
-      {page === "detail" && selected && <DetailScreen recipe={selected} servings={eaterCount} back={() => go(detailReturnPage)} cook={() => go("cook")} saved={saved.includes(selected.id)} toggleSave={() => setSaved(toggle(saved, selected.id))} addGroceries={() => setGroceries(v => [...new Set([...v, ...selected.ingredients])])} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} shareToCommunity={() => shareRecipe(selected)} allergies={profile.allergies} />}
+      {page === "detail" && selected && <DetailScreen recipe={selected} servings={eaterCount} back={backFromDetail} cook={() => go("cook")} saved={saved.includes(selected.id)} toggleSave={() => setSaved(toggle(saved, selected.id))} addGroceries={() => setGroceries(v => [...new Set([...v, ...selected.ingredients])])} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} shareToCommunity={() => shareRecipe(selected)} allergies={profile.allergies} />}
       {page === "cook" && selected && <CookScreen recipe={selected} exit={() => go("detail")} allergies={profile.allergies} finish={(rating, photo) => { setDiary(v => [{ recipe: selected, rating, when: "Today" }, ...v]); if (photo) setProfile(p => ({ ...p, photoLogs: [photo, ...p.photoLogs] })); if (behavioralConsent) void recordRating({ providerRecipeId: selected.id, title: selected.title, cuisine: selected.cuisine, source: aiCuration ? "ai" : "deterministic", rating, mood }); go("diary"); }} />}
       {page === "diary" && <DiaryScreen diary={diary} open={open} photoLogs={profile.photoLogs} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} goFoodLog={() => go("food-log")} allergies={profile.allergies} />}
       {page === "grocery" && <GroceryScreen items={groceries} setItems={setGroceries} />}
@@ -580,7 +605,7 @@ export default function App() {
     </main>
     {page !== "cook" && <BottomNav page={page} go={go} />}
     {page !== "cook" && <MoodyFab onOpen={() => setMoodyOpen(true)} />}
-    {moodyOpen && <MoodyPanel recipe={ranked[0]} profile={profile} picks={ranked.slice(0, 3)} close={() => setMoodyOpen(false)} open={() => { setMoodyOpen(false); if (ranked[0]) open(ranked[0]); }} />}
+    {moodyOpen && <MoodyPanel profile={sharedProfile} catalog={safeRecipes} loadCatalog={loadMoodyCatalog} turns={moodyTurns} setTurns={setMoodyTurns} close={() => setMoodyOpen(false)} openRecipe={openFromMoody} />}
     {notifOpen && <NotificationsPanel close={() => setNotifOpen(false)} profile={profile} save={setProfile} refresh={refreshNotifs} />}
     {menuOpen && <MainMenu profile={profile} page={page} go={go} close={() => setMenuOpen(false)} openNotifs={openNotifs} unread={unreadCount()} logout={() => { authSignOut(); setEntry("welcome"); }} />}
   </div></MenuCtx.Provider>;
@@ -1992,11 +2017,11 @@ function MoodyFab({ onOpen }: { onOpen: () => void }) {
   ><Sparkles /></button>;
 }
 
-function MoodyPanel({ recipe, profile, picks, close, open }: { recipe?: Recipe; profile?: Profile; picks?: Recipe[]; close: () => void; open: () => void }) {
+function MoodyPanel({ profile, catalog, loadCatalog, turns, setTurns, close, openRecipe }: { profile: Profile; catalog: Recipe[]; loadCatalog: () => Promise<Recipe[]>; turns: ChatTurn[]; setTurns: React.Dispatch<React.SetStateAction<ChatTurn[]>>; close: () => void; openRecipe: (recipe: Recipe) => void }) {
   const [input, setInput] = useState("");
-  const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [busy, setBusy] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const latestRecipe = [...turns].reverse().map(turn => resolveMoodyRecipe(turn.recipeId, catalog, profile)).find(Boolean);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -2010,11 +2035,14 @@ function MoodyPanel({ recipe, profile, picks, close, open }: { recipe?: Recipe; 
     setInput("");
     setBusy(true);
     try {
-      const context = profile
-        ? { profile: { allergies: profile.allergies, diet: profile.diet, dislikedIngredients: profile.dislikedIngredients }, picks: (picks ?? []).map(r => ({ title: r.title, time: r.time, reason: r.reason })) }
-        : undefined;
+      const searchableCatalog = await loadCatalog();
+      const context = {
+        profile: { allergies: profile.allergies, diet: profile.diet, dislikedIngredients: profile.dislikedIngredients },
+        candidates: moodyCandidates(searchableCatalog),
+      };
       const reply = await aiChat(message, context, history);
-      setTurns(prev => [...prev, { role: "assistant", content: reply }]);
+      const selected = resolveMoodyRecipe(reply.recipeId, searchableCatalog, profile);
+      setTurns(prev => [...prev, { role: "assistant", content: reply.message, recipeId: selected?.id }]);
     } catch (error) {
       const content = error instanceof MoodyError && error.code === "not-signed-in"
         ? "Please sign in to chat with Moody. Recipe search and your safety filters still work without chat."
@@ -2027,7 +2055,10 @@ function MoodyPanel({ recipe, profile, picks, close, open }: { recipe?: Recipe; 
     }
   };
 
-  return <div className="panel-bg" onClick={close}><aside className="moody-panel" onClick={e => e.stopPropagation()}><header><Moody /><div><b>Moody</b><span>Your dinner co-pilot</span></div><button onClick={close}><X /></button></header><div className="chat"><p>I can choose dinner, explain a recommendation, or help rescue the step you’re on.</p>{turns.map((t, i) => <p key={i} className={t.role === "user" ? "user-message" : "moody-message"}>{t.content}</p>)}{busy && <p className="moody-message">…</p>}{recipe && <button className="moody-pick" onClick={open}><img src={recipe.image} alt="" /><span><small>MY SAFE PICK RIGHT NOW</small><b>{recipe.title}</b><em>{recipe.time} min · {recipe.reason}</em></span></button>}<div ref={bottomRef} /></div><div className="prompt-row"><button onClick={() => send("Pick the easiest safe dinner.")}>Pick the easiest</button><button onClick={() => send("I only have 15 minutes.")}>Only 15 minutes</button>{recipe && <button onClick={() => send(`Why are you recommending ${recipe.title}?`)}>Explain this pick</button>}</div><form onSubmit={e => { e.preventDefault(); send(input); }}><input value={input} onChange={e => setInput(e.target.value)} placeholder="Tell Moody what you need..." /><button disabled={busy}><ArrowRight /></button></form></aside></div>;
+  return <div className="panel-bg" onClick={close}><aside className="moody-panel" onClick={e => e.stopPropagation()}><header><Moody /><div><b>Moody</b><span>Your dinner co-pilot</span></div><button onClick={close}><X /></button></header><div className="chat"><p>I can choose dinner, explain a recommendation, or help rescue the step you’re on.</p>{turns.map((t, i) => {
+    const linkedRecipe = resolveMoodyRecipe(t.recipeId, catalog, profile);
+    return <Fragment key={i}><p className={t.role === "user" ? "user-message" : "moody-message"}>{t.content}</p>{linkedRecipe && <button className="moody-pick" onClick={() => openRecipe(linkedRecipe)}><img src={linkedRecipe.image} alt="" /><span><small>MOODY'S RECOMMENDATION</small><b>{linkedRecipe.title}</b><em>{linkedRecipe.time} min · {linkedRecipe.reason}</em><strong>View recipe <ChevronRight size={14} /></strong></span></button>}</Fragment>;
+  })}{busy && <p className="moody-message">…</p>}<div ref={bottomRef} /></div><div className="prompt-row"><button onClick={() => send("Pick the easiest safe dinner.")}>Pick the easiest</button><button onClick={() => send("I only have 15 minutes.")}>Only 15 minutes</button>{latestRecipe && <button onClick={() => send(`Why are you recommending ${latestRecipe.title}?`)}>Explain this pick</button>}</div><form onSubmit={e => { e.preventDefault(); send(input); }}><input value={input} onChange={e => setInput(e.target.value)} placeholder="Tell Moody what you need..." /><button disabled={busy}><ArrowRight /></button></form></aside></div>;
 }
 
 function NotificationsPanel({ close, profile, save, refresh }: { close: () => void; profile: Profile; save: (p: Profile) => void; refresh: () => void }) {

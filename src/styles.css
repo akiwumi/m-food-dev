@@ -1,4 +1,5 @@
 @import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap");
+.moody-pick strong{display:flex;align-items:center;justify-content:space-between;margin-top:7px;color:var(--olive);font-size:11px}
 :root{
   --ink:#171a1c;--dark:#171a1c;--muted:#8b9694;
   --blue:#7cc3dc;--blue-deep:#57aecb;--coral:#ef6a4f;

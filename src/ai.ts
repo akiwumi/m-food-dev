@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import type { MoodyRecipeCandidate } from "./moodyRecipes";
 
 // Browser-side client for the ai-gateway edge function. The OpenAI key never
 // touches the browser, we send the user's Supabase session token, and the
@@ -39,14 +40,16 @@ async function callGateway<T>(payload: Record<string, unknown>): Promise<T> {
 export type ChatContext = {
   profile?: { allergies?: string[]; diet?: string; dislikedIngredients?: string[] };
   picks?: { title: string; time: number; reason?: string }[];
+  candidates?: MoodyRecipeCandidate[];
 };
 
-export type ChatTurn = { role: "user" | "assistant"; content: string };
+export type ChatTurn = { role: "user" | "assistant"; content: string; recipeId?: string };
+export type ChatReply = { message: string; recipeId?: string };
 
 // Ask Moody. Pass recent turns as `history` for continuity.
-export async function aiChat(message: string, context?: ChatContext, history?: ChatTurn[]): Promise<string> {
-  const data = await callGateway<{ message: string }>({ task: "chat", message, context, history });
-  return data.message;
+export async function aiChat(message: string, context?: ChatContext, history?: ChatTurn[]): Promise<ChatReply> {
+  const data = await callGateway<ChatReply>({ task: "chat", message, context, history });
+  return { message: data.message, recipeId: data.recipeId };
 }
 
 export type VitaminEstimate = { name: string; amount?: number; unit?: string; percentDV?: number };
