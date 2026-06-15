@@ -86,6 +86,12 @@ describe("client security controls", () => {
     expect(source).toContain("recipeId: selectedRecipeId");
   });
 
+  it("keeps original recipe source links out of the in-app recipe experience", () => {
+    const source = readFileSync("src/App.tsx", "utf8");
+    expect(source).not.toContain("View original recipe");
+    expect(source).not.toContain('className="source-link" href={recipe.sourceUrl}');
+  });
+
   it("prevents mobile form focus zoom and horizontal form overflow", () => {
     const styles = readFileSync("src/styles.css", "utf8");
     expect(styles).toContain("font-size:16px");
