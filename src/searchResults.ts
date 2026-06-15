@@ -31,6 +31,15 @@ function sortRecipes(recipes: Recipe[], sort?: string): Recipe[] {
 }
 const LAND_MEAT = /\b(beef|steak|veal|chicken|turkey|duck|pork|bacon|ham|sausage|lamb|mutton|goat|venison|rabbit)\b/i;
 const FISH = /\b(fish|salmon|tuna|cod|haddock|trout|sardine|anchov|prawn|shrimp|crab|lobster|mussel|clam|oyster|scallop|seafood)\b/i;
+const CUISINE_FAMILIES: Record<string, string[]> = {
+  asian: ["asian", "chinese", "indian", "japanese", "korean", "thai", "vietnamese"],
+};
+
+function matchesCuisine(recipeCuisine: string, requestedCuisine: string) {
+  const recipe = recipeCuisine.toLowerCase();
+  const requested = requestedCuisine.toLowerCase();
+  return (CUISINE_FAMILIES[requested] ?? [requested]).some(cuisine => recipe.includes(cuisine));
+}
 
 function matchesRequestedDiet(recipe: Recipe, requested?: string) {
   const diet = (requested ?? "").toLowerCase();
@@ -54,7 +63,7 @@ export function finalizeSearchResults(recipes: Recipe[], profile: Profile, filte
     const title = recipe.title.trim().toLowerCase().replace(/\s+/g, " ");
     if (seenIds.has(recipe.id) || seenTitles.has(title)) return false;
     if (filters.maxReadyTime && recipe.time > filters.maxReadyTime) return false;
-    if (filters.cuisines?.length && !filters.cuisines.some(cuisine => recipe.cuisine.toLowerCase().includes(cuisine.toLowerCase()))) return false;
+    if (filters.cuisines?.length && !filters.cuisines.some(cuisine => matchesCuisine(recipe.cuisine, cuisine))) return false;
     if (allowedTypes && !(recipe.mealTypes ?? []).some(type => allowedTypes.includes(type.toLowerCase()))) return false;
     if (include.length && !include.every(item => text.includes(item.toLowerCase()))) return false;
     if (exclude.some(item => text.includes(item.toLowerCase()))) return false;

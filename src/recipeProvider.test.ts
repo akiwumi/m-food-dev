@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyCuratedRanking, dedupeRecipes, fetchTheMealDbRecipes, filterRecipesByCategory, filterRecipesByMaxTime, filterRecipesForProfile, filterRecipesWithCompleteInstructions, normalizeSpoonacularRecipe } from "../supabase/functions/recipes/provider";
+import { applyCuratedRanking, dedupeRecipes, expandProviderCuisines, fetchTheMealDbRecipes, filterRecipesByCategory, filterRecipesByMaxTime, filterRecipesForProfile, filterRecipesWithCompleteInstructions, normalizeSpoonacularRecipe } from "../supabase/functions/recipes/provider";
 
 describe("fetchTheMealDbRecipes", () => {
   it("returns normalized real recipes when the primary provider is unavailable", async () => {
@@ -161,6 +161,12 @@ describe("fetchTheMealDbRecipes", () => {
 
     expect(filterRecipesByCategory(recipes, "starter").map(recipe => recipe.title)).toEqual(["Bruschetta"]);
     expect(filterRecipesByCategory(recipes, "dessert").map(recipe => recipe.title)).toEqual(["Cake"]);
+  });
+
+  it("expands Asian into provider cuisines that contain Asian dishes", () => {
+    expect(expandProviderCuisines(["Asian"])).toEqual([
+      "Asian", "Chinese", "Indian", "Japanese", "Korean", "Thai", "Vietnamese",
+    ]);
   });
 
   it("deduplicates recipes by id and normalized title", () => {

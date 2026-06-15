@@ -73,4 +73,14 @@ describe("finalizeSearchResults", () => {
     expect(results.map(result => result.title)).toEqual(["Bean pasta"]);
   });
 
+  it("treats Asian as a cuisine family for vegetarian lunch results", () => {
+    const results = finalizeSearchResults([
+      recipe({ id: "thai", title: "Thai tofu lunch", cuisine: "Thai", mealTypes: ["main course"], diets: ["Vegetarian"], time: 25 }),
+      recipe({ id: "chinese", title: "Chinese vegetable lunch", cuisine: "Chinese", mealTypes: ["lunch"], diets: ["Vegetarian"], time: 35 }),
+      recipe({ id: "italian", title: "Italian lunch", cuisine: "Italian", mealTypes: ["lunch"], diets: ["Vegetarian"], time: 20 }),
+    ], { ...defaultProfile, diet: "Vegetarian" }, { cuisines: ["Asian"], type: "lunch", diet: "Vegetarian", maxReadyTime: 45 }, Infinity);
+
+    expect(results.map(result => result.id)).toEqual(["thai", "chinese"]);
+  });
+
 });

@@ -29,7 +29,7 @@
 // sortDirection, ignorePantry, plus full recipe info/nutrition/instructions.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { applyCuratedRanking, dedupeRecipes, fetchTheMealDbRecipes, filterOutAccessoryTypes, filterRecipesByCategory, filterRecipesByMaxTime, filterRecipesForProfile, filterRecipesWithCompleteInstructions, normalizeSpoonacularRecipe } from "./provider.ts";
+import { applyCuratedRanking, dedupeRecipes, expandProviderCuisines, fetchTheMealDbRecipes, filterOutAccessoryTypes, filterRecipesByCategory, filterRecipesByMaxTime, filterRecipesForProfile, filterRecipesWithCompleteInstructions, normalizeSpoonacularRecipe } from "./provider.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
@@ -337,8 +337,8 @@ Deno.serve(async (request) => {
   // Cuisine is a HARD filter, so only apply it from an explicit search selection.
   // The profile's loved cuisines stay a SOFT preference handled by AI curation —
   // forcing them here would starve the home feed of variety.
-  const cuisines = mapCuisines(Array.isArray(filters.cuisines) ? filters.cuisines : []);
-  if (cuisines.length) params.set("cuisine", cuisines.slice(0, 6).join(","));
+  const cuisines = expandProviderCuisines(mapCuisines(Array.isArray(filters.cuisines) ? filters.cuisines : []));
+  if (cuisines.length) params.set("cuisine", cuisines.slice(0, 8).join(","));
 
   // Meal type: explicit search selection only (same hard-filter reasoning).
   const category = typeof filters.type === "string" ? filters.type : "";

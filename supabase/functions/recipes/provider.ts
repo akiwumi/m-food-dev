@@ -3,6 +3,13 @@ type Fetcher = typeof fetch;
 const MEALDB = "https://www.themealdb.com/api/json/v1/1";
 const LAND_MEAT = /\b(beef|steak|veal|chicken|turkey|duck|pork|bacon|ham|sausage|lamb|mutton|goat|venison|rabbit)\b/i;
 const FISH = /\b(fish|salmon|tuna|cod|haddock|trout|sardine|anchov|prawn|shrimp|crab|lobster|mussel|clam|oyster|scallop|seafood)\b/i;
+const PROVIDER_CUISINE_FAMILIES: Record<string, string[]> = {
+  asian: ["Asian", "Chinese", "Indian", "Japanese", "Korean", "Thai", "Vietnamese"],
+};
+
+export function expandProviderCuisines(cuisines: string[]): string[] {
+  return [...new Set(cuisines.flatMap(cuisine => PROVIDER_CUISINE_FAMILIES[cuisine.toLowerCase()] ?? [cuisine]))];
+}
 
 function youtubeEmbed(url: string): string {
   const id = url.match(/[?&]v=([^&]+)/)?.[1] ?? "";
