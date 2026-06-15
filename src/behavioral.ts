@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { LEARNED_SIGNAL_VERSION, type CuisineSignal, type MoodCuisineSignal } from "./recommendation";
+import { normalizeMood } from "./moodRules";
 
 // Slice 2 (roadmap v3): one measurable learning loop. The client records validated
 // outcomes (ratings, runs) through the consent-gated `record-event` edge function,
@@ -129,7 +130,8 @@ export function deriveMoodCuisineSignal(observations: RatingObservation[], now: 
   const byMoodObs: Record<string, RatingObservation[]> = {};
   for (const o of observations) {
     if (!o.mood) continue;
-    (byMoodObs[o.mood] ?? (byMoodObs[o.mood] = [])).push(o);
+    const mood = normalizeMood(o.mood);
+    (byMoodObs[mood] ?? (byMoodObs[mood] = [])).push(o);
   }
   const byMood: Record<string, string[]> = {};
   for (const mood of Object.keys(byMoodObs)) {

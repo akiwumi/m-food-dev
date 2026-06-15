@@ -114,7 +114,7 @@ export default function App() {
   const [page, setPage] = useState<Page>("home");
   const [selected, setSelected] = useState<Recipe | null>(null);
   const [detailReturnPage, setDetailReturnPage] = useState<Page>("results");
-  const [mood, setMood] = useState("Cozy");
+  const [mood, setMood] = useState("Tired");
   const [energy, setEnergy] = useState(45);
   const [time, setTime] = useState(30);
   const [mealCategory, setMealCategory] = useState("");

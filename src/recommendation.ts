@@ -1,8 +1,9 @@
 import type { Recipe } from "./data";
 import type { Profile } from "./store";
 import type { Diner } from "./store";
+import { normalizeMood, scoreByMood } from "./moodRules";
 
-export const RANKING_CONFIG_VERSION = "pilot-v1";
+export const RANKING_CONFIG_VERSION = "mood-tags-v2";
 export const LEARNED_SIGNAL_VERSION = "cuisine-v1";
 
 // Slice 2 (roadmap v3): the first deterministic LEARNED signal. Derived from the
@@ -36,7 +37,11 @@ export type MoodCuisineSignal = {
 };
 export function moodBoost(recipe: Recipe, signal: MoodCuisineSignal | undefined, mood: string): number {
   if (!signal || !recipe.cuisine || !mood) return 0;
-  return (signal.byMood[mood] ?? []).includes(recipe.cuisine) ? MOOD_BOOST : 0;
+  const canonicalMood = normalizeMood(mood);
+  const cuisines = Object.entries(signal.byMood)
+    .filter(([key]) => normalizeMood(key) === canonicalMood)
+    .flatMap(([, values]) => values);
+  return cuisines.includes(recipe.cuisine) ? MOOD_BOOST : 0;
 }
 
 // The bundle of learned signals fed into ranking, and the diversity cap on their
@@ -142,7 +147,10 @@ export function recipeScore(recipe: Recipe, profile: Profile, mood: string, ener
   if (profile.nutritionGoals.includes("More protein") && recipe.diets.includes("High protein")) goalBoost += 8;
   if (profile.nutritionGoals.includes("More vegetables") && recipe.diets.some(d => ["Vegetarian", "Vegan"].includes(d))) goalBoost += 5;
 
-  return (recipe.moods.includes(mood) ? 40 : 0) +
+  const canonicalMood = normalizeMood(mood);
+  const directMoodBoost = recipe.moods.some(value => normalizeMood(value) === canonicalMood) ? 40 : 0;
+
+  return directMoodBoost + scoreByMood(recipe, mood) +
     (recipe.time <= time ? 25 : -20) +
     (energy < 50 && recipe.difficulty === "Easy" ? 15 : 0) +
     profileBoost + cuisineBoost + flavorBoost + textureBoost + comfortBoost + proteinBoost +

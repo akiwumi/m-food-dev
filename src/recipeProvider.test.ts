@@ -39,6 +39,8 @@ describe("fetchTheMealDbRecipes", () => {
       image: "https://example.com/meal.jpg",
     });
     expect(recipes[0].video).toBe("https://www.youtube.com/embed/test123");
+    expect(recipes[0].tags.effort).toContain("low_effort");
+    expect(recipes[0].tags.cookingStyle).toContain("baked");
   });
 
   it("uses random real recipes when a natural-language search has no direct match", async () => {
@@ -82,6 +84,8 @@ describe("fetchTheMealDbRecipes", () => {
       active: ["garlic"],
       equipment: ["frying pan"],
     });
+    expect(recipe.tags.effort).toContain("low_effort");
+    expect(recipe.tags.sensory).toContain("warm");
   });
 
   it("combines every Spoonacular instruction section into the full method", () => {

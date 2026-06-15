@@ -119,7 +119,7 @@ describe("deriveMoodCuisineSignal (Slice 4)", () => {
     ];
     const s = deriveMoodCuisineSignal(observations);
     expect(s.byMood.Tired).toContain("Thai");
-    expect(s.byMood.Celebratory).toContain("Italian");
+    expect(s.byMood.Social).toContain("Italian");
     expect(s.byMood.Tired ?? []).not.toContain("Italian");
   });
 
@@ -127,6 +127,17 @@ describe("deriveMoodCuisineSignal (Slice 4)", () => {
     const signal = { byMood: { Tired: ["Thai"] }, derivationVersion: LEARNED_SIGNAL_VERSION };
     expect(moodBoost(recipe("1", "Thai"), signal, "Tired")).toBe(MOOD_BOOST);
     expect(moodBoost(recipe("1", "Thai"), signal, "Celebratory")).toBe(0);
+  });
+
+  it("normalizes historical mood observations and signals", () => {
+    const observations: RatingObservation[] = Array.from(
+      { length: 3 },
+      () => ({ cuisine: "Italian", rating: 5, mood: "Cozy" }),
+    );
+    const signal = deriveMoodCuisineSignal(observations);
+
+    expect(signal.byMood.Sad).toContain("Italian");
+    expect(moodBoost(recipe("1", "Italian"), { byMood: { Cozy: ["Italian"] }, derivationVersion: LEARNED_SIGNAL_VERSION }, "Sad")).toBe(MOOD_BOOST);
   });
 });
 

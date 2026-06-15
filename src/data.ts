@@ -9,6 +9,15 @@ export type RecipeStep = {
   equipment?: string[];
 };
 
+export type RecipeTags = {
+  mood?: string[];
+  effort?: string[];
+  sensory?: string[];
+  nutrition?: string[];
+  occasion?: string[];
+  cookingStyle?: string[];
+};
+
 export type Recipe = {
   id: string;
   title: string;
@@ -26,11 +35,15 @@ export type Recipe = {
   allergens: string[];
   equipment: string[];
   status: "published" | "review" | "draft";
+  tags?: RecipeTags;
   video?: string;        // YouTube embed URL when a cooking video is available
   sourceUrl?: string;    // original recipe URL (for attribution / full method)
 };
 
-export const moods = ["Tired", "Stressed", "Energised", "Cozy", "Celebratory", "Focused", "Adventurous", "Sad", "Happy"];
+export const moods = [
+  "Tired", "Stressed", "Sad", "Happy", "Adventurous", "Romantic",
+  "Healthy", "Lazy", "Angry", "Anxious", "Focused", "Social",
+];
 
 // ─── Cooking moods (deep profiler) ─────────────────────────────────────────────
 // The 14 headspaces a person cooks from. Selected during onboarding so Moody

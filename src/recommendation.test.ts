@@ -37,7 +37,7 @@ describe("recommendation safety", () => {
   it("ranks deterministically and records the config version", () => {
     const profile = { ...defaultProfile, equipment: ["Stovetop", "Oven", "Blender"] };
     expect(recommend(fixture, profile, "Cozy", 30, 30)).toEqual(recommend(fixture, profile, "Cozy", 30, 30));
-    expect(recommend(fixture, profile, "Cozy", 30, 30)[0].configVersion).toBe("pilot-v1");
+    expect(recommend(fixture, profile, "Cozy", 30, 30)[0].configVersion).toBe("mood-tags-v2");
   });
 
   it("never returns a recipe beyond the selected cook time", () => {
@@ -70,5 +70,25 @@ describe("recommendation safety", () => {
       { ...fixture[1], id: "vegan-keto", title: "Tofu bowl", diets: ["Vegan", "Keto"], ingredients: ["tofu"] },
       { ...fixture[1], id: "vegan-only", title: "Bean bowl", diets: ["Vegan"], ingredients: ["beans"] },
     ], { ...shared, equipment: ["Stovetop"] }).map(recipe => recipe.id)).toEqual(["vegan-keto"]);
+  });
+});
+
+describe("mood tag ranking", () => {
+  const profile = { ...defaultProfile, cuisines: [], comfortFoods: [], flavorLikes: [], textureLikes: [], equipment: ["Stovetop"] };
+
+  it("ranks recipes using weighted positive and negative mood tags", () => {
+    const recipes: Recipe[] = [
+      { ...fixture[0], id: "technical", moods: [], tags: { effort: ["technical", "many_steps", "long_prep"] } },
+      { ...fixture[0], id: "comfort", moods: [], tags: { mood: ["comforting"], effort: ["low_effort", "quick"], sensory: ["warm"] } },
+    ];
+
+    expect(recommend(recipes, profile, "Tired", 60, 60)[0].recipe.id).toBe("comfort");
+  });
+
+  it("matches legacy recipe moods to canonical check-ins", () => {
+    const legacy = { ...fixture[0], id: "legacy", moods: ["Cozy"], tags: {} };
+    const unrelated = { ...fixture[0], id: "other", moods: ["Happy"], tags: {} };
+
+    expect(recommend([unrelated, legacy], profile, "Sad", 60, 60)[0].recipe.id).toBe("legacy");
   });
 });
