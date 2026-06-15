@@ -143,18 +143,44 @@ Deno.serve(async (request) => {
     const history = Array.isArray(body.history)
       ? body.history.filter((m: any) => (m?.role === "user" || m?.role === "assistant") && typeof m?.content === "string").slice(-8).map((m: any) => ({ role: m.role, content: m.content }))
       : [];
-    const candidates = Array.isArray(body?.context?.candidates)
+    const preFetchedCandidates = Array.isArray(body?.context?.candidates)
       ? body.context.candidates.filter((r: any) => typeof r?.id === "string")
       : [];
-    const candidateIds = new Set(candidates.map((r: any) => r.id));
-    console.log(`[ai-gateway] chat: message="${message.slice(0, 80)}" candidates=${candidates.length}`);
+
+    // Strip conversational words to get a clean food search term.
+    // "show me a Yaki Udon recipe" → "Yaki Udon"
+    const foodQuery = message
+      .replace(/\b(show|find|open|get|search|look|for|me|a|an|the|some|recipe|recipes|please|can|you|i|want|need|make|cook|like|what|is|are|how|to|that|this|something|any|good|best|quick|easy|healthy)\b/gi, " ")
+      .replace(/[?!.,]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
+
+    // Search the recipes function server-side so the AI always has the specific
+    // recipe as a candidate, regardless of what the frontend pre-fetched.
+    let searchedRecipes: any[] = [];
+    if (foodQuery && SUPABASE_URL && SUPABASE_ANON_KEY) {
+      try {
+        const sr = await fetch(`${SUPABASE_URL}/functions/v1/recipes`, {
+          method: "POST",
+          headers: { authorization: auth, "content-type": "application/json", apikey: SUPABASE_ANON_KEY },
+          body: JSON.stringify({ profile: body?.context?.profile ?? {}, query: foodQuery, mood: "Cozy", time: 180, relax: false }),
+          signal: AbortSignal.timeout(8_000),
+        });
+        if (sr.ok) { const d = await sr.json(); searchedRecipes = Array.isArray(d?.recipes) ? d.recipes.slice(0, 5) : []; }
+      } catch { /* ignore — fall through to pre-fetched candidates */ }
+    }
+
+    // Merge: gateway-searched recipes first (exact match), then pre-fetched.
+    const searchedCandidates = searchedRecipes.map((r: any) => ({ id: r.id, title: r.title, time: r.time, cuisine: r.cuisine, ingredients: r.ingredients ?? [] }));
+    const allCandidates = [...searchedCandidates, ...preFetchedCandidates.filter((c: any) => !searchedCandidates.some((s: any) => s.id === c.id))];
+    const allCandidateIds = new Set(allCandidates.map((r: any) => r.id));
+    console.log(`[ai-gateway] chat: "${message.slice(0, 60)}" foodQuery="${foodQuery}" searched=${searchedRecipes.length} total_candidates=${allCandidates.length}`);
+
     const res = await callOpenAI({
       model: CHAT_MODEL,
       response_format: { type: "json_object" },
       max_tokens: 350,
       temperature: 0.7,
       messages: [
-        { role: "system", content: systemPrompt(body.context) },
+        { role: "system", content: systemPrompt({ ...body.context, candidates: allCandidates }) },
         ...history,
         { role: "user", content: message },
       ],
@@ -164,10 +190,13 @@ Deno.serve(async (request) => {
     let parsed: { message?: unknown; recipeId?: unknown } = {};
     try { parsed = JSON.parse(data.choices?.[0]?.message?.content ?? "{}"); } catch { /* fall through */ }
     const rawRecipeId = typeof parsed.recipeId === "string" ? parsed.recipeId : null;
-    const selectedRecipeId = rawRecipeId && candidateIds.has(rawRecipeId) ? rawRecipeId : undefined;
-    console.log(`[ai-gateway] reply: rawRecipeId=${rawRecipeId} valid=${!!selectedRecipeId} candidates=${candidates.length}`);
+    const selectedRecipeId = rawRecipeId && allCandidateIds.has(rawRecipeId) ? rawRecipeId : undefined;
+    console.log(`[ai-gateway] reply: rawRecipeId=${rawRecipeId} valid=${!!selectedRecipeId}`);
     const reply = typeof parsed.message === "string" ? parsed.message : "I couldn't find a suitable catalog recipe right now.";
-    return Response.json({ provider: "openai", message: reply, recipeId: selectedRecipeId }, { headers: headers(origin) });
+    // Return the full recipe object when it came from the gateway search so the
+    // frontend can render the card even if it wasn't in the local catalog.
+    const recipePayload = selectedRecipeId ? (searchedRecipes.find((r: any) => r.id === selectedRecipeId) ?? null) : null;
+    return Response.json({ provider: "openai", message: reply, recipeId: selectedRecipeId, recipe: recipePayload }, { headers: headers(origin) });
   } catch (_err) {
     return Response.json({ error: "AI request failed" }, { status: 502, headers: headers(origin) });
   }

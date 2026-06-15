@@ -2070,8 +2070,10 @@ function MoodyPanel({ profile, catalog, loadCatalog, turns, setTurns, close, ope
         candidates: moodyCandidates(searchableCatalog),
       };
       const reply = await aiChat(message, context, history);
-      const selected = resolveMoodyRecipe(reply.recipeId, searchableCatalog, profile);
-      setTurns(prev => [...prev, { role: "assistant", content: reply.message, recipeId: selected?.id }]);
+      // Gateway may return the full recipe object when it found it via server-side search.
+      const gatewayRecipe = reply.recipe as Recipe | undefined;
+      const selected = gatewayRecipe ?? resolveMoodyRecipe(reply.recipeId, searchableCatalog, profile);
+      setTurns(prev => [...prev, { role: "assistant", content: reply.message, recipeId: selected?.id, recipe: gatewayRecipe }]);
     } catch (error) {
       const content = error instanceof MoodyError && error.code === "not-signed-in"
         ? "Please sign in to chat with Moody. Recipe search and your safety filters still work without chat."
@@ -2085,7 +2087,7 @@ function MoodyPanel({ profile, catalog, loadCatalog, turns, setTurns, close, ope
   };
 
   return <div className="panel-bg" onClick={close}><aside className="moody-panel" onClick={e => e.stopPropagation()}><header><Moody /><div><b>Moody</b><span>Your dinner co-pilot</span></div><button onClick={close}><X /></button></header><div className="chat"><p>I can choose dinner, explain a recommendation, or help rescue the step you’re on.</p>{turns.map((t, i) => {
-    const linkedRecipe = resolveMoodyRecipe(t.recipeId, catalog, profile);
+    const linkedRecipe = (t.recipe as Recipe | undefined) ?? resolveMoodyRecipe(t.recipeId, catalog, profile);
     return <Fragment key={i}><p className={t.role === "user" ? "user-message" : "moody-message"}>{t.content}</p>{linkedRecipe && <button className="moody-pick" onClick={() => openRecipe(linkedRecipe)}><img src={linkedRecipe.image} alt="" /><span><small>MOODY'S RECOMMENDATION</small><b>{linkedRecipe.title}</b><em>{linkedRecipe.time} min · {linkedRecipe.reason}</em><strong>View recipe <ChevronRight size={14} /></strong></span></button>}</Fragment>;
   })}{busy && <p className="moody-message">…</p>}<div ref={bottomRef} /></div><div className="prompt-row"><button onClick={() => send("Pick the easiest safe dinner.")}>Pick the easiest</button><button onClick={() => send("I only have 15 minutes.")}>Only 15 minutes</button>{latestRecipe && <button onClick={() => send(`Why are you recommending ${latestRecipe.title}?`)}>Explain this pick</button>}</div><form onSubmit={e => { e.preventDefault(); send(input); }}><input value={input} onChange={e => setInput(e.target.value)} placeholder="Tell Moody what you need..." /><button disabled={busy}><ArrowRight /></button></form></aside></div>;
 }

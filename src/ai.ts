@@ -43,13 +43,13 @@ export type ChatContext = {
   candidates?: MoodyRecipeCandidate[];
 };
 
-export type ChatTurn = { role: "user" | "assistant"; content: string; recipeId?: string };
-export type ChatReply = { message: string; recipeId?: string };
+export type ChatTurn = { role: "user" | "assistant"; content: string; recipeId?: string; recipe?: Record<string, unknown> };
+export type ChatReply = { message: string; recipeId?: string; recipe?: Record<string, unknown> };
 
 // Ask Moody. Pass recent turns as `history` for continuity.
 export async function aiChat(message: string, context?: ChatContext, history?: ChatTurn[]): Promise<ChatReply> {
   const data = await callGateway<ChatReply>({ task: "chat", message, context, history });
-  return { message: data.message, recipeId: data.recipeId };
+  return { message: data.message, recipeId: data.recipeId, recipe: data.recipe ?? undefined };
 }
 
 export type VitaminEstimate = { name: string; amount?: number; unit?: string; percentDV?: number };
