@@ -3,10 +3,12 @@ import { cookingMoods, type Recipe } from "./data";
 import type { Profile } from "./store";
 import type { RecipeFilters } from "./searchFilters";
 
-// Fetches AI-curated, real recipes from the `recipes` edge function (Spoonacular
-// + hard safety filter + OpenAI ranking). Returns null on any failure (not signed
-// in, backend not configured, network error) so callers fall back to the local
-// deterministic ranking over the bundled recipes, the pilot keeps working.
+// Fetches real recipes from the `recipes` edge function (Spoonacular/TheMealDB +
+// hard safety filter). AI curation (OpenAI ranking) is OPT-IN via `curate` — off
+// by default for normal search, which is ranked deterministically by the caller
+// (roadmap v3, Slice 1). Returns null on any failure (not signed in, backend not
+// configured, network error) so callers fall back to local deterministic ranking
+// over the bundled recipes and the pilot keeps working.
 
 const ENDPOINT = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/recipes`;
 
@@ -63,6 +65,7 @@ export async function fetchCuratedRecipes(
   history: FoodHistory = {},
   offset = 0,
   relax = true,
+  curate = false,
 ): Promise<Recipe[] | null> {
   if (!supabase) { console.info("[recipes] Supabase not configured (.env.local), showing local recipes."); return null; }
 
@@ -73,7 +76,7 @@ export async function fetchCuratedRecipes(
 
       const body = JSON.stringify({
         profile: recipeProfilePayload(profile),
-        mood, energy, time, query, filters, history, offset, relax,
+        mood, energy, time, query, filters, history, offset, relax, curate,
       });
 
       const post = (token: string) => fetch(ENDPOINT, {

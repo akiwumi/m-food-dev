@@ -3,6 +3,51 @@ import type { Profile } from "./store";
 import type { Diner } from "./store";
 
 export const RANKING_CONFIG_VERSION = "pilot-v1";
+export const LEARNED_SIGNAL_VERSION = "cuisine-v1";
+
+// Slice 2 (roadmap v3): the first deterministic LEARNED signal. Derived from the
+// user's own validated ratings (see behavioral.ts), it names the cuisines they
+// repeatedly rate highly. It is a SOFT ranking nudge only — it never overrides the
+// hard allergy/diet safety filters, and its boost is capped so a couple of good
+// ratings can't dominate the mood match.
+export type CuisineSignal = {
+  preferred: string[];               // cuisines that cleared the confidence bar
+  support: Record<string, number>;   // observation count per preferred cuisine
+  derivationVersion: string;
+};
+
+// Capped, explainable boost for a recipe given a learned cuisine signal. Capped at
+// LEARNED_BOOST_CAP so learned preferences can nudge but never swamp the ranking.
+export const LEARNED_BOOST_CAP = 14;
+export function learnedBoost(recipe: Recipe, signal?: CuisineSignal): number {
+  if (!signal || !recipe.cuisine) return 0;
+  if (!signal.preferred.includes(recipe.cuisine)) return 0;
+  const support = signal.support[recipe.cuisine] ?? 0;
+  // Grow with support but flatten quickly and cap.
+  return Math.min(LEARNED_BOOST_CAP, 8 + support * 2);
+}
+
+// Slice 4 (roadmap v3): a second deterministic signal — which cuisines the user
+// rates highly *in a given mood*. Applied only when the current mood matches.
+export const MOOD_BOOST = 8;
+export type MoodCuisineSignal = {
+  byMood: Record<string, string[]>;   // mood -> cuisines they enjoy in that mood
+  derivationVersion: string;
+};
+export function moodBoost(recipe: Recipe, signal: MoodCuisineSignal | undefined, mood: string): number {
+  if (!signal || !recipe.cuisine || !mood) return 0;
+  return (signal.byMood[mood] ?? []).includes(recipe.cuisine) ? MOOD_BOOST : 0;
+}
+
+// The bundle of learned signals fed into ranking, and the diversity cap on their
+// combined effect (roadmap Slice 4: cap the max boost so learning can't crowd out
+// novelty and variety).
+export type LearnedSignals = { cuisine?: CuisineSignal; moodCuisine?: MoodCuisineSignal };
+export const LEARNED_TOTAL_CAP = 18;
+export function combinedLearnedBoost(recipe: Recipe, signals: LearnedSignals | undefined, mood: string): number {
+  if (!signals) return 0;
+  return Math.min(LEARNED_TOTAL_CAP, learnedBoost(recipe, signals.cuisine) + moodBoost(recipe, signals.moodCuisine, mood));
+}
 const LAND_MEAT = /\b(beef|steak|veal|chicken|turkey|duck|pork|bacon|ham|sausage|lamb|mutton|goat|venison|rabbit)\b/i;
 const FISH = /\b(fish|salmon|tuna|cod|haddock|trout|sardine|anchov|prawn|shrimp|crab|lobster|mussel|clam|oyster|scallop|seafood)\b/i;
 
@@ -104,10 +149,18 @@ export function recipeScore(recipe: Recipe, profile: Profile, mood: string, ener
     dislikePenalty + flavorAvoidPenalty + textureAvoidPenalty + spicePenalty + goalBoost;
 }
 
-export function recommend(recipes: Recipe[], profile: Profile, mood: string, energy: number, time: number) {
+// `signal` is the optional learned cuisine preference (Slice 2). When omitted (the
+// default, and whenever the learned-signals flag is off or consent is absent), the
+// ranking is identical to before — so turning learning on is the only thing that
+// can change results, and turning it off is a clean revert.
+export function recommend(recipes: Recipe[], profile: Profile, mood: string, energy: number, time: number, signals?: LearnedSignals) {
   return safeRecipes(recipes, profile)
     .filter(recipe => recipe.time <= time)
-    .map(recipe => ({ recipe, score: recipeScore(recipe, profile, mood, energy, time), configVersion: RANKING_CONFIG_VERSION }))
+    .map(recipe => ({
+      recipe,
+      score: recipeScore(recipe, profile, mood, energy, time) + combinedLearnedBoost(recipe, signals, mood),
+      configVersion: RANKING_CONFIG_VERSION,
+    }))
     .sort((a, b) => b.score - a.score);
 }
 

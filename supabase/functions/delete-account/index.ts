@@ -68,9 +68,24 @@ Deno.serve(async (req) => {
     }
   }
 
-  // ── 2. Remove the user's database rows (best-effort) ─────────────────────
-  for (const table of ["subscriptions", "invite_redemptions"]) {
-    try { await supabaseAdmin(`/${table}?user_id=eq.${userId}`, { method: "DELETE" }); } catch { /* ignore */ }
+  // ── 2. Remove the user's database rows ───────────────────────────────────
+  // The auth-user delete in step 3 cascades EVERY public FK to auth.users (all are
+  // ON DELETE CASCADE — verified invariant, see 013/governance test), so this is
+  // the single enforcement path the Data Governance gate requires. We still delete
+  // the sensitive behavioural + health-adjacent classes explicitly first, so the
+  // intent is auditable and ordering is defined rather than implicit.
+  const byUserId = [
+    "consents", "events",                                  // telemetry + consent of record
+    "mood_entries", "recommendation_runs", "cooking_sessions", "diary_entries", // behavioural learning
+    "health_trend_snapshots",                              // health-adjacent
+    "subscriptions", "invite_redemptions",                 // billing
+  ];
+  for (const table of byUserId) {
+    try { await supabaseAdmin(`/${table}?user_id=eq.${userId}`, { method: "DELETE" }); } catch { /* cascade backstops in step 3 */ }
+  }
+  // These two key on owner_id, not user_id.
+  for (const table of ["household_diners", "family_health_snapshots"]) {
+    try { await supabaseAdmin(`/${table}?owner_id=eq.${userId}`, { method: "DELETE" }); } catch { /* cascade backstops in step 3 */ }
   }
 
   // ── 3. Delete the auth user itself ───────────────────────────────────────

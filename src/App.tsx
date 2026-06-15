@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, createContext, useContext } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback, createContext, useContext } from "react";
 import {
   ArrowLeft, ArrowRight, Bell, BookOpen, CalendarDays, Check, ChefHat, ChevronRight,
   Clock3, Heart, Home, ListChecks, Menu, MoreVertical, Play, RotateCcw, Search,
@@ -10,7 +10,8 @@ import {
 import { moods, cookingMoods, skillLevels, type Recipe } from "./data";
 import { bundledRecipes } from "./bundledRecipes";
 import { clearStored, defaultDiners, defaultProfile, readStored, useStoredState, writeStored, type Diner, type Profile, type SocialPost } from "./store";
-import { profileForDiners, recommend, safeRecipes as applySafety } from "./recommendation";
+import { profileForDiners, recommend, safeRecipes as applySafety, RANKING_CONFIG_VERSION, type CuisineSignal, type MoodCuisineSignal, type LearnedSignals } from "./recommendation";
+import { recordRating, recordRun, fetchRatingHistory, deriveCuisineSignal, deriveMoodCuisineSignal, suppressSignal } from "./behavioral";
 import { cleanText, readSafeImage, validateEmail } from "./security";
 import { onboardingQuestions, onboardingSections, PANTRY_GROUPS, type OnboardingKey, type OnboardingQuestion, type ProfileValue } from "./onboarding";
 import { SPOON_CUISINES, MEAL_TYPES, SEARCH_DIETS, SORT_OPTIONS, type RecipeFilters } from "./searchFilters";
@@ -23,6 +24,9 @@ import { supabase } from "./supabase";
 import { displayStepDetail, displayStepTitle, formatTimer, stepImageSources } from "./cooking";
 import { RecipeImage } from "./RecipeImage";
 import { finalizeSearchResults } from "./searchResults";
+import { trackSearch } from "./telemetry";
+import { getConsents, setConsent, resetLearningData, exportMyData, NO_CONSENT, type ConsentState, type ConsentScope } from "./governance";
+import { deterministicTasteSummary, fetchTasteSummary } from "./tasteSummary";
 import { Landing } from "./Landing";
 import { readDevTestState } from "./devTestState";
 import gsap from "gsap";
@@ -83,7 +87,7 @@ async function syncSubscriptionFromDB(): Promise<{ status: string; plan: string;
 // every screen threading a callback through its props.
 const MenuCtx = createContext<() => void>(() => {});
 
-type Page = "home" | "search" | "results" | "diary" | "grocery" | "planner" | "detail" | "cook" | "insights" | "settings" | "favorites" | "import" | "admin" | "billing" | "psych-profile" | "food-profile" | "account" | "community" | "health" | "health-nutrition" | "health-variety" | "health-patterns" | "family-health" | "diners" | "food-log" | "pantry" | "help";
+type Page = "home" | "search" | "results" | "diary" | "grocery" | "planner" | "detail" | "cook" | "insights" | "settings" | "favorites" | "import" | "admin" | "billing" | "psych-profile" | "food-profile" | "account" | "community" | "health" | "health-nutrition" | "health-variety" | "health-patterns" | "family-health" | "diners" | "food-log" | "pantry" | "help" | "privacy";
 type SearchRequest = { query: string; filters: RecipeFilters };
 type Entry = "welcome" | "login" | "onboarding" | "account" | "verify" | "verified" | "subscription" | "app";
 const PLANS = [
@@ -130,6 +134,27 @@ export default function App() {
   const [diners, setDiners] = useStoredState<Diner[]>("moodfood-diners", defaultDiners);
   const [selectedDiners, setSelectedDiners] = useState<string[]>(["self"]);
   const [eaterCount, setEaterCount] = useStoredState<number>("moodfood-eater-count", 1);
+  // Slice 1 (roadmap v3): AI curation is opt-in, default OFF. Normal search and the
+  // mood feed rank real provider recipes deterministically; turning this on lets
+  // Moody (OpenAI) re-rank the personalized mood feed — a clearly labeled extra.
+  const [aiCuration, setAiCuration] = useStoredState<boolean>("moodfood-ai-curation", false);
+  // Slice 2 (roadmap v3): learned-signal ranking is opt-in AND consent-gated. The
+  // flag lets a user turn the learned cuisine nudge on/off; `behavioralConsent`
+  // mirrors the server consent so we never record or apply learning without it.
+  const [learnedSignals, setLearnedSignals] = useStoredState<boolean>("moodfood-learned-signals", false);
+  const [behavioralConsent, setBehavioralConsent] = useState(false);
+  const [cuisineSignal, setCuisineSignal] = useState<CuisineSignal | null>(null);
+  const [moodSignal, setMoodSignal] = useState<MoodCuisineSignal | null>(null);
+  // The learned boost is applied to ranking ONLY when the toggle is on; the signal
+  // stays visible (Taste memory) either way. Declared here so the ranking memos below
+  // can read it without a temporal-dead-zone hazard.
+  const appliedSignals: LearnedSignals | undefined =
+    learnedSignals && (cuisineSignal || moodSignal)
+      ? { cuisine: cuisineSignal ?? undefined, moodCuisine: moodSignal ?? undefined }
+      : undefined;
+  // Slice 3 (roadmap v3): per-signal "forget". Cuisines the user has told us to stop
+  // using are excluded from the learned signal — an explicit correction always wins.
+  const [suppressedCuisines, setSuppressedCuisines] = useStoredState<string[]>("moodfood-suppressed-cuisines", []);
   const sharedProfile = useMemo(() => profileForDiners(profile, diners.filter(d => selectedDiners.includes(d.id) && d.id !== "self")), [profile, diners, selectedDiners]);
 
   // Browser automation cannot use javascript: URLs to mutate localStorage.
@@ -149,38 +174,56 @@ export default function App() {
   // Seeded with the offline catalog so the app always has real recipes to rank,
   // even before (or without) a live fetch.
   const [catalog, setCatalog] = useState<Recipe[]>(bundledRecipes);
+  // aiRanked = the order returned by AI curation (only when the user opts into it).
+  // liveSet = real provider candidates fetched WITHOUT AI curation, to be ranked
+  // deterministically on the client (the Slice-1 default). Kept separate so the
+  // deterministic path never silently displays raw provider order as if curated.
   const [aiRanked, setAiRanked] = useState<Recipe[] | null>(null);
+  const [liveSet, setLiveSet] = useState<Recipe[] | null>(null);
   const [curating, setCurating] = useState(false);
   const [hasFetched, setHasFetched] = useState(false);
   const [moreOffset, setMoreOffset] = useState(0);
   const [recipeNonce, setRecipeNonce] = useState(0); // bump to force a re-fetch (Retry)
   const safeRecipes = useMemo(() => applySafety(catalog, sharedProfile), [catalog, sharedProfile]);
-  const localRanked = useMemo(() => recommend(catalog, sharedProfile, mood, energy, time).map(item => item.recipe), [catalog, sharedProfile, mood, energy, time]);
+  const localRanked = useMemo(() => recommend(catalog, sharedProfile, mood, energy, time, appliedSignals).map(item => item.recipe), [catalog, sharedProfile, mood, energy, time, appliedSignals]);
   const ACCESSORY_TYPES = useMemo(() => new Set(["dessert", "desserts", "snack", "snacks", "drink", "drinks", "beverage", "beverages", "sweet", "sweets"]), []);
   // Offline fallback: rank the bundled catalog for this profile when a live fetch
   // fails/empties. Honors the home check-in's cuisine / course / diet selections
   // as hard filters (so offline picks match what the user asked for), then
   // mood-ranks what remains — relaxing the time cap if the strict pass is empty.
-  const localFallback = useMemo(() => {
+  // Ranks any candidate pool for the current check-in: applies the home filters as
+  // hard constraints + client safety, mood-ranks what remains, and relaxes the time
+  // cap if the strict pass is empty. Shared by the bundled fallback and the live
+  // (uncurated) provider set so both honor exactly the same hard constraints.
+  const rankForCheckin = useCallback((pool: Recipe[]) => {
     const filters = {
       cuisines: cuisine ? [cuisine] : undefined,
       type: mealCategory || undefined,
       diet: homeDiet !== "Any" ? homeDiet : undefined,
     };
-    const pool = finalizeSearchResults(bundledRecipes, sharedProfile, filters, 999);
-    const strict = recommend(pool, sharedProfile, mood, energy, time).map(item => item.recipe);
-    return strict.length ? strict : recommend(pool, sharedProfile, mood, energy, 999).map(item => item.recipe);
-  }, [sharedProfile, mood, energy, time, cuisine, mealCategory, homeDiet]);
+    const filtered = finalizeSearchResults(pool, sharedProfile, filters, 999);
+    const strict = recommend(filtered, sharedProfile, mood, energy, time, appliedSignals).map(item => item.recipe);
+    return strict.length ? strict : recommend(filtered, sharedProfile, mood, energy, 999, appliedSignals).map(item => item.recipe);
+  }, [sharedProfile, mood, energy, time, cuisine, mealCategory, homeDiet, appliedSignals]);
+
+  const localFallback = useMemo(() => rankForCheckin(bundledRecipes), [rankForCheckin]);
+  // Deterministic ranking of the live, uncurated provider candidates (Slice-1
+  // default). Null until a live fetch lands.
+  const deterministicLive = useMemo(
+    () => (liveSet?.length ? rankForCheckin(liveSet) : null),
+    [liveSet, rankForCheckin],
+  );
 
   const ranked = useMemo(() => {
-    // Prefer live AI results; fall back to the offline catalog when there are none.
-    const base = aiRanked ?? localFallback;
+    // Order of preference: AI-curated (opt-in) → deterministic ranking of live
+    // provider recipes → deterministic ranking of the bundled offline catalog.
+    const base = aiRanked ?? deterministicLive ?? localFallback;
     if (mealCategory) return base;
     return base.filter(r => {
       const types = (r.mealTypes ?? []).map((t: string) => t.toLowerCase());
       return !types.length || !types.every((t: string) => ACCESSORY_TYPES.has(t));
     });
-  }, [aiRanked, localFallback, mealCategory, ACCESSORY_TYPES]);
+  }, [aiRanked, deterministicLive, localFallback, mealCategory, ACCESSORY_TYPES]);
 
   // What the user has actually cooked, logged, and saved, so the AI learns from
   // behaviour, not just the stated profile. Recomputed as those change.
@@ -197,6 +240,7 @@ export default function App() {
     setSearchLoading(true);
     setPage("results");
     window.scrollTo(0, 0);
+    const startedAt = performance.now();
     try {
       // Explicit search honors the filters exactly — relax:false tells the backend
       // not to silently drop cuisine/course/time to force a result.
@@ -205,35 +249,98 @@ export default function App() {
       // the SAME filters applied. If nothing matches, leave it empty so the results
       // screen shows "No exact matches" rather than recipes that ignore the filters.
       let results = live ?? [];
+      let fallbackUsed = false;
       if (!results.length && !nextPage) {
         results = finalizeSearchResults(bundledRecipes, sharedProfile, request.filters);
+        fallbackUsed = true;
       }
       setSearchResults(results);
+      // Slice 0 telemetry: operational only, fire-and-forget (never awaited).
+      trackSearch({
+        mode: nextPage ? "load_more" : "search",
+        durationMs: Math.round(performance.now() - startedAt),
+        resultCount: results.length,
+        source: live?.length ? "spoonacular" : fallbackUsed && results.length ? "local" : "none",
+        aiAttempted: true,
+        aiSucceeded: !!live?.length,
+        fallbackUsed,
+        rankingConfigVersion: RANKING_CONFIG_VERSION,
+        hasQuery: !!request.query,
+        filterCount: Object.values(request.filters).filter(v => v !== undefined && v !== "" && !(Array.isArray(v) && v.length === 0)).length,
+      });
     } finally {
       setSearchLoading(false);
     }
   };
 
-  // When the user asks for recommendations, fetch real AI-curated recipes.
+  // Slice 2: mirror the server consent so we never record or apply learning without
+  // it, and (when learning is on + consented) derive the cuisine signal from the
+  // user's own validated ratings.
+  useEffect(() => {
+    if (entry !== "app") return;
+    let cancelled = false;
+    getConsents().then(c => { if (!cancelled) setBehavioralConsent(c.behavioral_learning); });
+    return () => { cancelled = true; };
+  }, [entry, page]);
+  // Derive the signal whenever the user has consented — so they can SEE what we've
+  // learned (Slice 3) independently of whether the ranking boost is switched on.
+  // Suppressed cuisines (an explicit "forget") are removed from the signal.
+  useEffect(() => {
+    if (entry !== "app" || !behavioralConsent) { setCuisineSignal(null); setMoodSignal(null); return; }
+    let cancelled = false;
+    fetchRatingHistory().then(h => {
+      if (cancelled) return;
+      setCuisineSignal(suppressSignal(deriveCuisineSignal(h), suppressedCuisines));
+      // Mood-pattern signal, with the same "forget" list applied to each mood's list.
+      const ms = deriveMoodCuisineSignal(h);
+      const drop = new Set(suppressedCuisines);
+      const byMood: Record<string, string[]> = {};
+      for (const [m, cs] of Object.entries(ms.byMood)) { const kept = cs.filter(c => !drop.has(c)); if (kept.length) byMood[m] = kept; }
+      setMoodSignal({ ...ms, byMood });
+    });
+    return () => { cancelled = true; };
+  }, [entry, behavioralConsent, suppressedCuisines, diary]);
+
+  // When the user asks for recommendations, fetch real recipes (deterministic by
+  // default; AI-curated only when opted in).
   useEffect(() => {
     if (entry !== "app" || !results) return;
     let cancelled = false;
     setCurating(true);
     setAiRanked(null); // clear stale results immediately so loading state shows
+    setLiveSet(null);
     setMoreOffset(0);
-    fetchCuratedRecipes(sharedProfile, mood, energy, time, "", { type: mealCategory || undefined, cuisines: cuisine ? [cuisine] : undefined, diet: homeDiet !== "Any" ? homeDiet : undefined }, foodHistory, 0)
+    const startedAt = performance.now();
+    fetchCuratedRecipes(sharedProfile, mood, energy, time, "", { type: mealCategory || undefined, cuisines: cuisine ? [cuisine] : undefined, diet: homeDiet !== "Any" ? homeDiet : undefined }, foodHistory, 0, true, aiCuration)
       .then(list => {
         if (cancelled) return;
         if (list?.length) {
           setCatalog(prev => { const ids = new Set(list.map(r => r.id)); return [...list, ...prev.filter(r => !ids.has(r.id))]; });
-          setAiRanked(list);
+          // Trust the AI order only when curation was actually requested; otherwise
+          // rank the real candidates deterministically (the Slice-1 default).
+          if (aiCuration) setAiRanked(list); else setLiveSet(list);
+          // Slice 2: record the run (candidates + ranking version) so later outcomes
+          // can be tied back to it. Consent-gated, best-effort, never awaited.
+          if (behavioralConsent) void recordRun({ rankingConfigVersion: RANKING_CONFIG_VERSION, candidates: list.map(r => ({ id: r.id, title: r.title, cuisine: r.cuisine })), mood, energy });
         } else {
-          setAiRanked(null); // not signed in / not configured → local ranking
+          setAiRanked(null); setLiveSet(null); // not signed in / configured → bundled ranking
         }
+        // Telemetry: home check-in is a search. On the local-fallback path the user
+        // sees `localFallback`, so report its size as the result count.
+        trackSearch({
+          mode: "home",
+          durationMs: Math.round(performance.now() - startedAt),
+          resultCount: list?.length ? list.length : localFallback.length,
+          source: list?.length ? "spoonacular" : localFallback.length ? "local" : "none",
+          aiAttempted: aiCuration,
+          aiSucceeded: aiCuration && !!list?.length,
+          fallbackUsed: !list?.length,
+          rankingConfigVersion: RANKING_CONFIG_VERSION,
+        });
       })
       .finally(() => { if (!cancelled) { setCurating(false); setHasFetched(true); } });
     return () => { cancelled = true; };
-  }, [results, mood, energy, time, sharedProfile, entry, recipeNonce, mealCategory, cuisine, homeDiet]);
+  }, [results, mood, energy, time, sharedProfile, entry, recipeNonce, mealCategory, cuisine, homeDiet, aiCuration]);
 
   // "Show me 5 more", fetch a fresh page (next offset) and append. Falls back to
   // simply revealing more of the local ranking when the backend isn't available.
@@ -241,12 +348,26 @@ export default function App() {
     setCurating(true);
     const nextOffset = moreOffset + 10;
     setMoreOffset(nextOffset);
+    const startedAt = performance.now();
     try {
-      const list = await fetchCuratedRecipes(sharedProfile, mood, energy, time, "", { type: mealCategory || undefined, cuisines: cuisine ? [cuisine] : undefined, diet: homeDiet !== "Any" ? homeDiet : undefined }, foodHistory, nextOffset);
+      const list = await fetchCuratedRecipes(sharedProfile, mood, energy, time, "", { type: mealCategory || undefined, cuisines: cuisine ? [cuisine] : undefined, diet: homeDiet !== "Any" ? homeDiet : undefined }, foodHistory, nextOffset, true, aiCuration);
       if (list?.length) {
         setCatalog(prev => { const ids = new Set(prev.map(r => r.id)); return [...prev, ...list.filter(r => !ids.has(r.id))]; });
-        setAiRanked(prev => { const seen = new Set((prev ?? []).map(r => r.id)); return [...(prev ?? []), ...list.filter(r => !seen.has(r.id))]; });
+        // Append to whichever ranking path is active so "show more" extends the
+        // same list the user is looking at (AI-curated vs deterministic-live).
+        const append = (prev: Recipe[] | null) => { const seen = new Set((prev ?? []).map(r => r.id)); return [...(prev ?? []), ...list.filter(r => !seen.has(r.id))]; };
+        if (aiCuration) setAiRanked(append); else setLiveSet(append);
       }
+      trackSearch({
+        mode: "load_more",
+        durationMs: Math.round(performance.now() - startedAt),
+        resultCount: list?.length ?? 0,
+        source: list?.length ? "spoonacular" : "none",
+        aiAttempted: aiCuration,
+        aiSucceeded: aiCuration && !!list?.length,
+        fallbackUsed: false,
+        rankingConfigVersion: RANKING_CONFIG_VERSION,
+      });
     } finally {
       setCurating(false);
     }
@@ -413,21 +534,22 @@ export default function App() {
   return <MenuCtx.Provider value={() => setMenuOpen(true)}><div className={page === "cook" ? "app cooking" : "app"}>
     {page !== "cook" && <DesktopNav page={page} go={go} />}
     <main>
-      {page === "home" && <HomeScreen profile={profile} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results={false} setResults={setResults} beginResults={() => { setSearchRequest(null); setCurating(true); setAiRanked(null); setHasFetched(false); setResults(true); go("results"); }} ranked={ranked} curating={curating} loadMore={loadMore} live={aiRanked !== null} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} />}
+      {page === "home" && <HomeScreen profile={profile} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results={false} setResults={setResults} beginResults={() => { setSearchRequest(null); setCurating(true); setAiRanked(null); setHasFetched(false); setResults(true); go("results"); }} ranked={ranked} curating={curating} loadMore={loadMore} live={aiRanked !== null || deterministicLive !== null} curated={aiRanked !== null} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} />}
       {page === "search" && <SearchScreen profile={sharedProfile} onSearch={request => runSearch(request)} />}
       {page === "results" && (searchRequest
         ? <SearchResultsScreen results={searchResults} loading={searchLoading} request={searchRequest} more={() => runSearch(searchRequest, true)} home={() => go("home")} search={() => go("search")} open={open} saved={saved} setSaved={setSaved} />
         : results
-          ? <HomeScreen profile={profile} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results setResults={v => { setResults(v); if (!v) go("home"); }} beginResults={() => {}} ranked={ranked} curating={curating} hasFetched={hasFetched} loadMore={loadMore} live={aiRanked !== null} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} />
+          ? <HomeScreen profile={profile} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results setResults={v => { setResults(v); if (!v) go("home"); }} beginResults={() => {}} ranked={ranked} curating={curating} hasFetched={hasFetched} loadMore={loadMore} live={aiRanked !== null || deterministicLive !== null} curated={aiRanked !== null} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} />
           : <EmptyResultsScreen home={() => go("home")} search={() => go("search")} />)}
       {page === "detail" && selected && <DetailScreen recipe={selected} servings={eaterCount} back={() => go(detailReturnPage)} cook={() => go("cook")} saved={saved.includes(selected.id)} toggleSave={() => setSaved(toggle(saved, selected.id))} addGroceries={() => setGroceries(v => [...new Set([...v, ...selected.ingredients])])} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} shareToCommunity={() => shareRecipe(selected)} allergies={profile.allergies} />}
-      {page === "cook" && selected && <CookScreen recipe={selected} exit={() => go("detail")} allergies={profile.allergies} finish={(rating, photo) => { setDiary(v => [{ recipe: selected, rating, when: "Today" }, ...v]); if (photo) setProfile(p => ({ ...p, photoLogs: [photo, ...p.photoLogs] })); go("diary"); }} />}
+      {page === "cook" && selected && <CookScreen recipe={selected} exit={() => go("detail")} allergies={profile.allergies} finish={(rating, photo) => { setDiary(v => [{ recipe: selected, rating, when: "Today" }, ...v]); if (photo) setProfile(p => ({ ...p, photoLogs: [photo, ...p.photoLogs] })); if (behavioralConsent) void recordRating({ providerRecipeId: selected.id, title: selected.title, cuisine: selected.cuisine, source: aiCuration ? "ai" : "deterministic", rating, mood }); go("diary"); }} />}
       {page === "diary" && <DiaryScreen diary={diary} open={open} photoLogs={profile.photoLogs} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} goFoodLog={() => go("food-log")} allergies={profile.allergies} />}
       {page === "grocery" && <GroceryScreen items={groceries} setItems={setGroceries} />}
       {page === "pantry" && <PantryScreen items={profile.pantryStaples} setItems={items => setProfile(p => ({ ...p, pantryStaples: items }))} addToGrocery={item => setGroceries(v => v.includes(item) ? v : [...v, item])} />}
       {page === "planner" && <PlannerScreen open={open} />}
       {page === "insights" && <InsightsScreen diary={diary} />}
-      {page === "settings" && <SettingsScreen profile={profile} save={setProfile} go={go} logout={() => { authSignOut(); setEntry("welcome"); }} />}
+      {page === "settings" && <SettingsScreen profile={profile} save={setProfile} go={go} logout={() => { authSignOut(); setEntry("welcome"); }} aiCuration={aiCuration} setAiCuration={setAiCuration} learnedSignals={learnedSignals} setLearnedSignals={setLearnedSignals} behavioralConsent={behavioralConsent} />}
+      {page === "privacy" && <DataPrivacyScreen signal={cuisineSignal} moodSignal={moodSignal} suppressed={suppressedCuisines} learningOn={learnedSignals} onForget={c => setSuppressedCuisines(prev => [...new Set([...prev, c])])} onRestore={c => setSuppressedCuisines(prev => prev.filter(x => x !== c))} />}
       {page === "favorites" && <LibraryScreen title="Saved recipes" source={safeRecipes.filter(r => saved.includes(r.id))} open={open} remove={r => setSaved(saved.filter(id => id !== r.id))} />}
       {page === "import" && <ImportScreen />}
       {page === "admin" && <AdminScreen catalog={catalog} />}
@@ -849,12 +971,12 @@ function AppHeader({ openNotifs, unread, profile }: { openNotifs?: () => void; u
   );
 }
 
-function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, mealCategory, setMealCategory, cuisine, setCuisine, diet, setDiet, results, setResults, beginResults, ranked, curating, hasFetched, loadMore, live, retry, open, go, diners, selectedDiners, setSelectedDiners, eaterCount, setEaterCount, openNotifs, unread, addPhoto }: {
+function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, mealCategory, setMealCategory, cuisine, setCuisine, diet, setDiet, results, setResults, beginResults, ranked, curating, hasFetched, loadMore, live, curated, retry, open, go, diners, selectedDiners, setSelectedDiners, eaterCount, setEaterCount, openNotifs, unread, addPhoto }: {
   profile: Profile; mood: string; setMood: (v: string) => void; energy: number; setEnergy: (v: number) => void; time: number; setTime: (v: number) => void;
   mealCategory: string; setMealCategory: (v: string) => void;
   cuisine: string; setCuisine: (v: string) => void;
   diet: string; setDiet: (v: string) => void;
-  results: boolean; setResults: (v: boolean) => void; beginResults: () => void; ranked: Recipe[]; curating?: boolean; hasFetched?: boolean; loadMore?: () => void; live?: boolean; retry?: () => void; open: (r: Recipe) => void; go: (p: Page) => void;
+  results: boolean; setResults: (v: boolean) => void; beginResults: () => void; ranked: Recipe[]; curating?: boolean; hasFetched?: boolean; loadMore?: () => void; live?: boolean; curated?: boolean; retry?: () => void; open: (r: Recipe) => void; go: (p: Page) => void;
   diners: Diner[]; selectedDiners: string[]; setSelectedDiners: (v: string[]) => void;
   eaterCount: number; setEaterCount: (v: number) => void; openNotifs?: () => void; unread?: number;
   addPhoto: (p: FoodPhoto) => void;
@@ -879,8 +1001,9 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
       <div className="home-greeting">
         <h1>{mealCategory ? `${mealCategory[0].toUpperCase()}${mealCategory.slice(1)} picks.` : "Tonight’s picks."}</h1>
         <p>{energy < 50 ? "Low-effort" : "Interesting"}, {mood.toLowerCase()}{mealCategory ? `, ${mealCategory}` : ""}{cuisine ? `, ${cuisine}` : ""}, within {time} min · {eaterCount} {eaterCount === 1 ? "person" : "people"}</p>
-        {live && <p className="source-note live"><Check size={13} /> Live picks, freshly curated for you.</p>}
-        {!live && hasFetched && visible.length > 0 && <p className="source-note">Offline picks from your cookbook — live curation is unavailable right now.</p>}
+        {live && curated && <p className="source-note live"><Check size={13} /> Live picks, freshly curated by Moody for you.</p>}
+        {live && !curated && <p className="source-note live"><Check size={13} /> Live picks, matched to your mood.</p>}
+        {!live && hasFetched && visible.length > 0 && <p className="source-note">Offline picks from your cookbook — live recipes are unavailable right now.</p>}
       </div>
       {visible.length ? (
         <div style={{ padding: "0 16px", display: "grid", gap: 14 }}>
@@ -1338,10 +1461,94 @@ function InsightsScreen({ diary }: { diary: { recipe: Recipe; rating: number; wh
 function LibraryScreen({ title, source, open, remove }: { title: string; source: Recipe[]; open: (r: Recipe) => void; remove?: (r: Recipe) => void }) {
   return <div className="screen"><TopBar title={title} /><div className="search-grid">{source.length ? source.map(r => <article key={r.id}>{remove && <button className="remove-saved" aria-label={`Remove ${r.title} from saved`} onClick={() => remove(r)}><Trash2 size={17} /></button>}<img src={r.image} alt="" /><div><h2>{r.title}</h2><p>{r.reason}</p><button className="primary" onClick={() => open(r)}>View recipe</button></div></article>) : <div className="empty-state"><Heart /><h2>No saved recipes yet</h2><p>Save recipes that feel like good future answers.</p></div>}</div></div>;
 }
-function SettingsScreen({ profile, save, go, logout }: { profile: Profile; save: (p: Profile) => void; go: (p: Page) => void; logout: () => void }) {
-  return <div className="screen"><TopBar title="Profile & settings" /><section className="profile-card">{profile.avatar ? <img src={profile.avatar} alt={profile.name} /> : <div>{profile.name.slice(0, 2).toUpperCase()}</div>}<h2>{profile.name}</h2><p>{profile.email || "Pilot preview profile"}</p><span>{profile.diet} · {profile.skill}</span></section><SettingsGroup title="ACCOUNT & COMMUNITY"><button onClick={() => go("account")}><UserRound />Account and public profile<ChevronRight /></button><button onClick={() => go("community")}><Users />Community and connections<ChevronRight /></button><button onClick={() => go("diners")}><UserPlus />Household diners<ChevronRight /></button></SettingsGroup><SettingsGroup title="HEALTH & FOOD PROFILE"><button onClick={() => go("food-profile")}><ClipboardCheck />Food profile &amp; preferences<ChevronRight /></button><button onClick={() => go("health")}><Activity />Health trends<ChevronRight /></button><button onClick={() => go("food-log")}><Camera />Food photo log<ChevronRight /></button><button onClick={() => go("psych-profile")}><Sparkles />Psychological food profile<ChevronRight /></button><button onClick={() => go("favorites")}><Heart />Saved recipes<ChevronRight /></button><button onClick={() => go("insights")}><BarChart3 />Weekly reflections<ChevronRight /></button><button><ShieldCheck />Safety filters<span>{profile.allergies.join(", ") || "None"}</span></button></SettingsGroup><SettingsGroup title="PREFERENCES"><label>Usual servings<input type="number" min="1" max="10" value={profile.servings} onChange={e => save({ ...profile, servings: +e.target.value })} /></label><button onClick={() => go("billing")}><Star />Subscription &amp; billing<ChevronRight /></button><button onClick={() => go("import")}><Upload />Import a recipe<ChevronRight /></button><button onClick={() => go("admin")}><LayoutDashboard />Editorial console<ChevronRight /></button><button onClick={() => go("help")}><HelpCircle />Help, tutorial &amp; FAQ<ChevronRight /></button></SettingsGroup><button className="danger" onClick={logout}><LogOut />Sign out and replay first launch</button></div>;
+function SettingsScreen({ profile, save, go, logout, aiCuration, setAiCuration, learnedSignals, setLearnedSignals, behavioralConsent }: { profile: Profile; save: (p: Profile) => void; go: (p: Page) => void; logout: () => void; aiCuration: boolean; setAiCuration: (v: boolean) => void; learnedSignals: boolean; setLearnedSignals: (v: boolean) => void; behavioralConsent: boolean }) {
+  return <div className="screen"><TopBar title="Profile & settings" /><section className="profile-card">{profile.avatar ? <img src={profile.avatar} alt={profile.name} /> : <div>{profile.name.slice(0, 2).toUpperCase()}</div>}<h2>{profile.name}</h2><p>{profile.email || "Pilot preview profile"}</p><span>{profile.diet} · {profile.skill}</span></section><SettingsGroup title="ACCOUNT & COMMUNITY"><button onClick={() => go("account")}><UserRound />Account and public profile<ChevronRight /></button><button onClick={() => go("community")}><Users />Community and connections<ChevronRight /></button><button onClick={() => go("diners")}><UserPlus />Household diners<ChevronRight /></button></SettingsGroup><SettingsGroup title="HEALTH & FOOD PROFILE"><button onClick={() => go("food-profile")}><ClipboardCheck />Food profile &amp; preferences<ChevronRight /></button><button onClick={() => go("health")}><Activity />Health trends<ChevronRight /></button><button onClick={() => go("food-log")}><Camera />Food photo log<ChevronRight /></button><button onClick={() => go("psych-profile")}><Sparkles />Psychological food profile<ChevronRight /></button><button onClick={() => go("favorites")}><Heart />Saved recipes<ChevronRight /></button><button onClick={() => go("insights")}><BarChart3 />Weekly reflections<ChevronRight /></button><button><ShieldCheck />Safety filters<span>{profile.allergies.join(", ") || "None"}</span></button></SettingsGroup><SettingsGroup title="PREFERENCES"><label>Usual servings<input type="number" min="1" max="10" value={profile.servings} onChange={e => save({ ...profile, servings: +e.target.value })} /></label><label className="settings-toggle"><span><Sparkles size={15} />Let Moody personalize my mood feed<small>AI re-ranks your live picks. Off by default — your picks are mood-matched without it. Search always stays AI-free.</small></span><input type="checkbox" checked={aiCuration} onChange={e => setAiCuration(e.target.checked)} /></label><label className="settings-toggle"><span><BarChart3 size={15} />Learn from what I cook &amp; rate<small>{behavioralConsent ? "Nudges your picks toward cuisines you rate highly. Needs a few ratings first." : "Turn on “Learn from my recipe behaviour” in Data & privacy first."}</small></span><input type="checkbox" disabled={!behavioralConsent} checked={learnedSignals && behavioralConsent} onChange={e => setLearnedSignals(e.target.checked)} /></label><button onClick={() => go("privacy")}><ShieldCheck />Data &amp; privacy<ChevronRight /></button><button onClick={() => go("billing")}><Star />Subscription &amp; billing<ChevronRight /></button><button onClick={() => go("import")}><Upload />Import a recipe<ChevronRight /></button><button onClick={() => go("admin")}><LayoutDashboard />Editorial console<ChevronRight /></button><button onClick={() => go("help")}><HelpCircle />Help, tutorial &amp; FAQ<ChevronRight /></button></SettingsGroup><button className="danger" onClick={logout}><LogOut />Sign out and replay first launch</button></div>;
 }
 function SettingsGroup({ title, children }: { title: string; children: React.ReactNode }) { return <section className="settings-group"><small>{title}</small>{children}</section>; }
+// Slice 1.5 (roadmap v3): the Data Governance surface. Granular consent (default
+// off, recorded), export, and the distinct pause / reset controls — all gated on
+// being signed in, since the data lives server-side.
+function DataPrivacyScreen({ signal, moodSignal, suppressed, learningOn, onForget, onRestore }: { signal: CuisineSignal | null; moodSignal: MoodCuisineSignal | null; suppressed: string[]; learningOn: boolean; onForget: (c: string) => void; onRestore: (c: string) => void }) {
+  const [consents, setConsents] = useState<ConsentState>(NO_CONSENT);
+  const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState("");
+  const [note, setNote] = useState("");
+  // Slice 5: deterministic summary is shown by default; AI rephrase only on request.
+  const [summary, setSummary] = useState<{ summary: string; source: "ai" | "fallback" } | null>(null);
+  const shownSummary = summary?.summary ?? deterministicTasteSummary(signal, moodSignal);
+
+  useEffect(() => { getConsents().then(c => { setConsents(c); setLoaded(true); }); }, []);
+  // Reset any AI prose when the underlying signal changes — prose is always
+  // regenerable and must never drift from the canonical signal.
+  useEffect(() => { setSummary(null); }, [signal, moodSignal]);
+
+  const askMoody = async () => {
+    setBusy("summary");
+    setSummary(await fetchTasteSummary(signal, moodSignal));
+    setBusy("");
+  };
+
+  const toggle = async (scope: ConsentScope, granted: boolean) => {
+    setConsents(prev => ({ ...prev, [scope]: granted })); // optimistic
+    const ok = await setConsent(scope, granted);
+    if (!ok) { setConsents(await getConsents()); setNote("Couldn’t save that — sign in and try again."); }
+    else setNote(granted ? "Consent recorded." : "Consent withdrawn — learning is paused.");
+  };
+
+  const doExport = async () => {
+    setBusy("export"); setNote("");
+    const data = await exportMyData();
+    setBusy("");
+    if (!data) { setNote("Export needs you to be signed in. Try again once signed in."); return; }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `moodfood-data-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click(); URL.revokeObjectURL(url);
+    setNote("Your data was exported as a JSON file.");
+  };
+
+  const doReset = async () => {
+    if (!window.confirm("Delete everything MoodFood has learned from your behaviour? Your account stays. This can’t be undone.")) return;
+    setBusy("reset"); setNote("");
+    const ok = await resetLearningData();
+    setBusy("");
+    setNote(ok ? "Learning data deleted." : "Couldn’t reset — sign in and try again.");
+  };
+
+  return <div className="screen"><TopBar title="Data & privacy" />
+    <section className="privacy-intro">
+      <ShieldCheck />
+      <h2>You decide what MoodFood learns.</h2>
+      <p>To improve your recommendations we can record what you cook, save, and rate, plus the mood you pick at check-in. It’s stored on your MoodFood account, used only to personalise your picks, and you can pause it, export it, or delete it here at any time. Both switches are off until you turn them on.</p>
+    </section>
+    <SettingsGroup title="LEARNING CONSENT">
+      <label className="settings-toggle"><span><Sparkles size={15} />Learn from my recipe behaviour<small>Saves, cooks, and ratings improve your ranking. Off = no behavioural data is recorded.</small></span>
+        <input type="checkbox" disabled={!loaded} checked={consents.behavioral_learning} onChange={e => toggle("behavioral_learning", e.target.checked)} /></label>
+      <label className="settings-toggle"><span><Activity size={15} />Use my mood &amp; health context<small>Lets check-in mood and health-trend context feed learning. Separate from the above.</small></span>
+        <input type="checkbox" disabled={!loaded} checked={consents.mood_health_context} onChange={e => toggle("mood_health_context", e.target.checked)} /></label>
+    </SettingsGroup>
+    {consents.behavioral_learning && <SettingsGroup title="WHAT MOODFOOD HAS LEARNED">
+      <p className="taste-summary">{shownSummary}</p>
+      {signal && signal.preferred.length > 0 && <button className="link-button" onClick={askMoody} disabled={busy === "summary"}><Sparkles size={14} />{busy === "summary" ? "Asking Moody…" : summary?.source === "ai" ? "Reworded by Moody" : "Say it in Moody’s words"}</button>}
+      {signal && signal.preferred.length > 0 ? <>
+        <p className="quiet">From the meals you’ve rated{learningOn ? ", these gently lift matching picks." : " (turn on “Learn from what I cook & rate” to use them)."}</p>
+        {signal.preferred.map(c => {
+          const n = signal.support[c] ?? 0;
+          const confidence = n >= 6 ? "strong signal" : n >= 4 ? "growing signal" : "early signal";
+          return <div className="taste-row" key={c}><span><b>{c}</b><small>{n} highly-rated {n === 1 ? "cook" : "cooks"} · {confidence}</small></span><button onClick={() => onForget(c)}>Forget</button></div>;
+        })}
+      </> : <p className="quiet">Nothing yet — cook and rate a few meals and the cuisines you enjoy will appear here. A couple of ratings are never treated as a permanent verdict.</p>}
+      {suppressed.length > 0 && <div className="taste-suppressed"><small>FORGOTTEN</small>{suppressed.map(c => <div className="taste-row" key={c}><span>{c}</span><button onClick={() => onRestore(c)}>Restore</button></div>)}</div>}
+    </SettingsGroup>}
+    <SettingsGroup title="YOUR DATA">
+      <button onClick={doExport} disabled={busy === "export"}><Upload />{busy === "export" ? "Preparing…" : "Export my data (JSON)"}<ChevronRight /></button>
+      <button className="danger" onClick={doReset} disabled={busy === "reset"}><RotateCcw />{busy === "reset" ? "Deleting…" : "Reset what MoodFood has learned"}</button>
+      <p className="quiet">To erase your whole account and everything in it, use Account → Delete account.</p>
+    </SettingsGroup>
+    {note && <p className="source-note live"><Check size={13} /> {note}</p>}
+  </div>;
+}
 function ImportScreen() {
   const [url, setUrl] = useState(""); const [done, setDone] = useState(false);
   return <div className="screen"><TopBar title="Import recipe" /><section className="import-card"><Upload /><span>WEB RECIPE IMPORT</span><h1>Bring a trusted recipe into your library.</h1><p>We’ll preserve the source, extract ingredients and steps, then ask you to review it before use.</p><input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://example.com/recipe" /><button className="primary" onClick={() => setDone(Boolean(url))}>Import & review</button>{done && <div className="import-success"><Check /><b>Draft created</b><span>Structure checked · source retained · waiting for review</span></div>}</section></div>;

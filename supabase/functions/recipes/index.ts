@@ -296,6 +296,11 @@ Deno.serve(async (request) => {
   // quantitative limits to keep results flowing. Cuisine/course/diet are never
   // dropped either way — only numeric limits are.
   const relax = body?.relax !== false;
+  // Slice 1 (roadmap v3): AI curation is OPT-IN. Normal search ranks the real,
+  // safety-filtered provider candidates deterministically on the client; the
+  // OpenAI re-rank only runs when the client explicitly asks for it (a clearly
+  // labeled personalized experience). Default OFF keeps AI off the hot path.
+  const shouldCurate = body?.curate === true;
 
   const params = new URLSearchParams({
     apiKey: SPOONACULAR_API_KEY,
@@ -416,8 +421,8 @@ Deno.serve(async (request) => {
     spoonSafeCount = safe.length;
     console.log(`[recipes] spoonacular: status=${spoonStatus} total=${spoonCount} safe=${spoonSafeCount} relaxed=${relaxed}`);
     if (safe.length) {
-      const curated = await curate(safe, profile, mood, history);
-      return Response.json({ provider: "spoonacular", relaxed, recipes: curated }, { headers: headers(origin) });
+      const curated = shouldCurate ? await curate(safe, profile, mood, history) : safe;
+      return Response.json({ provider: "spoonacular", relaxed, curated: shouldCurate, recipes: curated }, { headers: headers(origin) });
     }
 
     // Both Spoonacular attempts empty (or it errored). For the mood feed (relax),
