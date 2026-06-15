@@ -237,8 +237,8 @@ export default function App() {
     () => buildFoodHistory(diary, profile.photoLogs, catalog.filter(r => saved.includes(r.id))),
     [diary, profile.photoLogs, saved, catalog],
   );
-  const loadMoodyCatalog = useCallback(async () => {
-    const live = await fetchCuratedRecipes(sharedProfile, mood, 50, 180, "", {}, foodHistory, 0, false, false);
+  const loadMoodyCatalog = useCallback(async (query = "") => {
+    const live = await fetchCuratedRecipes(sharedProfile, mood, 50, 180, query, {}, foodHistory, 0, false, false);
     const merged = live?.length
       ? [...live, ...catalog.filter(existing => !live.some(recipe => recipe.id === existing.id))]
       : catalog;
@@ -2037,7 +2037,7 @@ function MoodyFab({ onOpen }: { onOpen: () => void }) {
   ><Sparkles /></button>;
 }
 
-function MoodyPanel({ profile, catalog, loadCatalog, turns, setTurns, close, openRecipe }: { profile: Profile; catalog: Recipe[]; loadCatalog: () => Promise<Recipe[]>; turns: ChatTurn[]; setTurns: React.Dispatch<React.SetStateAction<ChatTurn[]>>; close: () => void; openRecipe: (recipe: Recipe) => void }) {
+function MoodyPanel({ profile, catalog, loadCatalog, turns, setTurns, close, openRecipe }: { profile: Profile; catalog: Recipe[]; loadCatalog: (query?: string) => Promise<Recipe[]>; turns: ChatTurn[]; setTurns: React.Dispatch<React.SetStateAction<ChatTurn[]>>; close: () => void; openRecipe: (recipe: Recipe) => void }) {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -2055,7 +2055,7 @@ function MoodyPanel({ profile, catalog, loadCatalog, turns, setTurns, close, ope
     setInput("");
     setBusy(true);
     try {
-      const searchableCatalog = await loadCatalog();
+      const searchableCatalog = await loadCatalog(message);
       const context = {
         profile: { allergies: profile.allergies, diet: profile.diet, dislikedIngredients: profile.dislikedIngredients },
         candidates: moodyCandidates(searchableCatalog),
