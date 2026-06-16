@@ -866,16 +866,36 @@ function VerifiedScreen({ name, proceed }: { name: string; proceed: () => void }
     <button className="primary" onClick={proceed}>Continue <ArrowRight size={18} /></button>
   </div>;
 }
+
+function useDesktopOnboarding() {
+  const [desktop, setDesktop] = useState(() => typeof window !== "undefined" && window.matchMedia("(min-width: 1040px)").matches);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const query = window.matchMedia("(min-width: 1040px)");
+    const sync = () => setDesktop(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
+  return desktop;
+}
+
 function Onboarding({ profile, save, finish }: { profile: Profile; save: (p: Profile) => void; finish: (p: Profile) => void }) {
   // Questions whose showIf condition currently passes (e.g. spice types only
   // appear once the user has any heat tolerance). Navigation runs over this list.
   const visible = onboardingQuestions.filter(q => !q.showIf || q.showIf(profile));
   const total = visible.length;
+  const desktop = useDesktopOnboarding();
   const [step, setStep] = useStoredState<number>("moodfood-onboarding-step", 0);
+  const [desktopStep, setDesktopStep] = useStoredState<number>("moodfood-onboarding-section-step", 0);
   const index = Math.min(Math.max(0, step), total);          // index === total -> review
   const onReview = index === total;
   const update = (key: OnboardingKey, value: ProfileValue) => save({ ...profile, [key]: value });
   const go = (n: number) => { setStep(n); window.scrollTo(0, 0); };
+
+  if (desktop) {
+    return <DesktopOnboarding profile={profile} visible={visible} step={desktopStep} setStep={setDesktopStep} update={update} finish={finish} />;
+  }
 
   if (onReview) {
     const summary: [string, string][] = [
@@ -970,6 +990,95 @@ function Onboarding({ profile, save, finish }: { profile: Profile; save: (p: Pro
     </div>
   );
 }
+
+function DesktopOnboarding({ profile, visible, step, setStep, update, finish }: { profile: Profile; visible: OnboardingQuestion[]; step: number; setStep: (n: number) => void; update: (k: OnboardingKey, v: ProfileValue) => void; finish: (p: Profile) => void }) {
+  const sections = onboardingSections.map(section => ({
+    section,
+    questions: visible.filter(q => q.section === section),
+  })).filter(group => group.questions.length);
+  const totalSections = sections.length;
+  const page = Math.min(Math.max(0, step), totalSections);
+  const onReview = page === totalSections;
+  const go = (n: number) => { setStep(n); window.scrollTo(0, 0); };
+
+  if (onReview) {
+    const summary: [string, string][] = [
+      ["Cooking moods", profile.cookingMoods.slice(0, 5).join(", ") || "-"],
+      ["Diet", [profile.diet, ...profile.dietReligious].join(", ")],
+      ["Safety rules", profile.allergies.join(", ") || "None"],
+      ["Won't eat", profile.dislikedIngredients.join(", ") || "Open to most things"],
+      ["Palate", [...profile.flavorLikes, ...profile.textureLikes].slice(0, 6).join(", ") || "Still learning"],
+      ["Cuisines", profile.cuisines.slice(0, 6).join(", ") || "Open to anything"],
+      ["Kitchen", `${profile.skill} · ${profile.weeknightTime} · serves ${profile.servings}`],
+      ["Goals", profile.nutritionGoals.join(", ") || "No specific goal"],
+    ];
+    return <div className="onboarding desktop-onboarding">
+      <DesktopOnboardingRail sections={sections.map(s => s.section)} active={totalSections} />
+      <main className="desktop-ob-main desktop-ob-review">
+        <section className="desktop-ob-hero">
+          <span>PROFILE READY</span>
+          <h1>Review your food profile.</h1>
+          <p>Moody will use these signals to keep dinner safe, realistic, and matched to how you feel.</p>
+        </section>
+        <section className="desktop-ob-review-card">
+          {summary.map(([label, value]) => <p key={label}><b>{label}</b><span>{value}</span></p>)}
+        </section>
+      </main>
+      <DesktopOnboardingFooter back={() => go(totalSections - 1)} next={() => finish(profile)} nextLabel="Continue" />
+    </div>;
+  }
+
+  const group = sections[page];
+  const answeredCount = visible.filter(q => {
+    const value = profile[q.key];
+    if (Array.isArray(value)) return value.length > 0;
+    if (typeof value === "number") return true;
+    if (typeof value === "object" && value) return Object.values(value).some(Boolean);
+    return Boolean(value);
+  }).length;
+
+  return <div className="onboarding desktop-onboarding">
+    <DesktopOnboardingRail sections={sections.map(s => s.section)} active={page} />
+    <main className="desktop-ob-main">
+      <section className="desktop-ob-hero">
+        <span>SECTION {page + 1} OF {totalSections}</span>
+        <h1>{group.section}</h1>
+        <p>{group.questions.length} focused prompts on one page. Fill what matters now, adjust anything later.</p>
+        <div className="desktop-ob-progress"><i style={{ width: `${Math.round(((page + 1) / (totalSections + 1)) * 100)}%` }} /></div>
+      </section>
+      <section className="desktop-ob-board">
+        {group.questions.map((q, n) => <article className="desktop-ob-question" key={q.id}>
+          <div className="desktop-ob-question-head">
+            <small>{q.eyebrow}</small>
+            <span>{n + 1}</span>
+          </div>
+          <SetupStep eyebrow="" title={q.title} text={q.text}>
+            <QuestionField q={q} profile={profile} update={update} />
+          </SetupStep>
+        </article>)}
+      </section>
+      <div className="desktop-ob-count">{answeredCount} of {visible.length} profile signals filled</div>
+    </main>
+    <DesktopOnboardingFooter back={() => go(page - 1)} next={() => go(page + 1)} nextLabel={page === totalSections - 1 ? "Review profile" : "Next section"} backDisabled={page === 0} />
+  </div>;
+}
+
+function DesktopOnboardingRail({ sections, active }: { sections: string[]; active: number }) {
+  return <aside className="desktop-ob-rail">
+    <div className="desktop-ob-brand"><img src="/images/logo-1.png" alt="" /><span>MoodFood</span></div>
+    <nav>{sections.map((section, index) => <div className={index === active ? "active" : index < active ? "done" : ""} key={section}>
+      <b>{index + 1}</b><span>{section}</span>
+    </div>)}</nav>
+  </aside>;
+}
+
+function DesktopOnboardingFooter({ back, next, nextLabel, backDisabled = false }: { back: () => void; next: () => void; nextLabel: string; backDisabled?: boolean }) {
+  return <footer className="desktop-ob-footer">
+    <button className="secondary" disabled={backDisabled} onClick={back}>Back</button>
+    <button className="primary" onClick={next}>{nextLabel} <ArrowRight size={16} /></button>
+  </footer>;
+}
+
 function QuestionField({ q, profile, update }: { q: OnboardingQuestion; profile: Profile; update: (k: OnboardingKey, v: ProfileValue) => void }) {
   const value = profile[q.key];
   if (q.type === "single")
@@ -1322,7 +1431,9 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
       })()}
 
       {/* ── Photo log shortcut ── */}
-      <FoodCamera label="Log a meal with photo" onSave={addPhoto} allergies={profile.allergies} style={{ margin: "10px 16px 0" }} />
+      <div className="home-photo-shortcut">
+        <FoodCamera label="Log a meal with photo" onSave={addPhoto} allergies={profile.allergies} />
+      </div>
 
       {/* ── Quick-link cards, styled like the bottom rows in reference ── */}
       <div className="home-links">
