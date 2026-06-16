@@ -6,6 +6,7 @@ import {
   Upload, LogOut, Plus, ClipboardCheck, LayoutDashboard, Camera, Users, MessageCircle,
   Send, UserPlus, Lock, Globe2, Activity, Salad, Wheat, Droplets, TrendingUp, Mail, CreditCard,
   HelpCircle, Info, FlameKindling, Dna, BookMarked, Share2, Trash2,
+  Eye, EyeOff,
 } from "lucide-react";
 import { moods, cookingMoods, skillLevels, type Recipe } from "./data";
 import { bundledRecipes } from "./bundledRecipes";
@@ -19,7 +20,16 @@ import { sendConfirmationEmail, sendWelcomeEmail, scheduleTrial, runDue, readInb
 import { analyzeFood, sumNutrition, flaggedAllergens, type FoodPhoto } from "./foodAnalysis";
 import { aiChat, MoodyError, type ChatTurn } from "./ai";
 import { fetchCuratedRecipes, buildFoodHistory } from "./recipes";
-import { signUp as authSignUp, signIn as authSignIn, signOut as authSignOut, isEmailConfirmed, onAuthChange, isSupabaseConfigured } from "./auth";
+import {
+  signUp as authSignUp,
+  signIn as authSignIn,
+  signOut as authSignOut,
+  requestPasswordReset as authRequestPasswordReset,
+  updatePassword as authUpdatePassword,
+  isEmailConfirmed,
+  onAuthChange,
+  isSupabaseConfigured,
+} from "./auth";
 import { supabase } from "./supabase";
 import { displayStepDetail, displayStepTitle, formatTimer, stepImageSources } from "./cooking";
 import { RecipeImage } from "./RecipeImage";
@@ -108,8 +118,15 @@ export default function App() {
   const testState = readDevTestState(window.location.search, import.meta.env.DEV);
   const [splash, setSplash] = useState(true);
   const [entry, setEntry] = useStoredState<Entry>("moodfood-entry", "welcome");
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
   const [storedProfile, setProfile] = useStoredState<Profile>("moodfood-profile", defaultProfile);
   useEffect(() => { window.scrollTo(0, 0); }, [entry]);
+  useEffect(() => onAuthChange((event) => {
+    if (event !== "PASSWORD_RECOVERY") return;
+    setSplash(false);
+    setPasswordRecovery(true);
+    setEntry("login");
+  }), [setEntry]);
   // Memoized so its reference is stable across renders. Without this, every
   // render produced a new `profile` object, which cascaded into `sharedProfile`
   // and re-fired the recipe-fetch effect on a loop, hammering the edge function
@@ -571,7 +588,7 @@ export default function App() {
       signin={() => { setSplash(false); setEntry("login"); }}
     />;
   }
-  if (entry === "login") return <LoginScreen back={() => setEntry("welcome")} onSignedIn={() => {}} />;
+  if (entry === "login") return <LoginScreen back={() => { setPasswordRecovery(false); setEntry("welcome"); }} onSignedIn={() => setEntry("app")} recovery={passwordRecovery} doneRecovery={() => setPasswordRecovery(false)} />;
   if (entry === "onboarding") return <Onboarding profile={profile} save={setProfile} finish={(next) => { setProfile({ ...next, onboarded: true }); clearStored("moodfood-onboarding-step"); setEntry("account"); }} />;
   if (entry === "account") return <AccountSetupScreen profile={profile} back={() => setEntry("onboarding")} simulate={testState === "account"} submit={(patch, opts) => {
     const confirmed = !!opts?.hasSession; // session present = email confirmation is OFF, so they're in
@@ -724,12 +741,24 @@ function VerifyEmailScreen({ email, realAuth, onVerified, resend, back }: { emai
   </div>;
 }
 
-function LoginScreen({ back, onSignedIn }: { back: () => void; onSignedIn: (email: string) => void }) {
+function LoginScreen({ back, onSignedIn, recovery, doneRecovery }: { back: () => void; onSignedIn: (email: string) => void; recovery?: boolean; doneRecovery?: () => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [mode, setMode] = useState<"signin" | "forgot" | "reset">(recovery ? "reset" : "signin");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (recovery) {
+      setMode("reset");
+      setError("");
+      setNotice("Choose a new password for your MoodFood account.");
+    }
+  }, [recovery]);
   useEffect(() => {
     const mm = gsap.matchMedia();
     mm.add("(prefers-reduced-motion: no-preference)", () => {
@@ -743,6 +772,8 @@ function LoginScreen({ back, onSignedIn }: { back: () => void; onSignedIn: (emai
   }, []);
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError("");
+    setNotice("");
     if (!/.+@.+\..+/.test(email) || !password) { setError("Enter your email and password."); return; }
     if (!isSupabaseConfigured) { setError("Sign-in needs the backend configured (see BACKEND_SETUP.md)."); return; }
     setBusy(true);
@@ -751,6 +782,39 @@ function LoginScreen({ back, onSignedIn }: { back: () => void; onSignedIn: (emai
     if (!res.ok) { setError(res.error || "Could not sign in. Check your details."); return; }
     onSignedIn(email.trim());
   };
+  const sendReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setNotice("");
+    if (!/.+@.+\..+/.test(email)) { setError("Enter the email address for your account."); return; }
+    if (!isSupabaseConfigured) { setError("Password reset needs the backend configured (see BACKEND_SETUP.md)."); return; }
+    setBusy(true);
+    const res = await authRequestPasswordReset(email.trim());
+    setBusy(false);
+    if (!res.ok) { setError(res.error || "Could not send a reset link. Try again."); return; }
+    setNotice("If that email has a MoodFood account, a password reset link is on its way.");
+  };
+  const saveNewPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setNotice("");
+    if (newPassword.length < 6) { setError("Use a password of at least 6 characters."); return; }
+    if (!isSupabaseConfigured) { setError("Password reset needs the backend configured (see BACKEND_SETUP.md)."); return; }
+    setBusy(true);
+    const res = await authUpdatePassword(newPassword);
+    setBusy(false);
+    if (!res.ok) { setError(res.error || "Could not update your password. Open the reset link again and retry."); return; }
+    setNewPassword("");
+    doneRecovery?.();
+    setMode("signin");
+    setNotice("Password updated. Sign in with your new password.");
+  };
+  const title = mode === "reset" ? "Set a new password." : mode === "forgot" ? "Reset your password." : "Sign in.";
+  const lede = mode === "reset"
+    ? "Enter a fresh password for your MoodFood account."
+    : mode === "forgot"
+      ? "Enter your email and we'll send a secure link to reset your password."
+      : "Pick up where you left off, your food profile and recommendations are waiting.";
   return <div className="auth-photo" ref={rootRef}>
     <div className="ap-hero">
       <img src={LOGIN_PHOTO} alt="A bowl of fresh food" />
@@ -759,16 +823,36 @@ function LoginScreen({ back, onSignedIn }: { back: () => void; onSignedIn: (emai
       <div className="ap-logo"><img src="/images/logo-1.png" alt="" /><span>MoodFood</span></div>
     </div>
     <div className="ap-sheet">
-      <span className="ap-eyebrow" data-auth>WELCOME BACK</span>
-      <h1 data-auth>Sign in.</h1>
-      <p className="ap-lede" data-auth>Pick up where you left off, your food profile and recommendations are waiting.</p>
-      <form onSubmit={onSubmit} data-auth>
-        <label>Email address<input type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" /></label>
-        <label>Password<input type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Your password" /></label>
+      <span className="ap-eyebrow" data-auth>{mode === "signin" ? "WELCOME BACK" : "ACCOUNT RECOVERY"}</span>
+      <h1 data-auth>{title}</h1>
+      <p className="ap-lede" data-auth>{lede}</p>
+      {mode === "signin" && <form onSubmit={onSubmit} data-auth>
+        <label>Email address<input type="email" autoComplete="email" value={email} onChange={e => { setEmail(e.target.value); setError(""); }} placeholder="you@example.com" /></label>
+        <label>Password<span className="password-field"><input type={showPassword ? "text" : "password"} autoComplete="current-password" value={password} onChange={e => { setPassword(e.target.value); setError(""); }} placeholder="Your password" /><button type="button" onClick={() => setShowPassword(v => !v)} aria-label={showPassword ? "Hide password" : "Show password"}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></span></label>
         {error && <span className="err" role="alert">{error}</span>}
+        {notice && <span className="auth-notice" role="status">{notice}</span>}
         <button className="primary" type="submit" disabled={busy}>{busy ? "Signing in…" : <>Sign in <ArrowRight size={18} /></>}</button>
-      </form>
-      <p className="ap-alt" data-auth>New here? <button type="button" onClick={back}>Build your food profile</button></p>
+      </form>}
+      {mode === "forgot" && <form onSubmit={sendReset} data-auth>
+        <label>Email address<input type="email" autoComplete="email" value={email} onChange={e => { setEmail(e.target.value); setError(""); }} placeholder="you@example.com" /></label>
+        {error && <span className="err" role="alert">{error}</span>}
+        {notice && <span className="auth-notice" role="status">{notice}</span>}
+        <button className="primary" type="submit" disabled={busy}>{busy ? "Sending…" : <>Send reset link <Mail size={18} /></>}</button>
+      </form>}
+      {mode === "reset" && <form onSubmit={saveNewPassword} data-auth>
+        <label>New password<span className="password-field"><input type={showNewPassword ? "text" : "password"} autoComplete="new-password" value={newPassword} onChange={e => { setNewPassword(e.target.value); setError(""); }} placeholder="At least 6 characters" /><button type="button" onClick={() => setShowNewPassword(v => !v)} aria-label={showNewPassword ? "Hide password" : "Show password"}>{showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></span></label>
+        {error && <span className="err" role="alert">{error}</span>}
+        {notice && <span className="auth-notice" role="status">{notice}</span>}
+        <button className="primary" type="submit" disabled={busy}>{busy ? "Saving…" : <>Save new password <Check size={18} /></>}</button>
+      </form>}
+      <p className="ap-alt" data-auth>
+        {mode === "signin" ? <>
+          <button type="button" onClick={() => { setMode("forgot"); setError(""); setNotice(""); }}>Forgot password?</button>
+          <span> · New here? </span><button type="button" onClick={back}>Build your food profile</button>
+        </> : <>
+          Remembered it? <button type="button" onClick={() => { doneRecovery?.(); setMode("signin"); setError(""); setNotice(""); }}>Back to sign in</button>
+        </>}
+      </p>
     </div>
   </div>;
 }
@@ -975,7 +1059,21 @@ function SetupStep({ eyebrow, title, text, children }: { eyebrow: string; title:
 function Choice({ values, active, pick, multi }: { values: string[]; active: string | string[]; pick: (v: string) => void; multi?: boolean }) { return <div className="choice">{values.map(v => <button className={(multi ? (active as string[]).includes(v) : active === v) ? "active" : ""} onClick={() => pick(v)} key={v}>{v}</button>)}</div>; }
 
 function DesktopNav({ page, go, openMoody }: { page: Page; go: (p: Page) => void; openMoody: () => void }) {
-  return <aside className="desktop-nav"><img src="/images/logo-1.png" alt="" /><nav>{nav.map(([id, label, Icon]) => <button className={page === id ? "active" : ""} onClick={() => go(id)} key={id}><Icon size={19} />{label}</button>)}<button className={page === "community" ? "active" : ""} onClick={() => go("community")}><Users size={19} />Community</button><button onClick={() => go("insights")}><BarChart3 size={19} />Insights</button><button onClick={() => go("favorites")}><Heart size={19} />Favorites</button><button onClick={() => go("import")}><Upload size={19} />Import</button><button onClick={() => go("settings")}><UserRound size={19} />Profile</button></nav><button className="moody-side" onClick={openMoody}><Sparkles size={18} />Ask Moody</button></aside>;
+  return <aside className="desktop-nav">
+    <nav>
+      {nav.map(([id, label, Icon]) => <button className={page === id ? "active" : ""} onClick={() => go(id)} key={id}><Icon size={19} />{label}</button>)}
+      <button className={page === "pantry" ? "active" : ""} onClick={() => go("pantry")}><Salad size={19} />Pantry</button>
+      <button className={page === "favorites" ? "active" : ""} onClick={() => go("favorites")}><Heart size={19} />Saved</button>
+    </nav>
+    <button className="desktop-wordmark" onClick={() => go("home")} aria-label="MoodFood home">
+      <img src="/images/logo-1.png" alt="" />
+      <span>MOODFOOD</span>
+    </button>
+    <div className="desktop-actions">
+      <button className="moody-side" onClick={openMoody}><Sparkles size={18} />Ask Moody</button>
+      <button className="desktop-account" onClick={() => go("settings")}><UserRound size={18} />My MoodFood</button>
+    </div>
+  </aside>;
 }
 function BottomNav({ page, go }: { page: Page; go: (p: Page) => void }) {
   return <nav className="bottom-nav">{nav.map(([id, label, Icon]) => <button className={page === id ? "active" : ""} onClick={() => go(id)} key={id}><Icon size={19} /><span>{label}</span></button>)}</nav>;
@@ -1097,8 +1195,8 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
       <AppHeader profile={profile} openNotifs={openNotifs} unread={unread} />
 
       <div className="home-greeting">
-        <h1>What’s for dinner?</h1>
-        <p>Tell Moody how you feel, get one perfect match.</p>
+        <h1>Feeling {mood.toLowerCase()}?<br /><span>Eat something warm.</span></h1>
+        <p>Tell Moody how you feel, get one safe meal chosen for your mood, energy, and table.</p>
       </div>
 
       {/* ── Hero recipe photo (45vh, rounded, like the fitness hero image) ── */}

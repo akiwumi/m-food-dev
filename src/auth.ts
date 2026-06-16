@@ -29,6 +29,20 @@ export async function signIn(email: string, password: string): Promise<{ ok: boo
   return { ok: !error, error: error?.message };
 }
 
+export async function requestPasswordReset(email: string): Promise<{ ok: boolean; error?: string }> {
+  if (!supabase) return { ok: false, error: "Backend not configured." };
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin,
+  });
+  return { ok: !error, error: error?.message };
+}
+
+export async function updatePassword(password: string): Promise<{ ok: boolean; error?: string }> {
+  if (!supabase) return { ok: false, error: "Backend not configured." };
+  const { error } = await supabase.auth.updateUser({ password });
+  return { ok: !error, error: error?.message };
+}
+
 export async function signOut(): Promise<void> {
   if (supabase) await supabase.auth.signOut();
 }

@@ -137,7 +137,7 @@ export function Landing({ begin, signin }: { begin: () => void; signin: () => vo
         </header>
         <div className="ih-copy">
           <span className="ih-eyebrow" data-reveal>YOUR PERSONAL FOOD COMPANION</span>
-          <h1 data-reveal>Eat for the way<br />you feel.</h1>
+          <h1 data-reveal><span>Feeling cozy?</span><br /><em>Eat something warm.</em></h1>
           <p data-reveal>
             Feeling <span className="ih-cycle"><b ref={cyclerRef}>{MOOD_WORDS[0]}</b></span> tonight?
             We'll match you to one safe, doable meal, chosen for your mood, your energy, and the people at your table.
