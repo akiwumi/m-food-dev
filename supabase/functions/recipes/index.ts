@@ -30,6 +30,7 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { applyCuratedRanking, dedupeRecipes, expandProviderCuisines, fetchTheMealDbRecipes, filterOutAccessoryTypes, filterRecipesByCategory, filterRecipesByMaxTime, filterRecipesForProfile, filterRecipesWithCompleteInstructions, normalizeSpoonacularRecipe } from "./provider.ts";
+import { bumpSearchCount, dairyFreeTag, dietTagsFor, getCachedRecipes, logSearch, normalizeMoodTag, saveRecipesToCache } from "./cache.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
@@ -276,6 +277,9 @@ Deno.serve(async (request) => {
     signal: AbortSignal.timeout(5_000),
   });
   if (!identity.ok) return Response.json({ error: "Unauthorized" }, { status: 401, headers: headers(origin) });
+  // Capture the user id for the analytics search log (recipe_searches.user_id).
+  let userId: string | null = null;
+  try { userId = (await identity.json())?.id ?? null; } catch { /* logging is best-effort */ }
 
   if (!SPOONACULAR_API_KEY) return Response.json({ error: "Recipe source not configured" }, { status: 503, headers: headers(origin) });
 
@@ -377,6 +381,52 @@ Deno.serve(async (request) => {
   if (minProtein) targets.minProtein = String(minProtein);
   for (const [k, v] of Object.entries(targets)) params.set(k, v);
 
+  // ── Recipe DB cache (roadmap Phase 2) ──────────────────────────────────────
+  // Canonical cache key: a normalized mood tag + diet tags (the 7×6 seed
+  // vocabulary). Allergens are per-user and NOT in the key, so cached rows are
+  // re-run through the same safety/diet filter as live results before serving.
+  const moodTag = normalizeMoodTag(mood);
+  const dietTags = [...dietTagsFor(hardProfile.diet), ...dairyFreeTag(intolerances)];
+  // Only the relaxable mood feed (no free-text query, no fine-grained filters, no
+  // pagination) is cacheable — the cache can't honour cuisine/time/nutrient/
+  // ingredient filters, and serving it anyway would silently ignore them. Explicit
+  // filtered searches always go to the provider (but their results still write
+  // through to the cache below).
+  const offsetReq = num(body?.offset, 0, 900) ?? 0;
+  const hasFineFilters = Boolean(
+    query ||
+    (Array.isArray(filters.cuisines) && filters.cuisines.length) ||
+    (typeof filters.type === "string" && filters.type) ||
+    (Array.isArray(filters.includeIngredients) && filters.includeIngredients.length) ||
+    (Array.isArray(filters.excludeIngredients) && filters.excludeIngredients.length) ||
+    (Array.isArray(filters.equipment) && filters.equipment.length) ||
+    Number.isFinite(filters.minServings) || Number.isFinite(filters.maxCalories) ||
+    Number.isFinite(filters.minProtein) || Number.isFinite(filters.maxReadyTime) ||
+    offsetReq > 0,
+  );
+  const cacheable = relax && !hasFineFilters;
+
+  if (cacheable) {
+    const rows = await getCachedRecipes(moodTag, dietTags, 24);
+    if (rows.length) {
+      const candidates = rows.map(r => r.raw_data).filter(Boolean);
+      const safeCached = dedupeRecipes(filterRecipesWithCompleteInstructions(filterOutAccessoryTypes(
+        filterRecipesForProfile(safetyFilter(candidates, profile.allergies ?? []), hardProfile),
+      )));
+      if (safeCached.length >= 6) {
+        const top = safeCached.slice(0, 8);
+        const servedExternalIds = new Set(top.map((r: any) => String(r.id)));
+        const servedDbIds = rows.filter(r => servedExternalIds.has(String((r.raw_data as any)?.id))).map(r => r.id);
+        bumpSearchCount(servedDbIds);                       // fire-and-forget popularity
+        logSearch({ userId, moodTag, dietTags, query, resultIds: servedDbIds, servedFrom: "cache" });
+        console.log(`[recipes] cache hit: matched=${rows.length} safe=${safeCached.length} served=${top.length}`);
+        const curated = shouldCurate ? await curate(top, profile, mood, history) : top;
+        return Response.json({ provider: "cache", relaxed: false, curated: shouldCurate, recipes: curated }, { headers: headers(origin) });
+      }
+    }
+    console.log(`[recipes] cache miss: mood=${moodTag} diets=${JSON.stringify(dietTags)} rows=${rows.length}`);
+  }
+
   let spoonStatus = 0, spoonCount = 0, spoonSafeCount = 0;
   let mealdbCount = 0, mealdbSafeCount = 0;
   let spoonErr = "";
@@ -421,6 +471,9 @@ Deno.serve(async (request) => {
     spoonSafeCount = safe.length;
     console.log(`[recipes] spoonacular: status=${spoonStatus} total=${spoonCount} safe=${spoonSafeCount} relaxed=${relaxed}`);
     if (safe.length) {
+      // Write-through: every live result grows the owned cache (roadmap Phase 2).
+      saveRecipesToCache(safe, moodTag, dietTags);
+      logSearch({ userId, moodTag, dietTags, query, resultIds: [], servedFrom: "api" });
       const curated = shouldCurate ? await curate(safe, profile, mood, history) : safe;
       return Response.json({ provider: "spoonacular", relaxed, curated: shouldCurate, recipes: curated }, { headers: headers(origin) });
     }
@@ -437,10 +490,15 @@ Deno.serve(async (request) => {
       const fallback = dedupeRecipes(filterRecipesWithCompleteInstructions(category ? mealdbCategoryFiltered : filterOutAccessoryTypes(mealdbCategoryFiltered))).slice(0, 8);
       mealdbSafeCount = fallback.length;
       console.log(`[recipes] themealdb: total=${mealdbCount} safe=${mealdbSafeCount}`);
-      if (fallback.length) return Response.json({ provider: "themealdb", recipes: fallback }, { headers: headers(origin) });
+      if (fallback.length) {
+        saveRecipesToCache(fallback, moodTag, dietTags);
+        logSearch({ userId, moodTag, dietTags, query, resultIds: [], servedFrom: "themealdb" });
+        return Response.json({ provider: "themealdb", recipes: fallback }, { headers: headers(origin) });
+      }
     }
 
     console.error(`[recipes] sources empty — relax=${relax} diet=${profile.diet} allergies=${JSON.stringify(profile.allergies)}`);
+    logSearch({ userId, moodTag, dietTags, query, resultIds: [], servedFrom: "none" });
     return Response.json({
       error: "Recipe sources failed",
       diag: { spoonStatus, spoonCount, spoonSafeCount, spoonErr: spoonErr.slice(0, 100), mealdbCount, mealdbSafeCount },
@@ -457,10 +515,15 @@ Deno.serve(async (request) => {
       const fallback = dedupeRecipes(filterRecipesWithCompleteInstructions(category ? mealdbCategoryFiltered2 : filterOutAccessoryTypes(mealdbCategoryFiltered2))).slice(0, 8);
       mealdbSafeCount = fallback.length;
       console.log(`[recipes] themealdb fallback after exception: total=${mealdbCount} safe=${mealdbSafeCount}`);
-      if (fallback.length) return Response.json({ provider: "themealdb", recipes: fallback }, { headers: headers(origin) });
+      if (fallback.length) {
+        saveRecipesToCache(fallback, moodTag, dietTags);
+        logSearch({ userId, moodTag, dietTags, query, resultIds: [], servedFrom: "themealdb" });
+        return Response.json({ provider: "themealdb", recipes: fallback }, { headers: headers(origin) });
+      }
     } catch (e2) {
       console.error(`[recipes] themealdb also threw: ${e2 instanceof Error ? e2.message : String(e2)}`);
     }
+    logSearch({ userId, moodTag, dietTags, query, resultIds: [], servedFrom: "none" });
     return Response.json({
       error: "Recipe sources failed",
       diag: { spoonStatus, spoonErr: errMsg.slice(0, 100), mealdbCount, mealdbSafeCount },
