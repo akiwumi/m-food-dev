@@ -518,6 +518,7 @@ body,.app{background:linear-gradient(180deg,#dceef2 0%,#eaf4f3 30%,#f5fbfa 100%)
 .search-filters{margin:14px 16px 0;background:var(--white);border:1px solid var(--line);border-radius:20px;padding:16px;display:grid;gap:16px;box-shadow:var(--shadow-sm)}
 .filter-block{display:grid;gap:9px}
 .filter-label{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--blue-deep);font-weight:700}
+.mood-helper{margin-top:8px;font-size:12px;line-height:1.45;color:var(--muted)}.mood-helper b{color:var(--blue-deep);font-weight:700}
 .search-filters .choice button{font-size:12px;padding:8px 12px}
 .search-filters .add-cue{margin-top:0}
 .results-summary{padding:18px 2px 4px}.results-summary span{font-size:10px;letter-spacing:.15em;color:var(--blue-deep);font-weight:800}.results-summary h1{font:700 31px/1.08 "Playfair Display",serif;margin:8px 0}.results-summary p{font-size:11px;color:var(--muted)}.results-actions{display:grid;gap:8px;margin-top:18px}.results-actions button{width:100%}

@@ -32,6 +32,8 @@ import { searchFoods, type NutritionFood } from "./nutrition";
 import { readDevTestState } from "./devTestState";
 import { appendUniqueRecipes, RESULT_BATCH_SIZE, takeUniqueBatch } from "./resultBatches";
 import { moodyCandidates, resolveMoodyRecipe } from "./moodyRecipes";
+import { moodSearchTags, type Mood } from "@/data/moodTags";
+import { buildMoodSearchQuery, getMoodByValue } from "@/lib/moodSearch";
 import gsap from "gsap";
 
 const SUPABASE_FN = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
@@ -1270,6 +1272,7 @@ function TokenInput({ tokens, setTokens, placeholder }: { tokens: string[]; setT
 
 function SearchScreen({ profile, onSearch }: { profile: Profile; onSearch: (request: SearchRequest) => void }) {
   const [query, setQuery] = useState("");
+  const [mood, setMood] = useState<Mood | "">("");
   const [showFilters, setShowFilters] = useState(false);
   const [cuisines, setCuisines] = useState<string[]>([]);
   const [type, setType] = useState("");
@@ -1281,15 +1284,26 @@ function SearchScreen({ profile, onSearch }: { profile: Profile; onSearch: (requ
   const [maxCalories, setMaxCalories] = useState(0);   // 0 = off
   const [minProtein, setMinProtein] = useState(0);     // 0 = off
 
+  const selectedMood = mood ? getMoodByValue(mood) : undefined;
+
   const activeFilterCount =
     cuisines.length + include.length + exclude.length +
+    (mood ? 1 : 0) +
     (type ? 1 : 0) + (diet !== "Any" ? 1 : 0) + (maxTime !== 60 ? 1 : 0) +
     (sort !== (profile.rankingPreference || "Most popular") ? 1 : 0) +
     (maxCalories ? 1 : 0) + (minProtein ? 1 : 0);
 
   const run = () => {
+    // The mood adds hidden search tags that enrich the free-text query without
+    // replacing the structured cuisine / cooking-time filters (which stay below).
+    const searchQuery = buildMoodSearchQuery({
+      mood: mood || undefined,
+      cuisine: cuisines.join(" ") || undefined,
+      maxCookingTime: maxTime,
+      query,
+    });
     const filters: RecipeFilters = {
-      query, cuisines,
+      query: searchQuery, cuisines,
       type: type || undefined,
       diet: diet === "Any" ? undefined : diet,
       maxReadyTime: maxTime, sort,
@@ -1297,12 +1311,19 @@ function SearchScreen({ profile, onSearch }: { profile: Profile; onSearch: (requ
       maxCalories: maxCalories || undefined,
       minProtein: minProtein || undefined,
     };
-    onSearch({ query, filters });
+    onSearch({ query: searchQuery, filters });
   };
 
   return <div className="screen">
     <TopBar title="Search recipes" />
     <div className="ai-search-intro"><Search size={15} /><p>Search with structured filters. Your saved diet, allergies, and exclusions always remain protected.</p></div>
+    <div className="filter-block">
+      <span className="filter-label">How are you feeling?</span>
+      <div className="choice">
+        {moodSearchTags.map(m => <button key={m.mood} className={mood === m.mood ? "active" : ""} onClick={() => setMood(prev => prev === m.mood ? "" : m.mood)}>{m.label}</button>)}
+      </div>
+      {selectedMood && <p className="mood-helper"><b>{selectedMood.label}</b> {selectedMood.description}</p>}
+    </div>
     <form className="search-box" onSubmit={e => { e.preventDefault(); run(); }}>
       <Search />
       <input value={query} onChange={e => setQuery(e.target.value)} placeholder="“Something cozy and high-protein under 30 min”" />
@@ -1356,7 +1377,7 @@ function SearchScreen({ profile, onSearch }: { profile: Profile; onSearch: (requ
         <span className="filter-label">Must exclude</span>
         <TokenInput tokens={exclude} setTokens={setExclude} placeholder="e.g. mushrooms" />
       </div>
-      {!!activeFilterCount && <button className="secondary" style={{ width: "100%" }} onClick={() => { setCuisines([]); setType(""); setDiet("Any"); setMaxTime(60); setSort(profile.rankingPreference || "Most popular"); setInclude([]); setExclude([]); setMaxCalories(0); setMinProtein(0); }}>Clear filters</button>}
+      {!!activeFilterCount && <button className="secondary" style={{ width: "100%" }} onClick={() => { setMood(""); setCuisines([]); setType(""); setDiet("Any"); setMaxTime(60); setSort(profile.rankingPreference || "Most popular"); setInclude([]); setExclude([]); setMaxCalories(0); setMinProtein(0); }}>Clear filters</button>}
     </div>}
 
     <p className="quiet">Your saved allergies and diet always remain hard rules. Search filters can only narrow them further.</p>

@@ -1,3 +1,4 @@
+import { fileURLToPath, URL } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { buildCsp } from "./csp.config.js";
@@ -22,6 +23,11 @@ function cspMeta() {
 
 export default defineConfig({
   plugins: [react(), cspMeta()],
+  resolve: {
+    alias: {
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+    },
+  },
   build: {
     rolldownOptions: {
       output: {
