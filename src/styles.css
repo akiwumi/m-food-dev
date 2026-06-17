@@ -1947,19 +1947,28 @@ form,.search-box,.search-actions,.search-filters,.entry{max-width:100%;min-width
   margin-bottom: 14px;
 }
 
-.moody-panel form button.mic-btn {
-  background: transparent;
-  color: var(--olive);
-  width: 36px;
-  flex-shrink: 0;
+.voice-fab {
+  position: fixed;
+  z-index: 42;
+  width: 64px;
+  height: 64px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--olive);
+  color: white;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 8px 32px rgba(49, 91, 8, 0.45), 0 2px 8px rgba(0,0,0,0.18);
 }
 
-.moody-panel form button.mic-btn.listening {
-  background: var(--sage);
-  animation: mic-pulse 1s ease-in-out infinite;
+.voice-fab.listening {
+  background: #c0392b;
+  box-shadow: 0 0 0 0 rgba(192, 57, 43, 0.6);
+  animation: voice-ring 1.2s ease-out infinite;
 }
 
-@keyframes mic-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+@keyframes voice-ring {
+  0%   { box-shadow: 0 0 0 0 rgba(192, 57, 43, 0.55); }
+  70%  { box-shadow: 0 0 0 22px rgba(192, 57, 43, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(192, 57, 43, 0); }
 }

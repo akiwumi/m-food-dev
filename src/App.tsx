@@ -2466,6 +2466,55 @@ function FoodProfileScreen({ profile, save, back }: { profile: Profile; save: (p
     })}
   </div>;
 }
+// Floating draggable mic button shown while the Moody panel is open.
+// A short drag repositions it; a tap toggles voice input.
+function VoiceFab({ listening, onPress }: { listening: boolean; onPress: () => void }) {
+  const SIZE = 64, MARGIN = 16, THRESHOLD = 6;
+  const clamp = (x: number, y: number) => ({
+    x: Math.max(MARGIN, Math.min(x, window.innerWidth - SIZE - MARGIN)),
+    y: Math.max(MARGIN, Math.min(y, window.innerHeight - SIZE - MARGIN)),
+  });
+  const [pos, setPos] = useState(() => {
+    try { const s = localStorage.getItem("voiceFabPos"); if (s) return clamp(JSON.parse(s).x, JSON.parse(s).y); } catch { /* ignore */ }
+    return { x: MARGIN, y: window.innerHeight - SIZE - 260 };
+  });
+  const ref = useRef<HTMLButtonElement>(null);
+  const drag = useRef<{ sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null);
+  const suppressClick = useRef(false);
+
+  useEffect(() => {
+    const onResize = () => setPos(p => ({ x: Math.max(MARGIN, Math.min(p.x, window.innerWidth - SIZE - MARGIN)), y: Math.max(MARGIN, Math.min(p.y, window.innerHeight - SIZE - MARGIN)) }));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    suppressClick.current = false;
+    drag.current = { sx: e.clientX, sy: e.clientY, ox: pos.x, oy: pos.y, moved: false };
+    try { ref.current?.setPointerCapture(e.pointerId); } catch { /* not capturable */ }
+  };
+  const onPointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const d = drag.current; if (!d) return;
+    const dx = e.clientX - d.sx, dy = e.clientY - d.sy;
+    if (!d.moved && (Math.abs(dx) > THRESHOLD || Math.abs(dy) > THRESHOLD)) d.moved = true;
+    if (d.moved) setPos(clamp(d.ox + dx, d.oy + dy));
+  };
+  const onPointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const d = drag.current; drag.current = null;
+    try { ref.current?.releasePointerCapture?.(e.pointerId); } catch { /* already released */ }
+    if (!d) return;
+    if (d.moved) {
+      setPos(p => { try { localStorage.setItem("voiceFabPos", JSON.stringify(p)); } catch { /* ignore */ } return p; });
+    } else {
+      onPress();
+    }
+    suppressClick.current = true;
+  };
+  const onClick = () => { if (suppressClick.current) { suppressClick.current = false; return; } onPress(); };
+
+  return <button ref={ref} className={`voice-fab${listening ? " listening" : ""}`} style={{ left: pos.x, top: pos.y, touchAction: "none", cursor: "grab" }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onClick={onClick} aria-label={listening ? "Stop listening" : "Speak to Moody (drag to move)"}><Mic size={28} /></button>;
+}
+
 // Floating "Ask Moody" button the user can drag anywhere on screen. A short drag
 // repositions it (and the position persists); a tap opens Moody. Position is
 // clamped to the viewport and re-clamped on resize/orientation change.
@@ -2593,10 +2642,10 @@ function MoodyPanel({ profile, catalog, loadCatalog, turns, setTurns, close, ope
     }
   };
 
-  return <div className="panel-bg" onClick={close}><aside className="moody-panel" onClick={e => e.stopPropagation()}><header><Moody /><div><b>Moody</b><span>Your dinner co-pilot</span></div><button onClick={close}><X /></button></header><div className="chat"><p>I can choose dinner, explain a recommendation, or help rescue the step you’re on.</p>{turns.map((t, i) => {
+  return <div className="panel-bg" onClick={close}><VoiceFab listening={listening} onPress={listening ? stopVoice : startVoice} /><aside className="moody-panel" onClick={e => e.stopPropagation()}><header><Moody /><div><b>Moody</b><span>Your dinner co-pilot</span></div><button onClick={close}><X /></button></header><div className="chat"><p>I can choose dinner, explain a recommendation, or help rescue the step you’re on.</p>{turns.map((t, i) => {
     const linkedRecipe = (t.recipe as Recipe | undefined) ?? resolveMoodyRecipe(t.recipeId, catalog, profile);
-    return <Fragment key={i}><p className={t.role === "user" ? "user-message" : "moody-message"}>{t.content}</p>{linkedRecipe && <button className="moody-pick" onClick={() => openRecipe(linkedRecipe)}><img src={linkedRecipe.image} alt="" /><span><small>MOODY'S RECOMMENDATION</small><b>{linkedRecipe.title}</b><em>{linkedRecipe.time} min · {linkedRecipe.reason}</em><strong>View recipe <ChevronRight size={14} /></strong></span></button>}</Fragment>;
-  })}{busy && <p className="moody-message">…</p>}<div ref={bottomRef} /></div><div className="prompt-row"><button onClick={() => send("Pick the easiest safe dinner.")}>Pick the easiest</button><button onClick={() => send("I only have 15 minutes.")}>Only 15 minutes</button>{latestRecipe && <button onClick={() => send(`Why are you recommending ${latestRecipe.title}?`)}>Explain this pick</button>}</div><form onSubmit={e => { e.preventDefault(); send(input); }}><input value={input} onChange={e => setInput(e.target.value)} placeholder="Tell Moody what you need..." /><button type="button" className={`mic-btn${listening ? " listening" : ""}`} onClick={listening ? stopVoice : startVoice} disabled={busy} aria-label={listening ? "Stop listening" : "Speak to Moody"}><Mic size={18} /></button><button disabled={busy}><ArrowRight /></button></form></aside></div>;
+    return <Fragment key={i}><p className={t.role === "user" ? "user-message" : "moody-message"}>{t.content}</p>{linkedRecipe && <button className="moody-pick" onClick={() => openRecipe(linkedRecipe)}><img src={linkedRecipe.image} alt="" /><span><small>MOODY’S RECOMMENDATION</small><b>{linkedRecipe.title}</b><em>{linkedRecipe.time} min · {linkedRecipe.reason}</em><strong>View recipe <ChevronRight size={14} /></strong></span></button>}</Fragment>;
+  })}{busy && <p className="moody-message">…</p>}<div ref={bottomRef} /></div><div className="prompt-row"><button onClick={() => send("Pick the easiest safe dinner.")}>Pick the easiest</button><button onClick={() => send("I only have 15 minutes.")}>Only 15 minutes</button>{latestRecipe && <button onClick={() => send(`Why are you recommending ${latestRecipe.title}?`)}>Explain this pick</button>}</div><form onSubmit={e => { e.preventDefault(); send(input); }}><input value={input} onChange={e => setInput(e.target.value)} placeholder="Tell Moody what you need..." /><button disabled={busy}><ArrowRight /></button></form></aside></div>;
 }
 
 function NotificationsPanel({ close, profile, save, refresh }: { close: () => void; profile: Profile; save: (p: Profile) => void; refresh: () => void }) {
