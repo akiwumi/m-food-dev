@@ -333,15 +333,22 @@ export default function App() {
       // not to silently drop cuisine/course/time to force a result.
       const live = await fetchCuratedRecipes(sharedProfile, mood, 50, request.filters.maxReadyTime ?? 60, request.query, request.filters, foodHistory, offset, false);
       const liveCandidates = finalizeSearchResults(live ?? [], sharedProfile, request.filters, Infinity);
-      const candidates = appendUniqueRecipes(
+      const strictCandidates = appendUniqueRecipes(
         nextPage ? searchCandidates : [],
         [...liveCandidates, ...offlineCandidates],
         Infinity,
       );
+      // When every strict filter combined yields nothing, fall back to a
+      // diet-only pass over the bundled catalog so the user always sees
+      // something (diet is the only safety-critical filter, so it's kept).
+      const relaxedFallback = !nextPage && !strictCandidates.length
+        ? finalizeSearchResults(bundledRecipes, sharedProfile, { diet: request.filters.diet }, Infinity)
+        : [];
+      const candidates = strictCandidates.length ? strictCandidates : relaxedFallback;
       const results = nextPage
         ? appendUniqueRecipes(searchResults, candidates, RESULT_BATCH_SIZE)
         : takeUniqueBatch(candidates);
-      const fallbackUsed = !liveCandidates.length && offlineCandidates.length > 0;
+      const fallbackUsed = !liveCandidates.length && (offlineCandidates.length > 0 || relaxedFallback.length > 0);
       setSearchCandidates(candidates);
       setSearchResults(results);
       // Slice 0 telemetry: operational only, fire-and-forget (never awaited).

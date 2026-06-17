@@ -456,12 +456,13 @@ Deno.serve(async (request) => {
     let safe = await spoon(params, maxTime, category);
     let relaxed = false;
 
-    // Attempt 2 — only when relaxation is allowed (the home feed, not an explicit
-    // filtered search). Loosen the QUANTITATIVE limits (time, calories, protein,
-    // fibre, sat-fat, required ingredients, equipment, servings, free-text query)
-    // but KEEP cuisine, course/type, diet, allergens and exclusions — so a relaxed
+    // Attempt 2 — loosen QUANTITATIVE limits (time, calories, protein, fibre,
+    // sat-fat, required ingredients, equipment, servings, free-text query) but
+    // KEEP cuisine, course/type, diet, allergens and exclusions — so a relaxed
     // result still matches the kind of food the user asked for, never random.
-    if (!safe.length && relax) {
+    // Always tried when strict returns nothing, regardless of relax flag, because
+    // categorical filters are still honoured.
+    if (!safe.length) {
       const loose = new URLSearchParams(params);
       for (const key of ["query", "maxReadyTime", "includeIngredients", "equipment", "minServings", "minProtein", "maxCalories", "minFiber", "maxSaturatedFat"]) loose.delete(key);
       safe = await spoon(loose, Infinity, category);
