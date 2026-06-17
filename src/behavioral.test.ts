@@ -115,11 +115,11 @@ describe("deriveMoodCuisineSignal (Slice 4)", () => {
   it("learns mood-specific cuisine preferences", () => {
     const observations: RatingObservation[] = [
       ...Array.from({ length: 3 }, () => ({ cuisine: "Thai", rating: 5, mood: "Tired" })),
-      ...Array.from({ length: 3 }, () => ({ cuisine: "Italian", rating: 5, mood: "Celebratory" })),
+      ...Array.from({ length: 3 }, () => ({ cuisine: "Italian", rating: 5, mood: "Adventurous" })),
     ];
     const s = deriveMoodCuisineSignal(observations);
     expect(s.byMood.Tired).toContain("Thai");
-    expect(s.byMood.Social).toContain("Italian");
+    expect(s.byMood.Adventurous).toContain("Italian");
     expect(s.byMood.Tired ?? []).not.toContain("Italian");
   });
 
@@ -132,12 +132,12 @@ describe("deriveMoodCuisineSignal (Slice 4)", () => {
   it("normalizes historical mood observations and signals", () => {
     const observations: RatingObservation[] = Array.from(
       { length: 3 },
-      () => ({ cuisine: "Italian", rating: 5, mood: "Cozy" }),
+      () => ({ cuisine: "Italian", rating: 5, mood: "Energised" }),
     );
     const signal = deriveMoodCuisineSignal(observations);
 
-    expect(signal.byMood.Sad).toContain("Italian");
-    expect(moodBoost(recipe("1", "Italian"), { byMood: { Cozy: ["Italian"] }, derivationVersion: LEARNED_SIGNAL_VERSION }, "Sad")).toBe(MOOD_BOOST);
+    expect(signal.byMood.Focused).toContain("Italian");
+    expect(moodBoost(recipe("1", "Italian"), { byMood: { Energised: ["Italian"] }, derivationVersion: LEARNED_SIGNAL_VERSION }, "Focused")).toBe(MOOD_BOOST);
   });
 });
 

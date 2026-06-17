@@ -21,7 +21,7 @@ describe("normalizeMoodTag", () => {
 
   it("is case-insensitive and trims whitespace", () => {
     expect(normalizeMoodTag("  HAPPY ")).toBe("happy");
-    expect(normalizeMoodTag("LOW / SAD")).toBe("sad");
+    expect(normalizeMoodTag("  TIRED ")).toBe("tired");
   });
 
   it("falls back to happy for the Cozy default and unknown moods", () => {
