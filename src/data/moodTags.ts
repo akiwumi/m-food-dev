@@ -1,6 +1,6 @@
 export type Mood =
   | "focused"
-  | "sad"
+
   | "energised"
   | "happy"
   | "tired"
@@ -28,22 +28,6 @@ export const moodSearchTags: MoodTag[] = [
       "brain-food",
       "light-but-filling",
       "no-crash"
-    ]
-  },
-  {
-    mood: "sad",
-    label: "Sad",
-    description:
-      "For comforting, warming, familiar meals that feel emotionally soothing and gently uplifting.",
-    tags: [
-      "comfort",
-      "warming",
-      "familiar",
-      "soothing",
-      "gentle",
-      "mood-lifting",
-      "soft-textures",
-      "feel-better"
     ]
   },
   {

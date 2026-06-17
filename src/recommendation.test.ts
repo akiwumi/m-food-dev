@@ -86,9 +86,9 @@ describe("mood tag ranking", () => {
   });
 
   it("matches legacy recipe moods to canonical check-ins", () => {
-    const legacy = { ...fixture[0], id: "legacy", moods: ["Cozy"], tags: {} };
+    const legacy = { ...fixture[0], id: "legacy", moods: ["Energised"], tags: {} };
     const unrelated = { ...fixture[0], id: "other", moods: ["Happy"], tags: {} };
 
-    expect(recommend([unrelated, legacy], profile, "Sad", 60, 60)[0].recipe.id).toBe("legacy");
+    expect(recommend([unrelated, legacy], profile, "Focused", 60, 60)[0].recipe.id).toBe("legacy");
   });
 });
