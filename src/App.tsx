@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback, createContext, useContext, Fragment } from "react";
 import {
   ArrowLeft, ArrowRight, Bell, BookOpen, CalendarDays, Check, ChefHat, ChevronRight,
-  Clock3, Heart, Home, ListChecks, Menu, MoreVertical, Play, RotateCcw, Search,
+  Clock3, Heart, Home, ListChecks, Menu, Mic, MoreVertical, Play, RotateCcw, Search,
   Settings2, ShoppingCart, Sparkles, Star, Timer, X, ShieldCheck, UserRound, BarChart3,
   Upload, LogOut, Plus, ClipboardCheck, LayoutDashboard, Camera, Users, MessageCircle,
   Send, UserPlus, Lock, Globe2, Activity, Salad, Wheat, Droplets, TrendingUp, Mail, CreditCard,
@@ -795,7 +795,7 @@ function QuickTasteStartScreen({
         </label>
 
         <button className="primary quick-submit" onClick={() => save({ diet: diet === "Any" ? "Everything" : diet, allergies })}>
-          Pick dinner <ArrowRight size={18} />
+          Choose <ArrowRight size={18} />
         </button>
       </main>
     </div>
@@ -1533,7 +1533,7 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
         </div>
       )}
       <div style={{ padding: "14px 16px 0" }}>
-        <button className="secondary" style={{ width: "100%" }} onClick={() => setResults(false)}>← Change tonight’s context</button>
+        <button className="secondary" style={{ width: "100%" }} onClick={() => setResults(false)}>← Change meal choice</button>
       </div>
       </>}
     </div>
@@ -1642,7 +1642,7 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
           disabled={!mealCategory}
           onClick={beginResults}
         >
-          Pick dinner <ArrowRight size={18} />
+          Choose <ArrowRight size={18} />
         </button>
       </div>
 
@@ -2534,8 +2534,30 @@ function MoodyFab({ onOpen }: { onOpen: () => void }) {
 function MoodyPanel({ profile, catalog, loadCatalog, turns, setTurns, close, openRecipe }: { profile: Profile; catalog: Recipe[]; loadCatalog: (query?: string) => Promise<Recipe[]>; turns: ChatTurn[]; setTurns: React.Dispatch<React.SetStateAction<ChatTurn[]>>; close: () => void; openRecipe: (recipe: Recipe) => void }) {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [listening, setListening] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recognitionRef = useRef<any>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const latestRecipe = [...turns].reverse().map(turn => resolveMoodyRecipe(turn.recipeId, catalog, profile)).find(Boolean);
+
+  const startVoice = () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any;
+    const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
+    if (!SR) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rec: any = new SR();
+    recognitionRef.current = rec;
+    rec.continuous = false;
+    rec.interimResults = false;
+    rec.onresult = (e: { results: { [n: number]: { [n: number]: { transcript: string } } } }) => { setListening(false); send(e.results[0][0].transcript); };
+    rec.onerror = () => setListening(false);
+    rec.onend = () => setListening(false);
+    rec.start();
+    setListening(true);
+  };
+
+  const stopVoice = () => { recognitionRef.current?.abort(); setListening(false); };
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -2574,7 +2596,7 @@ function MoodyPanel({ profile, catalog, loadCatalog, turns, setTurns, close, ope
   return <div className="panel-bg" onClick={close}><aside className="moody-panel" onClick={e => e.stopPropagation()}><header><Moody /><div><b>Moody</b><span>Your dinner co-pilot</span></div><button onClick={close}><X /></button></header><div className="chat"><p>I can choose dinner, explain a recommendation, or help rescue the step you’re on.</p>{turns.map((t, i) => {
     const linkedRecipe = (t.recipe as Recipe | undefined) ?? resolveMoodyRecipe(t.recipeId, catalog, profile);
     return <Fragment key={i}><p className={t.role === "user" ? "user-message" : "moody-message"}>{t.content}</p>{linkedRecipe && <button className="moody-pick" onClick={() => openRecipe(linkedRecipe)}><img src={linkedRecipe.image} alt="" /><span><small>MOODY'S RECOMMENDATION</small><b>{linkedRecipe.title}</b><em>{linkedRecipe.time} min · {linkedRecipe.reason}</em><strong>View recipe <ChevronRight size={14} /></strong></span></button>}</Fragment>;
-  })}{busy && <p className="moody-message">…</p>}<div ref={bottomRef} /></div><div className="prompt-row"><button onClick={() => send("Pick the easiest safe dinner.")}>Pick the easiest</button><button onClick={() => send("I only have 15 minutes.")}>Only 15 minutes</button>{latestRecipe && <button onClick={() => send(`Why are you recommending ${latestRecipe.title}?`)}>Explain this pick</button>}</div><form onSubmit={e => { e.preventDefault(); send(input); }}><input value={input} onChange={e => setInput(e.target.value)} placeholder="Tell Moody what you need..." /><button disabled={busy}><ArrowRight /></button></form></aside></div>;
+  })}{busy && <p className="moody-message">…</p>}<div ref={bottomRef} /></div><div className="prompt-row"><button onClick={() => send("Pick the easiest safe dinner.")}>Pick the easiest</button><button onClick={() => send("I only have 15 minutes.")}>Only 15 minutes</button>{latestRecipe && <button onClick={() => send(`Why are you recommending ${latestRecipe.title}?`)}>Explain this pick</button>}</div><form onSubmit={e => { e.preventDefault(); send(input); }}><input value={input} onChange={e => setInput(e.target.value)} placeholder="Tell Moody what you need..." /><button type="button" className={`mic-btn${listening ? " listening" : ""}`} onClick={listening ? stopVoice : startVoice} disabled={busy} aria-label={listening ? "Stop listening" : "Speak to Moody"}><Mic size={18} /></button><button disabled={busy}><ArrowRight /></button></form></aside></div>;
 }
 
 function NotificationsPanel({ close, profile, save, refresh }: { close: () => void; profile: Profile; save: (p: Profile) => void; refresh: () => void }) {
