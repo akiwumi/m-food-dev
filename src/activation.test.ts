@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defaultProfile } from "./store";
-import { buildQuickStartProfilePatch, selectActivationPicks } from "./activation";
+import { buildQuickStartProfilePatch, selectActivationPicks, activationFitReason } from "./activation";
 import type { Recipe } from "./data";
 
 describe("quick-start activation", () => {
@@ -131,5 +131,24 @@ describe("activation picks", () => {
 
     expect([picks.hero, ...picks.backups].filter(Boolean).map(recipe => recipe!.id)).not.toContain("rice-bowl");
     expect([picks.hero, ...picks.backups].filter(Boolean).map(recipe => recipe!.id)).not.toContain("long-roast");
+  });
+});
+
+describe("activation fit explanation", () => {
+  it("explains the recommendation using mood, energy, time, safety, and recipe facts", () => {
+    const recipe = activationRecipes[0];
+    const text = activationFitReason({
+      recipe,
+      mood: "Tired",
+      energy: 20,
+      time: 30,
+      profile: { ...defaultProfile, diet: "Vegetarian", allergies: ["Dairy"] },
+    });
+
+    expect(text).toContain("tired");
+    expect(text).toContain("low effort");
+    expect(text).toContain("22 minutes");
+    expect(text).toContain("Vegetarian");
+    expect(text).toContain("avoids Dairy");
   });
 });
