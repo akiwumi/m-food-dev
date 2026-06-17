@@ -61,3 +61,33 @@ export function activationFitReason(input: ActivationFitReasonInput): string {
 
   return `Because you're feeling ${mood}, I picked ${input.recipe.title}: ${effort}, ready in ${time}, and matched to tonight's ${input.time}-minute limit.${diet}${allergies}`;
 }
+
+export type RejectionReason =
+  | "too-much-effort"
+  | "not-in-the-mood"
+  | "too-expensive"
+  | "missing-ingredients"
+  | "too-heavy"
+  | "repeated-recently";
+
+export type QuickStartContext = {
+  mood: string;
+  energy: number;
+  time: number;
+};
+
+export function adjustQuickStartAfterRejection(context: QuickStartContext, reason: RejectionReason): QuickStartContext {
+  if (reason === "too-much-effort") {
+    return { ...context, energy: Math.min(context.energy, 20), time: Math.min(context.time, 30) };
+  }
+  if (reason === "not-in-the-mood") {
+    return { ...context, mood: "Tired", energy: Math.min(context.energy, 35) };
+  }
+  if (reason === "too-expensive" || reason === "missing-ingredients") {
+    return { ...context, mood: "Tired", energy: Math.min(context.energy, 35), time: Math.min(context.time, 30) };
+  }
+  if (reason === "too-heavy") {
+    return { ...context, mood: "Healthy", energy: Math.max(context.energy, 45) };
+  }
+  return { ...context, mood: "Adventurous" };
+}

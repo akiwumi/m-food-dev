@@ -40,7 +40,13 @@ import { deterministicTasteSummary, fetchTasteSummary } from "./tasteSummary";
 import { Landing } from "./Landing";
 import { searchFoods, type NutritionFood } from "./nutrition";
 import { readDevTestState } from "./devTestState";
-import { activationFitReason, buildQuickStartProfilePatch, selectActivationPicks } from "./activation";
+import {
+  activationFitReason,
+  adjustQuickStartAfterRejection,
+  buildQuickStartProfilePatch,
+  selectActivationPicks,
+  type RejectionReason,
+} from "./activation";
 import { appendUniqueRecipes, RESULT_BATCH_SIZE, takeUniqueBatch } from "./resultBatches";
 import { moodyCandidates, resolveMoodyRecipe } from "./moodyRecipes";
 import { moodSearchTags, type Mood } from "@/data/moodTags";
@@ -632,6 +638,29 @@ export default function App() {
       signin={() => setEntry("login")}
     />
   );
+  if (entry === "first-pick") return (
+    <FirstPickScreen
+      profile={profile}
+      recipes={catalog}
+      mood={quickMood}
+      energy={quickEnergy}
+      time={quickTime}
+      setContext={(next) => {
+        setQuickMood(next.mood);
+        setQuickEnergy(next.energy);
+        setQuickTime(next.time);
+      }}
+      openRecipe={(recipe) => {
+        setSelected(recipe);
+        setProfile({ ...profile, firstPickViewed: true });
+        setEntry("subscription");
+      }}
+      continueToTrial={() => {
+        setProfile({ ...profile, firstPickViewed: true });
+        setEntry("subscription");
+      }}
+    />
+  );
   if (entry === "onboarding") return <Onboarding profile={profile} save={setProfile} finish={(next) => { setProfile({ ...next, onboarded: true }); clearStored("moodfood-onboarding-step"); setEntry("account"); }} />;
   if (entry === "account") return <AccountSetupScreen profile={profile} back={() => setEntry("onboarding")} simulate={testState === "account"} submit={(patch, opts) => {
     const confirmed = !!opts?.hasSession; // session present = email confirmation is OFF, so they're in
@@ -758,6 +787,90 @@ function QuickTasteStartScreen({
           Pick dinner <ArrowRight size={18} />
         </button>
       </main>
+    </div>
+  );
+}
+
+const REJECTION_OPTIONS: { id: RejectionReason; label: string }[] = [
+  { id: "too-much-effort", label: "Too much effort" },
+  { id: "not-in-the-mood", label: "Not in the mood" },
+  { id: "too-expensive", label: "Too expensive" },
+  { id: "missing-ingredients", label: "Missing ingredients" },
+  { id: "too-heavy", label: "Too heavy" },
+  { id: "repeated-recently", label: "Had this recently" },
+];
+
+function FirstPickScreen({
+  profile, recipes, mood, energy, time, setContext, openRecipe, continueToTrial,
+}: {
+  profile: Profile;
+  recipes: Recipe[];
+  mood: string;
+  energy: number;
+  time: number;
+  setContext: (context: { mood: string; energy: number; time: number }) => void;
+  openRecipe: (recipe: Recipe) => void;
+  continueToTrial: () => void;
+}) {
+  const [dismissed, setDismissed] = useState<string[]>([]);
+  const available = recipes.filter(recipe => !dismissed.includes(recipe.id));
+  const picks = selectActivationPicks({ recipes: available, profile, mood, energy, time });
+  const fit = picks.hero ? activationFitReason({ recipe: picks.hero, profile, mood, energy, time }) : "";
+
+  const reject = (reason: RejectionReason) => {
+    if (picks.hero) setDismissed([...dismissed, picks.hero.id]);
+    setContext(adjustQuickStartAfterRejection({ mood, energy, time }, reason));
+  };
+
+  return (
+    <div className="first-pick">
+      <header className="quick-top">
+        <div className="ih-logo dark"><img src="/images/logo-1.png" alt="" /><span>MoodFood</span></div>
+      </header>
+      {picks.hero ? (
+        <main className="first-pick-main">
+          <span>DINNER IS HANDLED</span>
+          <h1>{picks.hero.title}</h1>
+          <RecipeImage className="first-pick-image" sources={stepImageSources(undefined, picks.hero.image)} alt={picks.hero.title} />
+          <div className="first-pick-facts">
+            <span><Clock3 size={14} /> {picks.hero.time} min</span>
+            <span><ShieldCheck size={14} /> Safety checked</span>
+            <span><Sparkles size={14} /> {mood}</span>
+          </div>
+          <div className="moody-note first-pick-note"><Moody /><p>{fit}</p></div>
+          <div className="first-pick-actions">
+            <button className="primary" onClick={() => openRecipe(picks.hero!)}>View recipe <ArrowRight size={17} /></button>
+            <button className="secondary" onClick={continueToTrial}>Save this profile</button>
+          </div>
+          <section className="reject-box">
+            <b>Not tonight?</b>
+            <div>
+              {REJECTION_OPTIONS.map(option => (
+                <button key={option.id} onClick={() => reject(option.id)}>{option.label}</button>
+              ))}
+            </div>
+          </section>
+          {!!picks.backups.length && (
+            <section className="backup-picks">
+              <h2>Backups</h2>
+              {picks.backups.map(recipe => (
+                <button key={recipe.id} onClick={() => openRecipe(recipe)}>
+                  <RecipeImage sources={stepImageSources(undefined, recipe.image)} alt={recipe.title} />
+                  <span><b>{recipe.title}</b><small>{recipe.time} min · {recipe.reason}</small></span>
+                  <ChevronRight size={16} />
+                </button>
+              ))}
+            </section>
+          )}
+        </main>
+      ) : (
+        <main className="first-pick-main">
+          <span>TRY AGAIN</span>
+          <h1>I couldn't find a safe match yet.</h1>
+          <p>Change your time, diet, or allergies and I'll try again.</p>
+          <button className="primary" onClick={continueToTrial}>Continue</button>
+        </main>
+      )}
     </div>
   );
 }

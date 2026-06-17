@@ -152,3 +152,23 @@ describe("activation fit explanation", () => {
     expect(text).toContain("avoids Dairy");
   });
 });
+
+import { adjustQuickStartAfterRejection } from "./activation";
+
+describe("activation rejection learning", () => {
+  it("turns too much effort into lower energy and lower time", () => {
+    expect(adjustQuickStartAfterRejection({ mood: "Tired", energy: 50, time: 45 }, "too-much-effort")).toEqual({
+      mood: "Tired",
+      energy: 20,
+      time: 30,
+    });
+  });
+
+  it("turns not in the mood into a comfort-seeking tired pick", () => {
+    expect(adjustQuickStartAfterRejection({ mood: "Adventurous", energy: 60, time: 45 }, "not-in-the-mood")).toEqual({
+      mood: "Tired",
+      energy: 35,
+      time: 45,
+    });
+  });
+});

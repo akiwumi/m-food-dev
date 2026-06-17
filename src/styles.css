@@ -1799,3 +1799,130 @@ form,.search-box,.search-actions,.search-filters,.entry{max-width:100%;min-width
   min-height: 56px;
   width: 100%;
 }
+
+.first-pick {
+  min-height: 100vh;
+  background: #f8f4ec;
+  color: #1f2823;
+  padding: 18px 16px 34px;
+}
+
+.first-pick-main {
+  display: grid;
+  gap: 14px;
+  max-width: 620px;
+  margin: 0 auto;
+}
+
+.first-pick-main > span {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  color: var(--coral);
+}
+
+.first-pick-main h1 {
+  margin: 0;
+  font-size: clamp(34px, 10vw, 56px);
+  line-height: 1;
+}
+
+.first-pick-image {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.first-pick-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.first-pick-facts span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  border-radius: 999px;
+  padding: 0 11px;
+  background: #fff;
+  border: 1px solid rgba(31, 40, 35, 0.1);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.first-pick-note {
+  margin: 0;
+}
+
+.first-pick-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.first-pick-actions button {
+  min-height: 52px;
+}
+
+.reject-box {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  background: #fff;
+  border-radius: 8px;
+  border: 1px solid rgba(31, 40, 35, 0.1);
+}
+
+.reject-box > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.reject-box button {
+  border: 1px solid rgba(31, 40, 35, 0.14);
+  background: #f8f4ec;
+  border-radius: 999px;
+  min-height: 36px;
+  padding: 0 12px;
+  font-weight: 700;
+}
+
+.backup-picks {
+  display: grid;
+  gap: 10px;
+}
+
+.backup-picks h2 {
+  margin: 4px 0 0;
+}
+
+.backup-picks button {
+  display: grid;
+  grid-template-columns: 76px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  text-align: left;
+  border: 1px solid rgba(31, 40, 35, 0.1);
+  background: #fff;
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.backup-picks img {
+  width: 76px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
+.backup-picks span {
+  display: grid;
+  gap: 4px;
+}
+
+.backup-picks small {
+  color: var(--muted);
+}
