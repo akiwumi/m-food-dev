@@ -672,7 +672,7 @@ export default function App() {
   }} />;
   if (entry === "verify") return <VerifyEmailScreen email={profile.email} realAuth={isSupabaseConfigured} resend={() => { sendConfirmationEmail(profile.email, profile.name); refreshNotifs(); }} back={() => setEntry("account")} onVerified={() => { setProfile({ ...profile, emailVerified: true }); sendWelcomeEmail(profile.email, profile.name); refreshNotifs(); setEntry("verified"); }} />;
   if (entry === "verified") return <VerifiedScreen name={profile.name} proceed={() => setEntry("subscription")} />;
-  if (entry === "subscription") return <SubscriptionScreen profile={profile} save={setProfile} onStarted={refreshNotifs} proceed={() => setEntry("app")} />;
+  if (entry === "subscription") return <SubscriptionScreen profile={profile} save={setProfile} onStarted={refreshNotifs} proceed={() => { setProfile({ ...profile, activationPaywallSeen: true }); setEntry("app"); }} />;
   return <MenuCtx.Provider value={() => setMenuOpen(true)}><div className={page === "cook" ? "app cooking" : "app"}>
     {page !== "cook" && <DesktopNav page={page} go={go} openMoody={() => setMoodyOpen(true)} />}
     <main>
@@ -2139,21 +2139,21 @@ function SubscriptionScreen({ profile, save, proceed, onStarted }: { profile: Pr
     <div className="subscription">
       <div className="sub-logo"><img src="/images/logo-1.png" alt="MoodFood" /><span>MoodFood</span></div>
       <section className="billing">
-        <span>YOUR FOOD PROFILE IS READY</span>
-        <h1>{mode === "invite" ? "Redeem your invite." : "Start your 7-day free trial."}</h1>
+        <span>DINNER DECISIONS, LIGHTER</span>
+        <h1>{mode === "invite" ? "Redeem your invite." : "Keep MoodFood deciding with you."}</h1>
         <div className="sub-mode-toggle">
           <button className={mode === "trial" ? "active" : ""} onClick={() => setMode("trial")}>Free trial</button>
           <button className={mode === "invite" ? "active" : ""} onClick={() => setMode("invite")}>Invite code</button>
         </div>
         {mode === "trial" ? (
           <>
-            <p>Personalized, safe recommendations tuned to the profile you just built, plus cook mode, mood check-ins, and weekly reflections.</p>
+            <p>Save your quick profile, unlock guided cooking, and let Moody get sharper every time you cook, reject, or rate a meal.</p>
             <PlanPicker plan={plan} setPlan={setPlan} />
             {checkoutError && <p className="invite-error">{checkoutError}</p>}
             <button className="primary" onClick={start} disabled={checkoutLoading}>
-              {checkoutLoading ? "Opening checkout…" : <>Start free trial <ArrowRight /></>}
+              {checkoutLoading ? "Opening checkout…" : <>Start 7-day free trial <ArrowRight /></>}
             </button>
-            <small>7 days free, then {chosen?.price}. Card required, cancel anytime before trial ends.</small>
+            <small>7 days free, then {chosen?.price}. Cancel before the trial ends if MoodFood does not make dinner feel easier.</small>
           </>
         ) : (
           <>
@@ -2174,7 +2174,7 @@ function SubscriptionScreen({ profile, save, proceed, onStarted }: { profile: Pr
             <small>Valid codes grant 1 year of full access, tracked in Stripe.</small>
           </>
         )}
-        <button className="skip" onClick={proceed}>Maybe later</button>
+        <button className="skip" onClick={proceed}>Continue without saving trial</button>
       </section>
     </div>
   );
