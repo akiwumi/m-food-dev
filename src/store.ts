@@ -53,6 +53,11 @@ export type Profile = {
   rankingPreference: string;       // what to optimise picks for -> Spoonacular sort
   plan: string;                    // chosen subscription: annual | quarterly | monthly
   photoLogs: import("./foodAnalysis").FoodPhoto[];  // meal photo + nutrition logs
+  // --- Quick aha activation lifecycle ---
+  quickStartCompleted: boolean;
+  firstPickViewed: boolean;
+  activationPaywallSeen: boolean;
+  quickStartSafetyConfirmed: boolean;
   // --- Account + subscription lifecycle ---
   accountCreated: boolean;
   emailVerified: boolean;
@@ -119,6 +124,10 @@ export const defaultProfile: Profile = {
   rankingPreference: "Most popular",
   plan: "annual",
   photoLogs: [],
+  quickStartCompleted: false,
+  firstPickViewed: false,
+  activationPaywallSeen: false,
+  quickStartSafetyConfirmed: false,
   accountCreated: false,
   emailVerified: false,
   trialStartedAt: "",
