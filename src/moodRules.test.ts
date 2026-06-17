@@ -22,16 +22,14 @@ const recipe = (patch: Partial<Recipe> = {}): Recipe => ({
 });
 
 describe("canonical mood taxonomy", () => {
-  it("defines the approved 9 check-in moods", () => {
+  it("defines the approved 6 check-in moods", () => {
     expect(canonicalMoods).toEqual([
-      "Tired", "Stressed", "Sad", "Happy", "Adventurous", "Romantic",
-      "Healthy", "Focused", "Social",
+      "Tired", "Stressed", "Happy", "Romantic",
+      "Healthy", "Focused",
     ]);
   });
 
   it("normalizes historical moods without rewriting stored records", () => {
-    expect(normalizeMood("Cozy")).toBe("Sad");
-    expect(normalizeMood("Celebratory")).toBe("Social");
     expect(normalizeMood("Energised")).toBe("Focused");
     expect(normalizeMood("Tired")).toBe("Tired");
   });
@@ -65,6 +63,6 @@ describe("weighted mood scoring", () => {
 
   it("uses canonical rules for historical aliases", () => {
     const comforting = recipe({ tags: { mood: ["comforting"], sensory: ["warm", "familiar"] } });
-    expect(scoreByMood(comforting, "Cozy")).toBe(scoreByMood(comforting, "Sad"));
+    expect(scoreByMood(comforting, "Energised")).toBe(scoreByMood(comforting, "Focused"));
   });
 });

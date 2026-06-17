@@ -89,5 +89,5 @@ export function adjustQuickStartAfterRejection(context: QuickStartContext, reaso
   if (reason === "too-heavy") {
     return { ...context, mood: "Healthy", energy: Math.max(context.energy, 45) };
   }
-  return { ...context, mood: "Adventurous" };
+  return { ...context, mood: "Happy" };
 }

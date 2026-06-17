@@ -97,7 +97,7 @@ export const GATE_SCENARIOS: Scenario[] = [
   { name: "cozy comfort", mood: "Cozy", energy: 45, time: 45 },
   { name: "energised quick", mood: "Energised", energy: 80, time: 20 },
   { name: "stressed light", mood: "Stressed", energy: 35, time: 25, filters: { diet: "Vegetarian" } },
-  { name: "adventurous dinner", mood: "Adventurous", energy: 70, time: 60, filters: { type: "dinner" } },
+  { name: "happy dinner", mood: "Happy", energy: 70, time: 60, filters: { type: "dinner" } },
   { name: "focused protein", mood: "Focused", energy: 60, time: 30, query: "chicken" },
 ];
 

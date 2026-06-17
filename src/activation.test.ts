@@ -93,7 +93,7 @@ const activationRecipes: Recipe[] = [
     time: 90,
     difficulty: "Medium",
     calories: 650,
-    moods: ["Adventurous"],
+    moods: ["Happy"],
     reason: "Lovely, but slow.",
     cuisine: "Mediterranean",
     mealTypes: ["dinner"],
@@ -165,7 +165,7 @@ describe("activation rejection learning", () => {
   });
 
   it("turns not in the mood into a comfort-seeking tired pick", () => {
-    expect(adjustQuickStartAfterRejection({ mood: "Adventurous", energy: 60, time: 45 }, "not-in-the-mood")).toEqual({
+    expect(adjustQuickStartAfterRejection({ mood: "Happy", energy: 60, time: 45 }, "not-in-the-mood")).toEqual({
       mood: "Tired",
       energy: 35,
       time: 45,

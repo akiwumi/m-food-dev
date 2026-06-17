@@ -1,8 +1,8 @@
 import type { Recipe, RecipeTags } from "./data";
 
 export const canonicalMoods = [
-  "Tired", "Stressed", "Sad", "Happy", "Adventurous", "Romantic",
-  "Healthy", "Focused", "Social",
+  "Tired", "Stressed", "Happy", "Romantic",
+  "Healthy", "Focused",
 ] as const;
 
 export type MoodName = typeof canonicalMoods[number];
@@ -13,8 +13,6 @@ export type MoodRule = {
 };
 
 const aliases: Record<string, MoodName> = {
-  Cozy: "Sad",
-  Celebratory: "Social",
   Energised: "Focused",
 };
 
@@ -33,20 +31,10 @@ export const moodRules: Record<MoodName, MoodRule> = {
     positive: { calming: 25, simple_steps: 20, warm: 15, gentle_flavour: 15, one_pot: 10, balanced: 10, predictable: 8 },
     negative: { messy: -20, experimental: -18, very_spicy: -15, many_steps: -15 },
   },
-  Sad: {
-    description: "Soft, warm comfort food that feels familiar and caring.",
-    positive: { comforting: 25, warm: 20, familiar: 18, creamy: 12, soft_texture: 12, hearty: 10, nostalgic: 10 },
-    negative: { cold: -15, raw: -15, very_light: -12, diet_food: -20 },
-  },
   Happy: {
     description: "Bright, colourful, fun food for a good mood.",
     positive: { colourful: 22, fresh: 18, bright: 18, flavourful: 15, crispy: 10, zesty: 10, shareable: 8 },
     negative: { plain: -12, dull: -15, heavy: -8 },
-  },
-  Adventurous: {
-    description: "Bold, exciting meals with novelty and strong flavour.",
-    positive: { bold_flavour: 25, new_cuisine: 20, spicy: 15, umami: 12, fermented: 10, fusion: 10, aromatic: 10 },
-    negative: { plain: -15, basic: -15, very_mild: -10, familiar: -8 },
   },
   Romantic: {
     description: "Elegant, shareable meals for date-night or special moments.",
@@ -62,11 +50,6 @@ export const moodRules: Record<MoodName, MoodRule> = {
     description: "Clean fuel for concentration and steady energy.",
     positive: { high_protein: 22, balanced: 20, slow_release_energy: 18, light: 12, fresh: 10, low_sugar: 10, meal_prep_friendly: 8 },
     negative: { greasy: -15, high_sugar: -18, very_heavy: -15, sleepy_food: -15 },
-  },
-  Social: {
-    description: "Generous, shareable food for groups and family tables.",
-    positive: { shareable: 25, family_style: 20, batch_cooking: 15, crowd_pleaser: 15, customisable: 12, generous: 10, easy_to_scale: 10 },
-    negative: { single_serving: -20, delicate: -10, difficult_to_scale: -15 },
   },
 };
 
@@ -109,7 +92,7 @@ export function inferRecipeTags(recipe: Recipe): RecipeTags {
   if (/\b(salad|fresh|herb|parsley|basil|cilantro)\b/.test(text)) add(tags, "sensory", "fresh");
   if (/\b(soup|stew|pasta|rice|noodle|baked|roast|curry|porridge|congee)\b/.test(text)) add(tags, "sensory", "warm");
   if (/\b(soup|stew|porridge|congee|mash|creamy|scrambled)\b/.test(text)) add(tags, "sensory", "soft_texture");
-  if (recipe.moods.some(mood => ["Cozy", "Sad", "Tired", "Stressed"].includes(mood))) add(tags, "sensory", "familiar");
+  if (recipe.moods.some(mood => ["Cozy", "Tired", "Stressed"].includes(mood))) add(tags, "sensory", "familiar");
 
   if (recipe.diets.some(diet => diet.toLowerCase().includes("high protein"))) add(tags, "nutrition", "high_protein");
   if (recipe.diets.some(diet => ["vegetarian", "vegan"].includes(diet.toLowerCase())) || /\b(spinach|broccoli|kale|vegetable|beans|lentils|peas)\b/.test(text)) add(tags, "nutrition", "vegetable_rich");

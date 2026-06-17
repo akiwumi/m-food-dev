@@ -15,7 +15,7 @@ describe("normalizeMoodTag", () => {
     expect(normalizeMoodTag("Tired")).toBe("tired");
     expect(normalizeMoodTag("Stressed")).toBe("stressed");
     expect(normalizeMoodTag("Focused")).toBe("focused");
-    expect(normalizeMoodTag("Adventurous")).toBe("energised");
+    expect(normalizeMoodTag("Healthy")).toBe("energised");
     expect(normalizeMoodTag("Romantic")).toBe("happy");
   });
 

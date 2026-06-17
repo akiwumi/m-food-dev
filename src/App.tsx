@@ -748,7 +748,7 @@ function QuickTasteStartScreen({
         <label className="quick-field">
           <b>Mood</b>
           <div className="mood-pills">
-            {["Tired", "Stressed", "Cozy", "Adventurous"].map(value => (
+            {["Tired", "Stressed", "Cozy", "Happy"].map(value => (
               <button key={value} className={mood === value ? "active" : ""} onClick={() => setMood(value)}>{value}</button>
             ))}
           </div>

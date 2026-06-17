@@ -115,11 +115,11 @@ describe("deriveMoodCuisineSignal (Slice 4)", () => {
   it("learns mood-specific cuisine preferences", () => {
     const observations: RatingObservation[] = [
       ...Array.from({ length: 3 }, () => ({ cuisine: "Thai", rating: 5, mood: "Tired" })),
-      ...Array.from({ length: 3 }, () => ({ cuisine: "Italian", rating: 5, mood: "Adventurous" })),
+      ...Array.from({ length: 3 }, () => ({ cuisine: "Italian", rating: 5, mood: "Happy" })),
     ];
     const s = deriveMoodCuisineSignal(observations);
     expect(s.byMood.Tired).toContain("Thai");
-    expect(s.byMood.Adventurous).toContain("Italian");
+    expect(s.byMood.Happy).toContain("Italian");
     expect(s.byMood.Tired ?? []).not.toContain("Italian");
   });
 

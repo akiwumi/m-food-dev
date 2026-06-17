@@ -41,8 +41,8 @@ export type Recipe = {
 };
 
 export const moods = [
-  "Tired", "Stressed", "Sad", "Happy", "Adventurous", "Romantic",
-  "Healthy", "Focused", "Social",
+  "Tired", "Stressed", "Happy", "Romantic",
+  "Healthy", "Focused",
 ];
 
 // ─── Cooking moods (deep profiler) ─────────────────────────────────────────────
