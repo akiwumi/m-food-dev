@@ -143,7 +143,7 @@ export function Landing({ begin, signin }: { begin: () => void; signin: () => vo
             We'll match you to one safe, doable meal, chosen for your mood, your energy, and the people at your table.
           </p>
           <div className="ih-actions" data-reveal>
-            <button className="ih-cta" onClick={() => setStep("how")}>Pick tonight's dinner <ArrowRight size={17} /></button>
+            <button className="ih-cta" onClick={() => setStep("how")}>Let's eat <ArrowRight size={17} /></button>
             <button className="ih-ghost" onClick={signin}>I already have an account</button>
           </div>
           <div className="ih-trust" data-reveal>
@@ -207,7 +207,7 @@ export function Landing({ begin, signin }: { begin: () => void; signin: () => vo
         <p className="ip-note" data-reveal>Short on time? Answer what you can, nothing is set in stone. You can revisit and refine everything any time from your Food Profile.</p>
       </main>
       <footer className="ip-footer">
-        <button className="primary" onClick={begin}>Pick dinner <ArrowRight size={16} /></button>
+        <button className="primary" onClick={begin}>Let's eat <ArrowRight size={16} /></button>
       </footer>
     </div>
   );
