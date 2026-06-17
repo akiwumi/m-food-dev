@@ -1534,8 +1534,8 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
       <AppHeader profile={profile} openNotifs={openNotifs} unread={unread} />
 
       <div className="home-greeting">
-        <h1>Feeling {mood.toLowerCase()}?<br /><span>Eat something warm.</span></h1>
-        <p>Tell Moody how you feel, get one safe meal chosen for your mood, energy, and table.</p>
+        <h1>How does dinner feel tonight?</h1>
+        <p>Pick a mood, time, and energy level. Moody will choose one safe answer and keep backups ready.</p>
       </div>
 
       {/* ── Hero recipe photo (45vh, rounded, like the fitness hero image) ── */}
@@ -1631,63 +1631,66 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
           disabled={!mealCategory}
           onClick={beginResults}
         >
-          Search <ArrowRight size={18} />
+          Pick dinner <ArrowRight size={18} />
         </button>
       </div>
 
-      {/* ── Stat cards, today’s logged nutrition + Moody’s pick ── */}
-      {(() => {
-        const today = new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" });
-        const todayLogs = profile.photoLogs.filter(l => l.when.startsWith(today));
-        const totals = sumNutrition(todayLogs);
-        return (
-          <div className="home-stats">
-            <div className="stat-card" style={{ cursor: "pointer" }} onClick={() => go("food-log")}>
-              <div className="sc-icon"><FlameKindling size={20} /></div>
-              <div className="sc-label">Today’s calories</div>
-              {totals.calories > 0
-                ? <div><span className="sc-value">{totals.calories}</span><span className="sc-unit"> kcal</span></div>
-                : <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>Log a meal →</div>}
+      <details className="home-more">
+        <summary>More tools</summary>
+        {/* ── Stat cards, today’s logged nutrition + Moody’s pick ── */}
+        {(() => {
+          const today = new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" });
+          const todayLogs = profile.photoLogs.filter(l => l.when.startsWith(today));
+          const totals = sumNutrition(todayLogs);
+          return (
+            <div className="home-stats">
+              <div className="stat-card" style={{ cursor: "pointer" }} onClick={() => go("food-log")}>
+                <div className="sc-icon"><FlameKindling size={20} /></div>
+                <div className="sc-label">Today’s calories</div>
+                {totals.calories > 0
+                  ? <div><span className="sc-value">{totals.calories}</span><span className="sc-unit"> kcal</span></div>
+                  : <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>Log a meal →</div>}
+              </div>
+              <div className="stat-card">
+                <div className="sc-icon"><Clock3 size={20} /></div>
+                <div className="sc-label">{hero ? "Cook time" : "Tonight’s pick"}</div>
+                {hero
+                  ? <div><span className="sc-value">{hero.time}</span><span className="sc-unit"> min</span></div>
+                  : <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>Check in above</div>}
+              </div>
             </div>
-            <div className="stat-card">
-              <div className="sc-icon"><Clock3 size={20} /></div>
-              <div className="sc-label">{hero ? "Cook time" : "Tonight’s pick"}</div>
-              {hero
-                ? <div><span className="sc-value">{hero.time}</span><span className="sc-unit"> min</span></div>
-                : <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>Check in above</div>}
-            </div>
-          </div>
-        );
-      })()}
+          );
+        })()}
 
-      {/* ── Photo log shortcut ── */}
-      <div className="home-photo-shortcut">
-        <FoodCamera label="Log a meal with photo" onSave={addPhoto} allergies={profile.allergies} />
-      </div>
+        {/* ── Photo log shortcut ── */}
+        <div className="home-photo-shortcut">
+          <FoodCamera label="Log a meal with photo" onSave={addPhoto} allergies={profile.allergies} />
+        </div>
 
-      {/* ── Quick-link cards, styled like the bottom rows in reference ── */}
-      <div className="home-links">
-        <button className="home-link-card" onClick={() => go("food-log")}>
-          <span className="hlc-icon"><Camera size={20} /></span>
-          <span className="hlc-text"><b>Food photo log</b><small>Photograph meals for calorie estimates</small></span>
-          <span className="hlc-arr"><ArrowRight size={16} /></span>
-        </button>
-        <button className="home-link-card" onClick={() => go("health")}>
-          <span className="hlc-icon"><Activity size={20} /></span>
-          <span className="hlc-text"><b>Your health trends</b><small>Nutrition, variety, and patterns</small></span>
-          <span className="hlc-arr"><ArrowRight size={16} /></span>
-        </button>
-        <button className="home-link-card" onClick={() => go("community")}>
-          <span className="hlc-icon"><Users size={20} /></span>
-          <span className="hlc-text"><b>MoodFood community</b><small>Share cooks, recipes, and tips</small></span>
-          <span className="hlc-arr"><ArrowRight size={16} /></span>
-        </button>
-        <button className="home-link-card" onClick={() => go("settings")}>
-          <span className="hlc-icon"><UserRound size={20} /></span>
-          <span className="hlc-text"><b>Your food profile</b><small>Safety, moods, and preferences</small></span>
-          <span className="hlc-arr"><ArrowRight size={16} /></span>
-        </button>
-      </div>
+        {/* ── Quick-link cards, styled like the bottom rows in reference ── */}
+        <div className="home-links">
+          <button className="home-link-card" onClick={() => go("food-log")}>
+            <span className="hlc-icon"><Camera size={20} /></span>
+            <span className="hlc-text"><b>Food photo log</b><small>Photograph meals for calorie estimates</small></span>
+            <span className="hlc-arr"><ArrowRight size={16} /></span>
+          </button>
+          <button className="home-link-card" onClick={() => go("health")}>
+            <span className="hlc-icon"><Activity size={20} /></span>
+            <span className="hlc-text"><b>Your health trends</b><small>Nutrition, variety, and patterns</small></span>
+            <span className="hlc-arr"><ArrowRight size={16} /></span>
+          </button>
+          <button className="home-link-card" onClick={() => go("community")}>
+            <span className="hlc-icon"><Users size={20} /></span>
+            <span className="hlc-text"><b>MoodFood community</b><small>Share cooks, recipes, and tips</small></span>
+            <span className="hlc-arr"><ArrowRight size={16} /></span>
+          </button>
+          <button className="home-link-card" onClick={() => go("settings")}>
+            <span className="hlc-icon"><UserRound size={20} /></span>
+            <span className="hlc-text"><b>Your food profile</b><small>Safety, moods, and preferences</small></span>
+            <span className="hlc-arr"><ArrowRight size={16} /></span>
+          </button>
+        </div>
+      </details>
     </div>
   );
 }

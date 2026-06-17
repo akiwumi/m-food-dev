@@ -1926,3 +1926,23 @@ form,.search-box,.search-actions,.search-filters,.entry{max-width:100%;min-width
 .backup-picks small {
   color: var(--muted);
 }
+
+.home-more {
+  margin: 18px 16px 0;
+}
+
+.home-more summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid rgba(31, 40, 35, 0.12);
+  background: rgba(255, 255, 255, 0.7);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.home-more[open] summary {
+  margin-bottom: 14px;
+}
