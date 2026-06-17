@@ -207,7 +207,7 @@ export function Landing({ begin, signin }: { begin: () => void; signin: () => vo
         <p className="ip-note" data-reveal>Short on time? Answer what you can, nothing is set in stone. You can revisit and refine everything any time from your Food Profile.</p>
       </main>
       <footer className="ip-footer">
-        <button className="primary" onClick={begin}>Let's eat <ArrowRight size={16} /></button>
+        <button className="primary" onClick={begin}>Pick your meal <ArrowRight size={16} /></button>
       </footer>
     </div>
   );
