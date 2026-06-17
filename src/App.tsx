@@ -157,6 +157,7 @@ export default function App() {
   const [searchCandidates, setSearchCandidates] = useState<Recipe[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchOffset, setSearchOffset] = useState(0);
+  const [searchRelaxed, setSearchRelaxed] = useState(false);
   const [moodyOpen, setMoodyOpen] = useState(false);
   const [moodyTurns, setMoodyTurns] = useState<ChatTurn[]>([]);
   const [detailReturnMoody, setDetailReturnMoody] = useState(false);
@@ -314,6 +315,7 @@ export default function App() {
     if (!nextPage) {
       setSearchResults([]);
       setSearchCandidates([]);
+      setSearchRelaxed(false);
     }
     setSearchLoading(true);
     setPage("results");
@@ -345,10 +347,12 @@ export default function App() {
         ? finalizeSearchResults(bundledRecipes, sharedProfile, { diet: request.filters.diet }, Infinity)
         : [];
       const candidates = strictCandidates.length ? strictCandidates : relaxedFallback;
+      const isRelaxed = relaxedFallback.length > 0 && !strictCandidates.length;
       const results = nextPage
         ? appendUniqueRecipes(searchResults, candidates, RESULT_BATCH_SIZE)
         : takeUniqueBatch(candidates);
       const fallbackUsed = !liveCandidates.length && (offlineCandidates.length > 0 || relaxedFallback.length > 0);
+      setSearchRelaxed(isRelaxed);
       setSearchCandidates(candidates);
       setSearchResults(results);
       // Slice 0 telemetry: operational only, fire-and-forget (never awaited).
@@ -686,7 +690,7 @@ export default function App() {
       {page === "home" && <HomeScreen profile={profile} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results={false} setResults={setResults} beginResults={() => { setSearchRequest(null); setCurating(true); setAiRanked(null); setHasFetched(false); setResults(true); go("results"); }} ranked={ranked} curating={curating} loadMore={loadMore} live={aiRanked !== null || deterministicLive !== null} curated={aiRanked !== null} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} />}
       {page === "search" && <SearchScreen profile={sharedProfile} onSearch={request => runSearch(request)} />}
       {page === "results" && (searchRequest
-        ? <SearchResultsScreen results={searchResults} loading={searchLoading} request={searchRequest} more={() => runSearch(searchRequest, true)} home={() => go("home")} search={() => go("search")} open={open} saved={saved} setSaved={setSaved} />
+        ? <SearchResultsScreen results={searchResults} loading={searchLoading} request={searchRequest} relaxed={searchRelaxed} more={() => runSearch(searchRequest, true)} home={() => go("home")} search={() => go("search")} open={open} saved={saved} setSaved={setSaved} />
         : results
           ? <HomeScreen profile={profile} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results setResults={v => { setResults(v); if (!v) go("home"); }} beginResults={() => {}} ranked={ranked} curating={curating} hasFetched={hasFetched} loadMore={loadMore} live={aiRanked !== null || deterministicLive !== null} curated={aiRanked !== null} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} />
           : <EmptyResultsScreen home={() => go("home")} search={() => go("search")} />)}
@@ -1833,15 +1837,26 @@ function SearchScreen({ profile, onSearch }: { profile: Profile; onSearch: (requ
   </div>;
 }
 
-function SearchResultsScreen({ results, loading, request, more, home, search, open, saved, setSaved }: { results: Recipe[]; loading: boolean; request: SearchRequest; more: () => void; home: () => void; search: () => void; open: (recipe: Recipe) => void; saved: string[]; setSaved: (values: string[]) => void }) {
+function describeFilters(filters: RecipeFilters): string {
+  const parts: string[] = [];
+  if (filters.cuisines?.length) parts.push(filters.cuisines.join(" or "));
+  if (filters.type) parts.push(filters.type);
+  const diet = filters.diet;
+  if (diet && !["any", "anything", "everything"].includes(diet.toLowerCase())) parts.push(diet.toLowerCase());
+  return parts.join(" + ");
+}
+
+function SearchResultsScreen({ results, loading, request, relaxed, more, home, search, open, saved, setSaved }: { results: Recipe[]; loading: boolean; request: SearchRequest; relaxed?: boolean; more: () => void; home: () => void; search: () => void; open: (recipe: Recipe) => void; saved: string[]; setSaved: (values: string[]) => void }) {
+  const filterDesc = describeFilters(request.filters);
   return <div className="screen">
     <TopBar title="Results" />
     <div className="results-summary"><span>{request.filters.type ? `${request.filters.type.toUpperCase()} ONLY` : "FILTERED SEARCH"}</span><h1>{request.query || "Recipes matching your filters"}</h1><p>{results.length} unique options shown · up to {request.filters.maxReadyTime ?? 60} min</p></div>
+    {relaxed && filterDesc && <div className="search-relaxed-notice"><p>No {filterDesc} recipes found — showing your closest diet-safe options instead. <button onClick={search}>Adjust filters</button></p></div>}
     {loading && !results.length
       ? <div className="thinking-state"><div className="thinking-orbit"><Sparkles /><i /><i /><i /></div><span>SEARCHING</span><h1>Checking every hard rule.</h1><p>Diet, course, time, ingredients, and duplicates are being verified.</p></div>
       : results.length
         ? <div className="search-grid">{results.map(r => <article key={r.id}><RecipeImage sources={stepImageSources(undefined, r.image)} alt={r.title} /><button onClick={() => setSaved(toggle(saved, r.id))}><Heart fill={saved.includes(r.id) ? "currentColor" : "none"} /></button><div><h2>{r.title}</h2><p>{r.reason}</p><span><Clock3 size={13} /> {r.time} min · {r.difficulty}</span><button className="primary" onClick={() => open(r)}>View recipe</button></div></article>)}</div>
-        : <div className="empty-state"><Search /><h2>No exact matches</h2><p>Adjust one filter and search again. Your saved diet and allergies remain protected.</p></div>}
+        : <div className="empty-state"><Search /><h2>{filterDesc ? `No ${filterDesc} recipes found` : "No exact matches"}</h2><p>{filterDesc ? "Nothing matches that combination. Remove one filter and try again — your diet and allergy rules are always kept." : "Adjust one filter and search again. Your saved diet and allergies remain protected."}</p></div>}
     <div className="results-actions"><button className="primary" onClick={more} disabled={loading}>{loading ? "Finding 5 more…" : "Show 5 more options"}</button><button className="secondary" onClick={search}>Change search</button><button className="secondary" onClick={home}><Home size={17} />Return home</button></div>
   </div>;
 }
