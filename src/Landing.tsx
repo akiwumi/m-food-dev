@@ -143,7 +143,7 @@ export function Landing({ begin, signin }: { begin: () => void; signin: () => vo
             We'll match you to one safe, doable meal, chosen for your mood, your energy, and the people at your table.
           </p>
           <div className="ih-actions" data-reveal>
-            <button className="ih-cta" onClick={() => setStep("how")}>Get started <ArrowRight size={17} /></button>
+            <button className="ih-cta" onClick={() => setStep("how")}>Pick tonight's dinner <ArrowRight size={17} /></button>
             <button className="ih-ghost" onClick={signin}>I already have an account</button>
           </div>
           <div className="ih-trust" data-reveal>
@@ -194,8 +194,8 @@ export function Landing({ begin, signin }: { begin: () => void; signin: () => vo
       <div className="ip-segments"><i className="active" /><i className="active" /></div>
       <main className="ip-main">
         <span className="ip-eyebrow" data-reveal>BEFORE WE START</span>
-        <h1 data-reveal>A few questions first, on purpose.</h1>
-        <p className="ip-lede" data-reveal>The next part may feel a little long, and that's deliberate. Every answer helps MoodFood truly understand your tastes, your needs, and the way you eat.</p>
+        <h1 data-reveal>Start small. Improve as you cook.</h1>
+        <p className="ip-lede" data-reveal>We'll ask only what we need for a safe first pick. After that, you can build a richer food profile whenever you want sharper recommendations.</p>
         <ul className="ip-points">
           {QUESTION_POINTS.map(p => (
             <li key={p.title} data-reveal>
@@ -207,7 +207,7 @@ export function Landing({ begin, signin }: { begin: () => void; signin: () => vo
         <p className="ip-note" data-reveal>Short on time? Answer what you can, nothing is set in stone. You can revisit and refine everything any time from your Food Profile.</p>
       </main>
       <footer className="ip-footer">
-        <button className="primary" onClick={begin}>Let's build my food profile <ArrowRight size={16} /></button>
+        <button className="primary" onClick={begin}>Pick dinner <ArrowRight size={16} /></button>
       </footer>
     </div>
   );

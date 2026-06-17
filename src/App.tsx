@@ -40,6 +40,7 @@ import { deterministicTasteSummary, fetchTasteSummary } from "./tasteSummary";
 import { Landing } from "./Landing";
 import { searchFoods, type NutritionFood } from "./nutrition";
 import { readDevTestState } from "./devTestState";
+import { activationFitReason, buildQuickStartProfilePatch, selectActivationPicks } from "./activation";
 import { appendUniqueRecipes, RESULT_BATCH_SIZE, takeUniqueBatch } from "./resultBatches";
 import { moodyCandidates, resolveMoodyRecipe } from "./moodyRecipes";
 import { moodSearchTags, type Mood } from "@/data/moodTags";
@@ -104,7 +105,7 @@ const MenuCtx = createContext<() => void>(() => {});
 
 type Page = "home" | "search" | "results" | "diary" | "grocery" | "planner" | "detail" | "cook" | "insights" | "settings" | "favorites" | "import" | "admin" | "billing" | "psych-profile" | "food-profile" | "account" | "community" | "health" | "health-nutrition" | "health-variety" | "health-patterns" | "family-health" | "diners" | "food-log" | "pantry" | "help" | "privacy";
 type SearchRequest = { query: string; filters: RecipeFilters };
-type Entry = "welcome" | "login" | "onboarding" | "account" | "verify" | "verified" | "subscription" | "app";
+type Entry = "welcome" | "login" | "quick-start" | "first-pick" | "onboarding" | "account" | "verify" | "verified" | "subscription" | "app";
 const PLANS = [
   { id: "annual", name: "Annual", price: "$120/year", note: "Best value, about 2 months free" },
   { id: "quarterly", name: "Quarterly", price: "$36/quarter", note: "Save 20%, billed every 3 months" },
@@ -138,6 +139,9 @@ export default function App() {
   const [mood, setMood] = useState("Tired");
   const [energy, setEnergy] = useState(45);
   const [time, setTime] = useState(30);
+  const [quickMood, setQuickMood] = useState("Tired");
+  const [quickEnergy, setQuickEnergy] = useState(25);
+  const [quickTime, setQuickTime] = useState(30);
   const [mealCategory, setMealCategory] = useState("");
   const [cuisine, setCuisine] = useState("");
   const [homeDiet, setHomeDiet] = useState("Any");
@@ -190,10 +194,33 @@ export default function App() {
     if (testState === "home") {
       setProfile(prev => ({ ...prev, name: prev.name || "Test Cook", email: prev.email || "test@example.com", onboarded: true, accountCreated: true }));
       setEntry("app");
+    } else if (testState === "quick-start") {
+      setEntry("quick-start");
+    } else if (testState === "first-pick") {
+      setProfile(prev => ({
+        ...prev,
+        diet: "Vegetarian",
+        allergies: [],
+        quickStartCompleted: true,
+        quickStartSafetyConfirmed: true,
+        path: "quick",
+      }));
+      setEntry("first-pick");
+    } else if (testState === "activation-paywall") {
+      setProfile(prev => ({
+        ...prev,
+        diet: "Vegetarian",
+        allergies: [],
+        quickStartCompleted: true,
+        quickStartSafetyConfirmed: true,
+        firstPickViewed: true,
+        path: "quick",
+      }));
+      setEntry("subscription");
     } else {
       setEntry("account");
     }
-  }, [testState]);
+  }, [testState, setEntry, setProfile]);
   // catalog = bundled recipes plus any fetched from the AI-curated recipes API.
   // aiRanked = the API's curated order when available; null falls back to local ranking.
   // Seeded with the offline catalog so the app always has real recipes to rank,
@@ -584,11 +611,27 @@ export default function App() {
   // resume whatever entry step they were on.
   if ((splash && entry !== "app") || entry === "welcome") {
     return <Landing
-      begin={() => { setSplash(false); if (entry === "welcome") setEntry("onboarding"); }}
+      begin={() => { setSplash(false); if (entry === "welcome") setEntry("quick-start"); }}
       signin={() => { setSplash(false); setEntry("login"); }}
     />;
   }
   if (entry === "login") return <LoginScreen back={() => { setPasswordRecovery(false); setEntry("welcome"); }} onSignedIn={() => setEntry("app")} recovery={passwordRecovery} doneRecovery={() => setPasswordRecovery(false)} />;
+  if (entry === "quick-start") return (
+    <QuickTasteStartScreen
+      mood={quickMood}
+      setMood={setQuickMood}
+      energy={quickEnergy}
+      setEnergy={setQuickEnergy}
+      time={quickTime}
+      setTime={setQuickTime}
+      profile={profile}
+      save={(patch) => {
+        setProfile({ ...profile, ...buildQuickStartProfilePatch(patch) });
+        setEntry("first-pick");
+      }}
+      signin={() => setEntry("login")}
+    />
+  );
   if (entry === "onboarding") return <Onboarding profile={profile} save={setProfile} finish={(next) => { setProfile({ ...next, onboarded: true }); clearStored("moodfood-onboarding-step"); setEntry("account"); }} />;
   if (entry === "account") return <AccountSetupScreen profile={profile} back={() => setEntry("onboarding")} simulate={testState === "account"} submit={(patch, opts) => {
     const confirmed = !!opts?.hasSession; // session present = email confirmation is OFF, so they're in
@@ -643,6 +686,80 @@ export default function App() {
     {notifOpen && <NotificationsPanel close={() => setNotifOpen(false)} profile={profile} save={setProfile} refresh={refreshNotifs} />}
     {menuOpen && <MainMenu profile={profile} page={page} go={go} close={() => setMenuOpen(false)} openNotifs={openNotifs} unread={unreadCount()} logout={() => { authSignOut(); setEntry("welcome"); }} />}
   </div></MenuCtx.Provider>;
+}
+
+function QuickTasteStartScreen({
+  mood, setMood, energy, setEnergy, time, setTime, profile, save, signin,
+}: {
+  mood: string;
+  setMood: (value: string) => void;
+  energy: number;
+  setEnergy: (value: number) => void;
+  time: number;
+  setTime: (value: number) => void;
+  profile: Profile;
+  save: (patch: { diet: string; allergies: string[] }) => void;
+  signin: () => void;
+}) {
+  const [diet, setDiet] = useState(profile.diet === "Everything" ? "Any" : profile.diet);
+  const [allergyText, setAllergyText] = useState(profile.allergies.join(", "));
+  const allergies = allergyText.split(",").map(item => cleanText(item, 40)).filter(Boolean);
+
+  return (
+    <div className="quick-start">
+      <header className="quick-top">
+        <div className="ih-logo dark"><img src="/images/logo-1.png" alt="" /><span>MoodFood</span></div>
+        <button className="ih-signin dark" onClick={signin}>Sign in</button>
+      </header>
+      <main className="quick-card">
+        <span>TONIGHT, FAST</span>
+        <h1>Tell me how dinner feels.</h1>
+        <p>Four quick answers. Then I'll pick one safe meal and explain why it fits.</p>
+
+        <label className="quick-field">
+          <b>Mood</b>
+          <div className="mood-pills">
+            {["Tired", "Stressed", "Cozy", "Adventurous"].map(value => (
+              <button key={value} className={mood === value ? "active" : ""} onClick={() => setMood(value)}>{value}</button>
+            ))}
+          </div>
+        </label>
+
+        <label className="quick-field">
+          <b>Energy: {energy}%</b>
+          <input type="range" min={0} max={100} value={energy} onChange={event => setEnergy(+event.target.value)} />
+          <div className="range-label"><span>Keep it easy</span><span>I'm up for more</span></div>
+        </label>
+
+        <label className="quick-field">
+          <b>Time</b>
+          <div className="time-pills">
+            {[15, 30, 45, 60].map(value => (
+              <button key={value} className={time === value ? "active" : ""} onClick={() => setTime(value)}>{value}</button>
+            ))}
+          </div>
+        </label>
+
+        <label className="quick-field">
+          <b>Diet</b>
+          <select className="cuisine-select" value={diet} onChange={event => setDiet(event.target.value)}>
+            {["Any", "Vegetarian", "Vegan", "Pescatarian", "Gluten-free", "Dairy-free"].map(value => (
+              <option key={value} value={value}>{value}</option>
+            ))}
+          </select>
+        </label>
+
+        <label className="quick-field">
+          <b>Allergies</b>
+          <input value={allergyText} onChange={event => setAllergyText(event.target.value)} placeholder="e.g. peanuts, dairy" />
+        </label>
+
+        <button className="primary quick-submit" onClick={() => save({ diet: diet === "Any" ? "Everything" : diet, allergies })}>
+          Pick dinner <ArrowRight size={18} />
+        </button>
+      </main>
+    </div>
+  );
 }
 
 function toggle(values: string[], value: string) { return values.includes(value) ? values.filter(v => v !== value) : [...values, value]; }
