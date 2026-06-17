@@ -6,16 +6,15 @@
 // the seed writes and what a live search reads is what makes the cache work, so
 // keep CANON_MOODS / the mappings below in sync with scripts/seed-recipes.mjs.
 
-export const CANON_MOODS = ["happy", "anxious", "tired", "stressed", "energised", "sad", "focused"];
+export const CANON_MOODS = ["happy", "tired", "stressed", "energised", "sad", "focused"];
 
 // App mood labels (src/data.ts `moods` + the function's "Cozy" default + cooking
 // moods) → one of the 7 canonical seed moods. Best-effort psychological grouping
 // (the roadmap's pre-launch note); unknown moods fall back to "happy".
 const MOOD_MAP: Record<string, string> = {
   happy: "happy", romantic: "happy", social: "happy", cozy: "happy", indulge: "happy", nostalgic: "happy",
-  anxious: "anxious",
-  tired: "tired", lazy: "tired", "under the weather": "tired", ill: "tired",
-  stressed: "stressed", angry: "stressed",
+  tired: "tired", "under the weather": "tired", ill: "tired",
+  stressed: "stressed",
   energised: "energised", adventurous: "energised", healthy: "energised", creative: "energised", bored: "energised",
   sad: "sad", "low / sad": "sad",
   focused: "focused", "performance / focused": "focused", nourish: "focused", mindful: "focused",

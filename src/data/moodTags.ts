@@ -4,7 +4,7 @@ export type Mood =
   | "energised"
   | "happy"
   | "tired"
-  | "anxious";
+;
 
 export type MoodTag = {
   mood: Mood;
@@ -92,22 +92,6 @@ export const moodSearchTags: MoodTag[] = [
       "minimal-prep",
       "one-pot",
       "gentle-energy"
-    ]
-  },
-  {
-    mood: "anxious",
-    label: "Anxious",
-    description:
-      "For calming, simple, warm, grounding meals that feel safe and easy to digest.",
-    tags: [
-      "calming",
-      "grounding",
-      "simple",
-      "warm",
-      "easy-digest",
-      "soothing",
-      "not-spicy",
-      "light-comfort"
     ]
   }
 ];

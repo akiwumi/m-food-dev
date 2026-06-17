@@ -14,12 +14,9 @@ describe("normalizeMoodTag", () => {
   it("maps the app's mood labels onto canonical tags", () => {
     expect(normalizeMoodTag("Tired")).toBe("tired");
     expect(normalizeMoodTag("Stressed")).toBe("stressed");
-    expect(normalizeMoodTag("Anxious")).toBe("anxious");
     expect(normalizeMoodTag("Focused")).toBe("focused");
     expect(normalizeMoodTag("Adventurous")).toBe("energised");
     expect(normalizeMoodTag("Romantic")).toBe("happy");
-    expect(normalizeMoodTag("Lazy")).toBe("tired");
-    expect(normalizeMoodTag("Angry")).toBe("stressed");
   });
 
   it("is case-insensitive and trims whitespace", () => {

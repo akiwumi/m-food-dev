@@ -22,10 +22,10 @@ const recipe = (patch: Partial<Recipe> = {}): Recipe => ({
 });
 
 describe("canonical mood taxonomy", () => {
-  it("defines the approved 12 check-in moods", () => {
+  it("defines the approved 9 check-in moods", () => {
     expect(canonicalMoods).toEqual([
       "Tired", "Stressed", "Sad", "Happy", "Adventurous", "Romantic",
-      "Healthy", "Lazy", "Angry", "Anxious", "Focused", "Social",
+      "Healthy", "Focused", "Social",
     ]);
   });
 

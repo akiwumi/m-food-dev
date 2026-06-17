@@ -2,7 +2,7 @@ import type { Recipe, RecipeTags } from "./data";
 
 export const canonicalMoods = [
   "Tired", "Stressed", "Sad", "Happy", "Adventurous", "Romantic",
-  "Healthy", "Lazy", "Angry", "Anxious", "Focused", "Social",
+  "Healthy", "Focused", "Social",
 ] as const;
 
 export type MoodName = typeof canonicalMoods[number];
@@ -57,21 +57,6 @@ export const moodRules: Record<MoodName, MoodRule> = {
     description: "Fresh, balanced meals that feel nourishing.",
     positive: { balanced: 25, vegetable_rich: 20, high_protein: 15, high_fibre: 15, fresh: 12, nutrient_dense: 12, low_sugar: 8 },
     negative: { deep_fried: -20, high_sugar: -15, very_heavy: -12, ultra_processed: -20 },
-  },
-  Lazy: {
-    description: "The lowest-effort meals possible.",
-    positive: { no_cook: 25, low_effort: 25, quick: 20, assembly_only: 18, microwave: 15, pantry_meal: 12, minimal_washing_up: 12 },
-    negative: { multi_step: -20, technical: -20, baking: -12, marinating: -15 },
-  },
-  Angry: {
-    description: "Punchy, bold, satisfying food for intense energy.",
-    positive: { spicy: 20, crunchy: 18, bold_flavour: 18, savoury: 15, umami: 12, hearty: 12, crispy: 12 },
-    negative: { delicate: -15, bland: -18, tiny_portion: -12, fussy: -15 },
-  },
-  Anxious: {
-    description: "Safe, familiar, gentle food that does not overwhelm.",
-    positive: { familiar: 25, gentle_flavour: 20, simple_steps: 18, warm: 15, soft_texture: 12, not_spicy: 12, comforting: 10 },
-    negative: { experimental: -20, very_spicy: -18, strong_smell: -15, unfamiliar: -15 },
   },
   Focused: {
     description: "Clean fuel for concentration and steady energy.",
