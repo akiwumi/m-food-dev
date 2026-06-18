@@ -646,7 +646,10 @@ export default function App() {
   }, []);
 
   const go = (next: Page) => { setPage(next); window.scrollTo(0, 0); };
-  const open = (recipe: Recipe) => { setDetailReturnMoody(false); setSelected(recipe); setDetailReturnPage(page); go("detail"); };
+  const open = (recipe: Recipe) => {
+    setCatalog(prev => prev.some(r => r.id === recipe.id) ? prev : [recipe, ...prev]);
+    setDetailReturnMoody(false); setSelected(recipe); setDetailReturnPage(page); go("detail");
+  };
   const openFromMoody = (recipe: Recipe) => {
     setSelected(recipe);
     setDetailReturnPage(page);
@@ -1489,7 +1492,14 @@ function DesktopNav({ page, go, openMoody }: { page: Page; go: (p: Page) => void
   </aside>;
 }
 function BottomNav({ page, go }: { page: Page; go: (p: Page) => void }) {
-  return <nav className="bottom-nav">{nav.map(([id, label, Icon]) => <button className={page === id ? "active" : ""} onClick={() => go(id)} key={id}><Icon size={19} /><span>{label}</span></button>)}</nav>;
+  const items: [Page, string, typeof Home][] = [
+    ["home", "Home", Home],
+    ["search", "Search", Search],
+    ["results", "Results", ListChecks],
+    ["favorites", "Saved", Heart],
+    ["grocery", "Grocery", ShoppingCart],
+  ];
+  return <nav className="bottom-nav">{items.map(([id, label, Icon]) => <button className={page === id ? "active" : ""} onClick={() => go(id)} key={id}><Icon size={19} /><span>{label}</span></button>)}</nav>;
 }
 // Full-height slide-in drawer surfacing every part of the app, the single
 // place to reach settings, food profile, camera log, health, billing, and more.
