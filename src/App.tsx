@@ -121,7 +121,69 @@ const nav = [
   ["home", "Home", Home], ["search", "Search", Search], ["results", "Results", ListChecks],
   ["grocery", "Grocery", ShoppingCart], ["planner", "Planner", CalendarDays],
 ] as const;
+
+const PULL_THRESHOLD = 72;  // px to trigger reload
+const PULL_MAX = 110;       // px max visual travel
+
+function usePullToRefresh() {
+  const [pullY, setPullY] = useState(0);
+  const startYRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const onStart = (e: TouchEvent) => {
+      if (window.scrollY === 0) startYRef.current = e.touches[0].clientY;
+    };
+    const onMove = (e: TouchEvent) => {
+      if (startYRef.current === null || window.scrollY > 0) return;
+      const delta = Math.max(0, e.touches[0].clientY - startYRef.current);
+      if (delta > 0) {
+        // Resist: travel slows as it approaches PULL_MAX
+        const clamped = PULL_MAX * (1 - Math.exp(-delta / PULL_MAX));
+        setPullY(clamped);
+      }
+    };
+    const onEnd = () => {
+      if (pullY >= PULL_THRESHOLD) {
+        window.location.reload();
+      } else {
+        setPullY(0);
+      }
+      startYRef.current = null;
+    };
+    document.addEventListener("touchstart", onStart, { passive: true });
+    document.addEventListener("touchmove", onMove, { passive: true });
+    document.addEventListener("touchend", onEnd);
+    return () => {
+      document.removeEventListener("touchstart", onStart);
+      document.removeEventListener("touchmove", onMove);
+      document.removeEventListener("touchend", onEnd);
+    };
+  }, [pullY]);
+
+  return pullY;
+}
+
+function PullRefreshIndicator({ pullY }: { pullY: number }) {
+  const progress = Math.min(pullY / PULL_THRESHOLD, 1);
+  const ready = pullY >= PULL_THRESHOLD;
+  if (pullY < 2) return null;
+  return (
+    <div
+      className="ptr-indicator"
+      style={{ transform: `translateY(${pullY - 44}px)`, opacity: progress }}
+    >
+      <div
+        className={"ptr-circle" + (ready ? " ready" : "")}
+        style={{ transform: `rotate(${progress * 210}deg)` }}
+      >
+        <RotateCcw size={18} />
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
+  const pullY = usePullToRefresh();
   const testState = readDevTestState(window.location.search, import.meta.env.DEV);
   const [splash, setSplash] = useState(true);
   const [entry, setEntry] = useStoredState<Entry>("moodfood-entry", "welcome");
@@ -685,6 +747,7 @@ export default function App() {
   if (entry === "verified") return <VerifiedScreen name={profile.name} proceed={() => setEntry("subscription")} />;
   if (entry === "subscription") return <SubscriptionScreen profile={profile} save={setProfile} onStarted={refreshNotifs} proceed={() => { setProfile({ ...profile, activationPaywallSeen: true }); setEntry("app"); }} />;
   return <MenuCtx.Provider value={() => setMenuOpen(true)}><div className={page === "cook" ? "app cooking" : "app"}>
+    <PullRefreshIndicator pullY={pullY} />
     {page !== "cook" && <DesktopNav page={page} go={go} openMoody={() => setMoodyOpen(true)} />}
     <main>
       {page === "home" && <HomeScreen profile={profile} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results={false} setResults={setResults} beginResults={() => { setSearchRequest(null); setCurating(true); setAiRanked(null); setHasFetched(false); setResults(true); go("results"); }} ranked={ranked} curating={curating} loadMore={loadMore} live={aiRanked !== null || deterministicLive !== null} curated={aiRanked !== null} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} />}
