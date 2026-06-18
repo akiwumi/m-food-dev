@@ -19,6 +19,20 @@ export type FoodHistory = {
   topCuisines?: string[];   // most-cooked cuisines
 };
 
+function combineAbortSignals(...signals: (AbortSignal | undefined)[]): AbortSignal {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  for (const signal of signals) {
+    if (!signal) continue;
+    if (signal.aborted) {
+      abort();
+      break;
+    }
+    signal.addEventListener("abort", abort, { once: true });
+  }
+  return controller.signal;
+}
+
 export function withHardTimeout<T>(operation: Promise<T>, ms: number, fallback: T, onTimeout: () => void): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -79,6 +93,7 @@ export async function fetchCuratedRecipes(
   offset = 0,
   relax = true,
   curate = false,
+  signal?: AbortSignal,
 ): Promise<Recipe[] | null> {
   if (!supabase) { console.info("[recipes] Supabase not configured (.env.local), showing local recipes."); return null; }
 
@@ -100,7 +115,7 @@ export async function fetchCuratedRecipes(
         // up to TWO Spoonacular calls (the relax-and-retry path) + AI curation
         // (5s). An 8s budget here aborted slow-but-successful searches before the
         // server could answer, surfacing a false "no results".
-        signal: AbortSignal.timeout(22_000),
+        signal: combineAbortSignals(AbortSignal.timeout(22_000), signal),
       });
 
       let res = await post(session.access_token);

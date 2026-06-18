@@ -221,6 +221,8 @@ export default function App() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchOffset, setSearchOffset] = useState(0);
   const [searchRelaxed, setSearchRelaxed] = useState(false);
+  const activeSearchId = useRef(0);
+  const activeSearchAbort = useRef<AbortController | null>(null);
   const [moodyOpen, setMoodyOpen] = useState(false);
   const [moodyTurns, setMoodyTurns] = useState<ChatTurn[]>([]);
   const [detailReturnMoody, setDetailReturnMoody] = useState(false);
@@ -372,6 +374,12 @@ export default function App() {
   }, [catalog, foodHistory, mood, sharedProfile]);
 
   const runSearch = async (request: SearchRequest, nextPage = false) => {
+    activeSearchAbort.current?.abort();
+    const searchId = activeSearchId.current + 1;
+    activeSearchId.current = searchId;
+    const controller = new AbortController();
+    activeSearchAbort.current = controller;
+    const isActiveSearch = () => activeSearchId.current === searchId && !controller.signal.aborted;
     const offset = nextPage ? searchOffset + 20 : 0;
     setSearchRequest(request);
     setSearchOffset(offset);
@@ -396,7 +404,8 @@ export default function App() {
 
       // Explicit search honors the filters exactly — relax:false tells the backend
       // not to silently drop cuisine/course/time to force a result.
-      const live = await fetchCuratedRecipes(sharedProfile, mood, 50, request.filters.maxReadyTime ?? 60, request.query, request.filters, foodHistory, offset, false);
+      const live = await fetchCuratedRecipes(sharedProfile, mood, 50, request.filters.maxReadyTime ?? 60, request.query, request.filters, foodHistory, offset, false, false, controller.signal);
+      if (!isActiveSearch()) return;
       const liveCandidates = finalizeSearchResults(live ?? [], sharedProfile, request.filters, Infinity);
       const strictCandidates = appendUniqueRecipes(
         nextPage ? searchCandidates : [],
@@ -432,7 +441,10 @@ export default function App() {
         filterCount: Object.values(request.filters).filter(v => v !== undefined && v !== "" && !(Array.isArray(v) && v.length === 0)).length,
       });
     } finally {
-      setSearchLoading(false);
+      if (activeSearchId.current === searchId) {
+        activeSearchAbort.current = null;
+        setSearchLoading(false);
+      }
     }
   };
 
@@ -646,7 +658,18 @@ export default function App() {
     // canceled: do nothing, stay on subscription screen
   }, []);
 
-  const go = (next: Page) => { setPage(next); window.scrollTo(0, 0); };
+  const cancelSearch = useCallback(() => {
+    activeSearchAbort.current?.abort();
+    activeSearchAbort.current = null;
+    activeSearchId.current += 1;
+    setSearchLoading(false);
+  }, []);
+
+  const go = (next: Page) => {
+    if (next !== "results") cancelSearch();
+    setPage(next);
+    window.scrollTo(0, 0);
+  };
   const open = (recipe: Recipe) => {
     setCatalog(prev => prev.some(r => r.id === recipe.id) ? prev : [recipe, ...prev]);
     setDetailReturnMoody(false); setSelected(recipe); setDetailReturnPage(page); go("detail");
