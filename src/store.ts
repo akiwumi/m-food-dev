@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 
 export type Profile = {
   name: string; email: string; onboarded: boolean; path: "quick" | "standard";
@@ -173,5 +173,5 @@ export function clearStored(key: string) {
 export function useStoredState<T>(key: string, initial: T) {
   const [value, setValue] = useState<T>(() => readStored(key, initial));
   useEffect(() => writeStored(key, value), [key, value]);
-  return [value, setValue] as const;
+  return [value, setValue] as readonly [T, Dispatch<SetStateAction<T>>];
 }

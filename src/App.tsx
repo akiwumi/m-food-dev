@@ -34,6 +34,7 @@ import { supabase } from "./supabase";
 import { displayStepDetail, displayStepTitle, formatTimer, stepImageSources } from "./cooking";
 import { RecipeImage } from "./RecipeImage";
 import { finalizeSearchResults } from "./searchResults";
+import { nextSavedRecipeIds } from "./savedRecipes";
 import { trackSearch } from "./telemetry";
 import { getConsents, setConsent, resetLearningData, exportMyData, NO_CONSENT, type ConsentState, type ConsentScope } from "./governance";
 import { deterministicTasteSummary, fetchTasteSummary } from "./tasteSummary";
@@ -658,6 +659,10 @@ export default function App() {
     setMoodyOpen(false);
     go("detail");
   };
+  const toggleSavedRecipe = useCallback((recipe: Recipe) => {
+    setCatalog(prev => prev.some(r => r.id === recipe.id) ? prev : [recipe, ...prev]);
+    setSaved(current => nextSavedRecipeIds(current, recipe.id));
+  }, [setSaved]);
   const backFromDetail = () => {
     go(detailReturnPage);
     if (detailReturnMoody) {
@@ -754,21 +759,14 @@ export default function App() {
     <PullRefreshIndicator pullY={pullY} />
     {page !== "cook" && <DesktopNav page={page} go={go} openMoody={() => setMoodyOpen(true)} />}
     <main>
-      {page === "home" && <HomeScreen profile={profile} diary={diary} saved={saved} catalog={catalog} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results={false} setResults={setResults} beginResults={() => { setSearchRequest(null); setCurating(true); setAiRanked(null); setHasFetched(false); setResults(true); go("results"); }} ranked={ranked} curating={curating} loadMore={loadMore} live={aiRanked !== null || deterministicLive !== null} curated={aiRanked !== null} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} onPickSuggestion={r => runSearch({ query: r.title, filters: { query: r.title } })} toggleSave={(r) => { setCatalog(prev => prev.some(p => p.id === r.id) ? prev : [r, ...prev]); setSaved(toggle(saved, r.id)); }} />}
+      {page === "home" && <HomeScreen profile={profile} diary={diary} saved={saved} catalog={catalog} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results={false} setResults={setResults} beginResults={() => { setSearchRequest(null); setCurating(true); setAiRanked(null); setHasFetched(false); setResults(true); go("results"); }} ranked={ranked} curating={curating} loadMore={loadMore} live={aiRanked !== null || deterministicLive !== null} curated={aiRanked !== null} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} onPickSuggestion={r => runSearch({ query: r.title, filters: { query: r.title } })} toggleSave={toggleSavedRecipe} />}
       {page === "search" && <SearchScreen profile={sharedProfile} diary={diary} saved={saved} catalog={catalog} onSearch={request => runSearch(request)} />}
       {page === "results" && (searchRequest
-        ? <SearchResultsScreen results={searchResults} loading={searchLoading} request={searchRequest} relaxed={searchRelaxed} more={() => runSearch(searchRequest, true)} home={() => go("home")} search={() => go("search")} open={open} saved={saved} setSaved={(newSaved) => {
-            const addedId = newSaved.find(id => !saved.includes(id));
-            if (addedId) {
-              const r = searchResults.find(r => r.id === addedId);
-              if (r) setCatalog(prev => prev.some(p => p.id === r.id) ? prev : [r, ...prev]);
-            }
-            setSaved(newSaved);
-          }} />
+        ? <SearchResultsScreen results={searchResults} loading={searchLoading} request={searchRequest} relaxed={searchRelaxed} more={() => runSearch(searchRequest, true)} home={() => go("home")} search={() => go("search")} open={open} saved={saved} toggleSave={toggleSavedRecipe} />
         : results
-          ? <HomeScreen profile={profile} diary={diary} saved={saved} catalog={catalog} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results setResults={v => { setResults(v); if (!v) go("home"); }} beginResults={() => {}} ranked={ranked} curating={curating} hasFetched={hasFetched} loadMore={loadMore} live={aiRanked !== null || deterministicLive !== null} curated={aiRanked !== null} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} onPickSuggestion={r => runSearch({ query: r.title, filters: { query: r.title } })} toggleSave={(r) => { setCatalog(prev => prev.some(p => p.id === r.id) ? prev : [r, ...prev]); setSaved(toggle(saved, r.id)); }} />
+          ? <HomeScreen profile={profile} diary={diary} saved={saved} catalog={catalog} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results setResults={v => { setResults(v); if (!v) go("home"); }} beginResults={() => {}} ranked={ranked} curating={curating} hasFetched={hasFetched} loadMore={loadMore} live={aiRanked !== null || deterministicLive !== null} curated={aiRanked !== null} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} onPickSuggestion={r => runSearch({ query: r.title, filters: { query: r.title } })} toggleSave={toggleSavedRecipe} />
           : <EmptyResultsScreen home={() => go("home")} search={() => go("search")} />)}
-      {page === "detail" && selected && <DetailScreen recipe={selected} servings={eaterCount} back={backFromDetail} cook={() => go("cook")} saved={saved.includes(selected.id)} toggleSave={() => setSaved(toggle(saved, selected.id))} addGroceries={() => setGroceries(v => [...new Set([...v, ...selected.ingredients])])} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} shareToCommunity={() => shareRecipe(selected)} allergies={profile.allergies} />}
+      {page === "detail" && selected && <DetailScreen recipe={selected} servings={eaterCount} back={backFromDetail} cook={() => go("cook")} saved={saved.includes(selected.id)} toggleSave={() => toggleSavedRecipe(selected)} addGroceries={() => setGroceries(v => [...new Set([...v, ...selected.ingredients])])} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} shareToCommunity={() => shareRecipe(selected)} allergies={profile.allergies} />}
       {page === "cook" && selected && <CookScreen recipe={selected} exit={() => go("detail")} allergies={profile.allergies} finish={(rating, photo) => { setDiary(v => [{ recipe: selected, rating, when: "Today" }, ...v]); if (photo) setProfile(p => ({ ...p, photoLogs: [photo, ...p.photoLogs] })); if (behavioralConsent) void recordRating({ providerRecipeId: selected.id, title: selected.title, cuisine: selected.cuisine, source: aiCuration ? "ai" : "deterministic", rating, mood }); go("diary"); }} />}
       {page === "diary" && <DiaryScreen diary={diary} open={open} photoLogs={profile.photoLogs} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} goFoodLog={() => go("food-log")} allergies={profile.allergies} />}
       {page === "grocery" && <GroceryScreen items={groceries} setItems={setGroceries} />}
@@ -960,7 +958,7 @@ function FirstPickScreen({
   );
 }
 
-function toggle(values: string[], value: string) { return values.includes(value) ? values.filter(v => v !== value) : [...values, value]; }
+function toggle(values: string[], value: string) { return nextSavedRecipeIds(values, value); }
 
 const FALLBACK_FOOD  = "https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?auto=format&fit=crop&w=900&q=80";
 const LOGIN_PHOTO    = "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1400&q=85";
@@ -2103,7 +2101,7 @@ function describeFilters(filters: RecipeFilters): string {
   return parts.join(" + ");
 }
 
-function SearchResultsScreen({ results, loading, request, relaxed, more, home, search, open, saved, setSaved }: { results: Recipe[]; loading: boolean; request: SearchRequest; relaxed?: boolean; more: () => void; home: () => void; search: () => void; open: (recipe: Recipe) => void; saved: string[]; setSaved: (values: string[]) => void }) {
+function SearchResultsScreen({ results, loading, request, relaxed, more, home, search, open, saved, toggleSave }: { results: Recipe[]; loading: boolean; request: SearchRequest; relaxed?: boolean; more: () => void; home: () => void; search: () => void; open: (recipe: Recipe) => void; saved: string[]; toggleSave: (recipe: Recipe) => void }) {
   const filterDesc = describeFilters(request.filters);
   return <div className="screen">
     <TopBar title="Results" />
@@ -2112,7 +2110,10 @@ function SearchResultsScreen({ results, loading, request, relaxed, more, home, s
     {loading && !results.length
       ? <div className="thinking-state"><div className="thinking-orbit"><Sparkles /><i /><i /><i /></div><span>SEARCHING</span><h1>Checking every hard rule.</h1><p>Diet, course, time, ingredients, and duplicates are being verified.</p></div>
       : results.length
-        ? <div className="search-grid">{results.map(r => <article key={r.id}><RecipeImage sources={stepImageSources(undefined, r.image)} alt={r.title} /><button onClick={() => setSaved(toggle(saved, r.id))}><Heart fill={saved.includes(r.id) ? "currentColor" : "none"} /></button><div><h2>{r.title}</h2><p>{r.reason}</p><span><Clock3 size={13} /> {r.time} min · {r.difficulty}</span><button className="primary" onClick={() => open(r)}>View recipe</button></div></article>)}</div>
+        ? <div className="search-grid">{results.map(r => {
+            const isSaved = saved.includes(r.id);
+            return <article key={r.id}><RecipeImage sources={stepImageSources(undefined, r.image)} alt={r.title} /><button className={`search-save${isSaved ? " saved" : ""}`} aria-pressed={isSaved} aria-label={isSaved ? `Saved ${r.title}` : `Save ${r.title}`} onClick={() => toggleSave(r)}><Heart fill={isSaved ? "currentColor" : "none"} /></button><div><h2>{r.title}</h2><p>{r.reason}</p><span><Clock3 size={13} /> {r.time} min · {r.difficulty}</span><button className="primary" onClick={() => open(r)}>View recipe</button></div></article>;
+          })}</div>
         : <div className="empty-state"><Search /><h2>{filterDesc ? `No ${filterDesc} recipes found` : "No exact matches"}</h2><p>{filterDesc ? "Nothing matches that combination. Remove one filter and try again — your diet and allergy rules are always kept." : "Adjust one filter and search again. Your saved diet and allergies remain protected."}</p></div>}
     <div className="results-actions"><button className="primary" onClick={more} disabled={loading}>{loading ? "Finding 5 more…" : "Show 5 more options"}</button><button className="secondary" onClick={search}>Change search</button><button className="secondary" onClick={home}><Home size={17} />Return home</button></div>
   </div>;
