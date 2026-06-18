@@ -750,12 +750,12 @@ export default function App() {
     <PullRefreshIndicator pullY={pullY} />
     {page !== "cook" && <DesktopNav page={page} go={go} openMoody={() => setMoodyOpen(true)} />}
     <main>
-      {page === "home" && <HomeScreen profile={profile} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results={false} setResults={setResults} beginResults={() => { setSearchRequest(null); setCurating(true); setAiRanked(null); setHasFetched(false); setResults(true); go("results"); }} ranked={ranked} curating={curating} loadMore={loadMore} live={aiRanked !== null || deterministicLive !== null} curated={aiRanked !== null} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} />}
+      {page === "home" && <HomeScreen profile={profile} diary={diary} saved={saved} catalog={catalog} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results={false} setResults={setResults} beginResults={() => { setSearchRequest(null); setCurating(true); setAiRanked(null); setHasFetched(false); setResults(true); go("results"); }} ranked={ranked} curating={curating} loadMore={loadMore} live={aiRanked !== null || deterministicLive !== null} curated={aiRanked !== null} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} onPickSuggestion={r => runSearch({ query: r.title, filters: { query: r.title } })} />}
       {page === "search" && <SearchScreen profile={sharedProfile} diary={diary} saved={saved} catalog={catalog} onSearch={request => runSearch(request)} />}
       {page === "results" && (searchRequest
         ? <SearchResultsScreen results={searchResults} loading={searchLoading} request={searchRequest} relaxed={searchRelaxed} more={() => runSearch(searchRequest, true)} home={() => go("home")} search={() => go("search")} open={open} saved={saved} setSaved={setSaved} />
         : results
-          ? <HomeScreen profile={profile} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results setResults={v => { setResults(v); if (!v) go("home"); }} beginResults={() => {}} ranked={ranked} curating={curating} hasFetched={hasFetched} loadMore={loadMore} live={aiRanked !== null || deterministicLive !== null} curated={aiRanked !== null} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} />
+          ? <HomeScreen profile={profile} diary={diary} saved={saved} catalog={catalog} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results setResults={v => { setResults(v); if (!v) go("home"); }} beginResults={() => {}} ranked={ranked} curating={curating} hasFetched={hasFetched} loadMore={loadMore} live={aiRanked !== null || deterministicLive !== null} curated={aiRanked !== null} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} onPickSuggestion={r => runSearch({ query: r.title, filters: { query: r.title } })} />
           : <EmptyResultsScreen home={() => go("home")} search={() => go("search")} />)}
       {page === "detail" && selected && <DetailScreen recipe={selected} servings={eaterCount} back={backFromDetail} cook={() => go("cook")} saved={saved.includes(selected.id)} toggleSave={() => setSaved(toggle(saved, selected.id))} addGroceries={() => setGroceries(v => [...new Set([...v, ...selected.ingredients])])} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} shareToCommunity={() => shareRecipe(selected)} allergies={profile.allergies} />}
       {page === "cook" && selected && <CookScreen recipe={selected} exit={() => go("detail")} allergies={profile.allergies} finish={(rating, photo) => { setDiary(v => [{ recipe: selected, rating, when: "Today" }, ...v]); if (photo) setProfile(p => ({ ...p, photoLogs: [photo, ...p.photoLogs] })); if (behavioralConsent) void recordRating({ providerRecipeId: selected.id, title: selected.title, cuisine: selected.cuisine, source: aiCuration ? "ai" : "deterministic", rating, mood }); go("diary"); }} />}
@@ -1535,20 +1535,26 @@ function AppHeader({ openNotifs, unread, profile }: { openNotifs?: () => void; u
   );
 }
 
-function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, mealCategory, setMealCategory, cuisine, setCuisine, diet, setDiet, results, setResults, beginResults, ranked, curating, hasFetched, loadMore, live, curated, retry, open, go, diners, selectedDiners, setSelectedDiners, eaterCount, setEaterCount, openNotifs, unread, addPhoto }: {
-  profile: Profile; mood: string; setMood: (v: string) => void; energy: number; setEnergy: (v: number) => void; time: number; setTime: (v: number) => void;
+function HomeScreen({ profile, diary, saved, catalog, mood, setMood, energy, setEnergy, time, setTime, mealCategory, setMealCategory, cuisine, setCuisine, diet, setDiet, results, setResults, beginResults, ranked, curating, hasFetched, loadMore, live, curated, retry, open, go, diners, selectedDiners, setSelectedDiners, eaterCount, setEaterCount, openNotifs, unread, addPhoto, onPickSuggestion }: {
+  profile: Profile; diary: DiaryEntry[]; saved: string[]; catalog: Recipe[];
+  mood: string; setMood: (v: string) => void; energy: number; setEnergy: (v: number) => void; time: number; setTime: (v: number) => void;
   mealCategory: string; setMealCategory: (v: string) => void;
   cuisine: string; setCuisine: (v: string) => void;
   diet: string; setDiet: (v: string) => void;
   results: boolean; setResults: (v: boolean) => void; beginResults: () => void; ranked: Recipe[]; curating?: boolean; hasFetched?: boolean; loadMore?: () => void; live?: boolean; curated?: boolean; retry?: () => void; open: (r: Recipe) => void; go: (p: Page) => void;
   diners: Diner[]; selectedDiners: string[]; setSelectedDiners: (v: string[]) => void;
   eaterCount: number; setEaterCount: (v: number) => void; openNotifs?: () => void; unread?: number;
-  addPhoto: (p: FoodPhoto) => void;
+  addPhoto: (p: FoodPhoto) => void; onPickSuggestion: (r: Recipe) => void;
 }) {
   const [rejected, setRejected] = useState<string[]>([]);
   const [shownCount, setShownCount] = useState(RESULT_BATCH_SIZE);
   const visible = ranked.filter(r => !rejected.includes(r.id)).slice(0, shownCount);
   const hero = ranked[0];
+  const suggestions = useMemo(
+    () => deriveDailySuggestions(diary, saved, catalog, profile),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [diary.length, saved.length, catalog.length, profile.diet, profile.allergies.join()],
+  );
   // Reset rejections whenever a fresh set of picks arrives.
   useEffect(() => { setRejected([]); setShownCount(RESULT_BATCH_SIZE); }, [results]);
   const showMore = async () => {
@@ -1639,6 +1645,11 @@ function HomeScreen({ profile, mood, setMood, energy, setEnergy, time, setTime, 
             <div><ChefHat size={32} /><p>Complete your check-in below to get a pick</p></div>
           </div>
         )}
+      </div>
+
+      {/* ── Daily suggestions carousel ── */}
+      <div style={{ padding: "14px 16px 0" }}>
+        <DailySuggestionCarousel suggestions={suggestions} onPick={onPickSuggestion} showHero={false} />
       </div>
 
       {/* ── Check-in card, bottom-sheet style glass card ── */}
@@ -1852,27 +1863,32 @@ function deriveDailySuggestions(
   return picks;
 }
 
-function DailySuggestionCarousel({ suggestions, onPick }: { suggestions: Recipe[]; onPick: (r: Recipe) => void }) {
+function DailySuggestionCarousel({ suggestions, onPick, showHero = true }: { suggestions: Recipe[]; onPick: (r: Recipe) => void; showHero?: boolean }) {
   if (!suggestions.length) return null;
   const [hero, ...rest] = suggestions;
+  const carouselItems = showHero ? rest : suggestions;
   return (
     <div className="suggestion-section">
-      {/* Hero — largest pick */}
-      <button className="suggestion-hero" onClick={() => onPick(hero)}>
-        <RecipeImage sources={stepImageSources(undefined, hero.image)} alt={hero.title} />
-        <div className="suggestion-hero-veil" />
-        <div className="suggestion-hero-info">
-          <span className="suggestion-cuisine">{hero.cuisine}</span>
-          <b className="suggestion-hero-title">{hero.title}</b>
-          <span className="suggestion-hero-time"><Clock3 size={12} /> {hero.time} min</span>
-        </div>
-      </button>
+      {/* Hero — largest pick (optional) */}
+      {showHero && (
+        <button className="suggestion-hero" onClick={() => onPick(hero)}>
+          <RecipeImage sources={stepImageSources(undefined, hero.image)} alt={hero.title} />
+          <div className="suggestion-hero-veil" />
+          <div className="suggestion-hero-info">
+            <span className="suggestion-cuisine">{hero.cuisine}</span>
+            <b className="suggestion-hero-title">{hero.title}</b>
+            <span className="suggestion-hero-time"><Clock3 size={12} /> {hero.time} min</span>
+          </div>
+        </button>
+      )}
 
-      {/* Carousel — remaining picks */}
-      {rest.length > 0 && <>
-        <span className="filter-label" style={{ display: "block", marginTop: 14 }}>More for today</span>
+      {/* Carousel */}
+      {carouselItems.length > 0 && <>
+        <span className="filter-label" style={{ display: "block", marginTop: showHero ? 14 : 0 }}>
+          {showHero ? "More for today" : "Today's picks for you"}
+        </span>
         <div className="suggestion-carousel">
-          {rest.map(r => (
+          {carouselItems.map(r => (
             <button key={r.id} className="suggestion-card" onClick={() => onPick(r)}>
               <RecipeImage sources={stepImageSources(undefined, r.image)} alt={r.title} />
               <div className="suggestion-card-veil" />
