@@ -308,8 +308,7 @@ Deno.serve(async (request) => {
 
   const params = new URLSearchParams({
     apiKey: SPOONACULAR_API_KEY,
-    // Overfetch before hard safety/quality filtering, then return at most eight.
-    number: "20",
+    number: "100",
     addRecipeNutrition: "true",
     addRecipeInformation: "true",
     addRecipeInstructions: "true",
@@ -407,14 +406,14 @@ Deno.serve(async (request) => {
   const cacheable = relax && !hasFineFilters;
 
   if (cacheable) {
-    const rows = await getCachedRecipes(moodTag, dietTags, 24);
+    const rows = await getCachedRecipes(moodTag, dietTags, 60);
     if (rows.length) {
       const candidates = rows.map(r => r.raw_data).filter(Boolean);
       const safeCached = dedupeRecipes(filterRecipesWithCompleteInstructions(filterOutAccessoryTypes(
         filterRecipesForProfile(safetyFilter(candidates, profile.allergies ?? []), hardProfile),
       )));
       if (safeCached.length >= 6) {
-        const top = safeCached.slice(0, 8);
+        const top = safeCached.slice(0, 20);
         const servedExternalIds = new Set(top.map((r: any) => String(r.id)));
         const servedDbIds = rows.filter(r => servedExternalIds.has(String((r.raw_data as any)?.id))).map(r => r.id);
         bumpSearchCount(servedDbIds);                       // fire-and-forget popularity
@@ -449,7 +448,7 @@ Deno.serve(async (request) => {
       const byProfile = filterRecipesForProfile(safetyFilter(normalized, profile.allergies ?? []), hardProfile);
       const byTime = Number.isFinite(maxTimeCap) ? filterRecipesByMaxTime(byProfile, maxTimeCap) : byProfile;
       const byCategory = filterRecipesByCategory(byTime, cat);
-      return dedupeRecipes(filterRecipesWithCompleteInstructions(cat ? byCategory : filterOutAccessoryTypes(byCategory))).slice(0, 8);
+      return dedupeRecipes(filterRecipesWithCompleteInstructions(cat ? byCategory : filterOutAccessoryTypes(byCategory)));
     };
 
     // Attempt 1 — honour the full request (cuisine, time, nutrient targets, query).

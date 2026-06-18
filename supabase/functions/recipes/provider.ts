@@ -204,7 +204,7 @@ export function filterRecipesWithCompleteInstructions(recipes: any[]): any[] {
   return recipes.filter(recipe =>
     Array.isArray(recipe?.steps) &&
     recipe.steps.length > 0 &&
-    recipe.steps.every((step: any) => typeof step?.text === "string" && step.text.trim() && !placeholder.test(step.text))
+    recipe.steps.some((step: any) => typeof step?.text === "string" && step.text.trim() && !placeholder.test(step.text))
   );
 }
 
