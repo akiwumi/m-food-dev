@@ -688,7 +688,7 @@ export default function App() {
     {page !== "cook" && <DesktopNav page={page} go={go} openMoody={() => setMoodyOpen(true)} />}
     <main>
       {page === "home" && <HomeScreen profile={profile} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results={false} setResults={setResults} beginResults={() => { setSearchRequest(null); setCurating(true); setAiRanked(null); setHasFetched(false); setResults(true); go("results"); }} ranked={ranked} curating={curating} loadMore={loadMore} live={aiRanked !== null || deterministicLive !== null} curated={aiRanked !== null} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} />}
-      {page === "search" && <SearchScreen profile={sharedProfile} onSearch={request => runSearch(request)} />}
+      {page === "search" && <SearchScreen profile={sharedProfile} diary={diary} saved={saved} catalog={catalog} onSearch={request => runSearch(request)} />}
       {page === "results" && (searchRequest
         ? <SearchResultsScreen results={searchResults} loading={searchLoading} request={searchRequest} relaxed={searchRelaxed} more={() => runSearch(searchRequest, true)} home={() => go("home")} search={() => go("search")} open={open} saved={saved} setSaved={setSaved} />
         : results
@@ -1723,7 +1723,117 @@ function TokenInput({ tokens, setTokens, placeholder }: { tokens: string[]; setT
   </>;
 }
 
-function SearchScreen({ profile, onSearch }: { profile: Profile; onSearch: (request: SearchRequest) => void }) {
+type DiaryEntry = { recipe: Recipe; rating: number; when: string };
+
+function deriveDailySuggestions(
+  diary: DiaryEntry[],
+  saved: string[],
+  catalog: Recipe[],
+  profile: Profile,
+  count = 5,
+): Recipe[] {
+  // Stable seed from today's date so picks rotate overnight but don't shuffle on re-render.
+  const seed = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const seededRandom = (n: number) => {
+    let h = parseInt(seed) ^ (n * 2654435761);
+    h = ((h >>> 16) ^ h) * 0x45d9f3b;
+    h = ((h >>> 16) ^ h);
+    return (h >>> 0) / 0xffffffff;
+  };
+
+  // Build cuisine affinity from diary — high ratings weight more.
+  const cuisineScore: Record<string, number> = {};
+  diary.forEach(({ recipe, rating }) => {
+    const weight = rating >= 4 ? 2 : rating >= 3 ? 1 : 0.3;
+    cuisineScore[recipe.cuisine] = (cuisineScore[recipe.cuisine] ?? 0) + weight;
+  });
+
+  const recentIds = new Set(diary.slice(0, 7).map(d => d.recipe.id));
+  const savedSet = new Set(saved);
+
+  const pool = catalog.filter(r =>
+    r.status === "published" &&
+    (!profile.diet || profile.diet === "Everything" || r.diets.includes(profile.diet)) &&
+    !profile.allergies.some(a => r.allergens.map(x => x.toLowerCase()).includes(a.toLowerCase())),
+  );
+
+  const scored = pool.map((r, i) => {
+    const affinity = cuisineScore[r.cuisine] ?? 0;
+    const savedBonus = savedSet.has(r.id) && !recentIds.has(r.id) ? 1.5 : 0;
+    const freshnessBonus = recentIds.has(r.id) ? -3 : 0;
+    const jitter = seededRandom(i) * 0.8;
+    return { recipe: r, score: affinity + savedBonus + freshnessBonus + jitter };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+
+  // Pick with cuisine variety — no two consecutive cards share a cuisine.
+  const picks: Recipe[] = [];
+  const usedCuisines = new Set<string>();
+  for (const { recipe } of scored) {
+    if (picks.length >= count) break;
+    if (usedCuisines.has(recipe.cuisine) && picks.length < count - 1) continue;
+    picks.push(recipe);
+    usedCuisines.add(recipe.cuisine);
+  }
+
+  // If variety filtering left us short, fill from the top of the scored list.
+  if (picks.length < count) {
+    const pickIds = new Set(picks.map(r => r.id));
+    for (const { recipe } of scored) {
+      if (picks.length >= count) break;
+      if (!pickIds.has(recipe.id)) { picks.push(recipe); pickIds.add(recipe.id); }
+    }
+  }
+
+  return picks;
+}
+
+function DailySuggestionCarousel({ suggestions, onPick }: { suggestions: Recipe[]; onPick: (r: Recipe) => void }) {
+  if (!suggestions.length) return null;
+  const [hero, ...rest] = suggestions;
+  return (
+    <div className="suggestion-section">
+      {/* Hero — largest pick */}
+      <button className="suggestion-hero" onClick={() => onPick(hero)}>
+        <RecipeImage sources={stepImageSources(undefined, hero.image)} alt={hero.title} />
+        <div className="suggestion-hero-veil" />
+        <div className="suggestion-hero-info">
+          <span className="suggestion-cuisine">{hero.cuisine}</span>
+          <b className="suggestion-hero-title">{hero.title}</b>
+          <span className="suggestion-hero-time"><Clock3 size={12} /> {hero.time} min</span>
+        </div>
+      </button>
+
+      {/* Carousel — remaining picks */}
+      {rest.length > 0 && <>
+        <span className="filter-label" style={{ display: "block", marginTop: 14 }}>More for today</span>
+        <div className="suggestion-carousel">
+          {rest.map(r => (
+            <button key={r.id} className="suggestion-card" onClick={() => onPick(r)}>
+              <RecipeImage sources={stepImageSources(undefined, r.image)} alt={r.title} />
+              <div className="suggestion-card-veil" />
+              <div className="suggestion-card-info">
+                <b className="suggestion-title">{r.title}</b>
+                <span className="suggestion-card-time"><Clock3 size={10} /> {r.time} min</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      </>}
+    </div>
+  );
+}
+
+function SearchScreen({
+  profile, diary, saved, catalog, onSearch,
+}: {
+  profile: Profile;
+  diary: DiaryEntry[];
+  saved: string[];
+  catalog: Recipe[];
+  onSearch: (request: SearchRequest) => void;
+}) {
   const [query, setQuery] = useState("");
   const [mood, setMood] = useState<Mood | "">("");
   const [showFilters, setShowFilters] = useState(false);
@@ -1737,6 +1847,13 @@ function SearchScreen({ profile, onSearch }: { profile: Profile; onSearch: (requ
   const [maxCalories, setMaxCalories] = useState(0);   // 0 = off
   const [minProtein, setMinProtein] = useState(0);     // 0 = off
 
+  const suggestions = useMemo(
+    () => deriveDailySuggestions(diary, saved, catalog, profile),
+    // Recompute only when the underlying data changes, not on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [diary.length, saved.length, catalog.length, profile.diet, profile.allergies.join()],
+  );
+
   const selectedMood = mood ? getMoodByValue(mood) : undefined;
 
   const activeFilterCount =
@@ -1747,8 +1864,6 @@ function SearchScreen({ profile, onSearch }: { profile: Profile; onSearch: (requ
     (maxCalories ? 1 : 0) + (minProtein ? 1 : 0);
 
   const run = () => {
-    // The mood adds hidden search tags that enrich the free-text query without
-    // replacing the structured cuisine / cooking-time filters (which stay below).
     const searchQuery = buildMoodSearchQuery({
       mood: mood || undefined,
       cuisine: cuisines.join(" ") || undefined,
@@ -1767,8 +1882,13 @@ function SearchScreen({ profile, onSearch }: { profile: Profile; onSearch: (requ
     onSearch({ query: searchQuery, filters });
   };
 
+  const pickSuggestion = (r: Recipe) => {
+    onSearch({ query: r.title, filters: { query: r.title } });
+  };
+
   return <div className="screen">
     <TopBar title="Search recipes" />
+    <DailySuggestionCarousel suggestions={suggestions} onPick={pickSuggestion} />
     <div className="ai-search-intro"><Search size={15} /><p>Search with structured filters. Your saved diet, allergies, and exclusions always remain protected.</p></div>
     <div className="filter-block">
       <span className="filter-label">How are you feeling?</span>
