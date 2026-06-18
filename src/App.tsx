@@ -1827,7 +1827,7 @@ function deriveDailySuggestions(
 
   const pool = catalog.filter(r =>
     r.status === "published" &&
-    (!profile.diet || profile.diet === "Everything" || r.diets.includes(profile.diet)) &&
+    (!profile.diet || profile.diet === "Everything" || profile.diet === "Any" || r.diets.includes(profile.diet)) &&
     !profile.allergies.some(a => r.allergens.map(x => x.toLowerCase()).includes(a.toLowerCase())),
   );
 
@@ -1864,9 +1864,49 @@ function deriveDailySuggestions(
 }
 
 function DailySuggestionCarousel({ suggestions, onPick, showHero = true }: { suggestions: Recipe[]; onPick: (r: Recipe) => void; showHero?: boolean }) {
-  if (!suggestions.length) return null;
-  const [hero, ...rest] = suggestions;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const pausedRef = useRef(false);
+  const indexRef = useRef(0);
+
+  const [hero, ...rest] = suggestions.length ? suggestions : [null as unknown as Recipe];
   const carouselItems = showHero ? rest : suggestions;
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || carouselItems.length <= 1) return;
+
+    const pause = () => { pausedRef.current = true; };
+    // Resume after a short delay so a quick swipe doesn't immediately advance
+    const resume = () => { setTimeout(() => { pausedRef.current = false; }, 1200); };
+
+    el.addEventListener("touchstart", pause, { passive: true });
+    el.addEventListener("touchend", resume, { passive: true });
+    el.addEventListener("mouseenter", pause);
+    el.addEventListener("mouseleave", resume);
+
+    const id = setInterval(() => {
+      if (pausedRef.current || !el) return;
+      const cardWidth = el.scrollWidth / carouselItems.length;
+      indexRef.current = (indexRef.current + 1) % carouselItems.length;
+      // Snap back to start without animation so the loop feels infinite
+      if (indexRef.current === 0) {
+        el.scrollTo({ left: 0, behavior: "instant" as ScrollBehavior });
+      } else {
+        el.scrollTo({ left: indexRef.current * cardWidth, behavior: "smooth" });
+      }
+    }, 3000);
+
+    return () => {
+      clearInterval(id);
+      el.removeEventListener("touchstart", pause);
+      el.removeEventListener("touchend", resume);
+      el.removeEventListener("mouseenter", pause);
+      el.removeEventListener("mouseleave", resume);
+    };
+  }, [carouselItems.length]);
+
+  if (!suggestions.length) return null;
+
   return (
     <div className="suggestion-section">
       {/* Hero — largest pick (optional) */}
@@ -1887,7 +1927,7 @@ function DailySuggestionCarousel({ suggestions, onPick, showHero = true }: { sug
         <span className="filter-label" style={{ display: "block", marginTop: showHero ? 14 : 0 }}>
           {showHero ? "More for today" : "Today's picks for you"}
         </span>
-        <div className="suggestion-carousel">
+        <div className="suggestion-carousel" ref={scrollRef}>
           {carouselItems.map(r => (
             <button key={r.id} className="suggestion-card" onClick={() => onPick(r)}>
               <RecipeImage sources={stepImageSources(undefined, r.image)} alt={r.title} />
