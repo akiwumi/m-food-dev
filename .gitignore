@@ -9,3 +9,8 @@ tsconfig.tsbuildinfo
 .gstack/
 .superpowers/
 supabase/.temp/
+
+# Local agent/skill tooling — machine-specific, not shipped
+.agents/
+.claude/skills/
+skills-lock.json
