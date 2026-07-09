@@ -88,6 +88,30 @@ Deno.serve(async (req) => {
     try { await supabaseAdmin(`/${table}?owner_id=eq.${userId}`, { method: "DELETE" }); } catch { /* cascade backstops in step 3 */ }
   }
 
+  // ── 2b. Best-effort: purge the user's Storage objects ────────────────────
+  // Deleting the auth user does NOT cascade to storage.objects, so remove them
+  // explicitly. Scoped to the caller's own "<uid>/" folder in each private bucket.
+  for (const bucket of ["food-photos", "avatars", "community-images"]) {
+    try {
+      const listRes = await fetch(`${SUPABASE_URL}/storage/v1/object/list/${bucket}`, {
+        method: "POST",
+        headers: { apikey: SERVICE_ROLE_KEY, authorization: `Bearer ${SERVICE_ROLE_KEY}`, "content-type": "application/json" },
+        body: JSON.stringify({ prefix: `${userId}/`, limit: 1000 }),
+      });
+      const objects: { name: string }[] = listRes.ok ? await listRes.json() : [];
+      const prefixes = objects.map(o => `${userId}/${o.name}`);
+      if (prefixes.length) {
+        await fetch(`${SUPABASE_URL}/storage/v1/object/${bucket}`, {
+          method: "DELETE",
+          headers: { apikey: SERVICE_ROLE_KEY, authorization: `Bearer ${SERVICE_ROLE_KEY}`, "content-type": "application/json" },
+          body: JSON.stringify({ prefixes }),
+        });
+      }
+    } catch {
+      // Non-fatal — proceed with account deletion regardless.
+    }
+  }
+
   // ── 3. Delete the auth user itself ───────────────────────────────────────
   const delRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${userId}`, {
     method: "DELETE",

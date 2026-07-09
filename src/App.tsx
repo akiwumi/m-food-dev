@@ -13,11 +13,12 @@ import { bundledRecipes } from "./bundledRecipes";
 import { clearStored, defaultDiners, defaultProfile, readStored, useStoredState, writeStored, type Diner, type Profile, type SocialPost } from "./store";
 import { profileForDiners, recommend, safeRecipes as applySafety, RANKING_CONFIG_VERSION, type CuisineSignal, type MoodCuisineSignal, type LearnedSignals } from "./recommendation";
 import { recordRating, recordRun, fetchRatingHistory, deriveCuisineSignal, deriveMoodCuisineSignal, suppressSignal } from "./behavioral";
-import { cleanText, readSafeImage, validateEmail } from "./security";
+import { cleanText, compactPhotoLogs, readSafeImage, validateEmail } from "./security";
 import { onboardingQuestions, onboardingSections, PANTRY_GROUPS, type OnboardingKey, type OnboardingQuestion, type ProfileValue } from "./onboarding";
 import { SPOON_CUISINES, MEAL_TYPES, SEARCH_DIETS, SORT_OPTIONS, type RecipeFilters } from "./searchFilters";
 import { sendConfirmationEmail, sendWelcomeEmail, scheduleTrial, runDue, readInbox, unreadCount, markAllRead, cancelScheduled, simulateTrialEnd, type InboxItem } from "./notifications";
 import { analyzeFood, sumNutrition, flaggedAllergens, type FoodPhoto } from "./foodAnalysis";
+import { foodPhotoUrl, persistFoodPhoto } from "./photoStorage";
 import { aiChat, MoodyError, type ChatTurn } from "./ai";
 import { fetchCuratedRecipes, buildFoodHistory } from "./recipes";
 import {
@@ -92,6 +93,14 @@ const MOODFOOD_KEYS = [
   "moodfood-eater-count", "moodfood-onboarding-step", "moodfood-a2hs-dismissed",
 ];
 
+// photoLogs carry base64 image data (megabytes). They must never travel in
+// preferences_json: they bloat the profiles row, the debounced upsert, and the
+// sign-in restore payload. Photos stay on-device (a later step moves them to Storage).
+function prefsForUpsert(p: Profile): Omit<Profile, "photoLogs"> {
+  const { photoLogs: _photoLogs, ...prefs } = p;
+  return prefs;
+}
+
 // After Stripe redirects back with ?checkout=success, poll the subscriptions
 // table for up to 10 s to get the confirmed status.
 async function syncSubscriptionFromDB(): Promise<{ status: string; plan: string; currentPeriodEnd: string } | null> {
@@ -104,6 +113,24 @@ async function syncSubscriptionFromDB(): Promise<{ status: string; plan: string;
     }
   }
   return null;
+}
+
+// The subscriptions table can hold statuses the client union doesn't model —
+// stripe-webhook's mapStatus() also writes "past_due" (and future Stripe
+// statuses may map to new values). Validate instead of casting.
+const CLIENT_SUB_STATUSES = ["none", "trialing", "active", "canceled"] as const satisfies
+  readonly Profile["subscriptionStatus"][];
+
+function parseSubscriptionStatus(raw: unknown): Profile["subscriptionStatus"] {
+  if (typeof raw === "string" && (CLIENT_SUB_STATUSES as readonly string[]).includes(raw)) {
+    return raw as Profile["subscriptionStatus"];
+  }
+  // "past_due" = Stripe is retrying payment; access continues, so treat as active.
+  if (raw === "past_due") return "active";
+  // Unknown/new status: this parser runs right after a successful checkout, so
+  // mirror the caller's own no-row-yet fallback ("trialing") rather than "none",
+  // which would lock a paying user out.
+  return "trialing";
 }
 
 // Lets any header (AppHeader, TopBar) open the global hamburger menu without
@@ -553,6 +580,22 @@ export default function App() {
   const [, setNotifTick] = useState(0);
   const refreshNotifs = () => setNotifTick(t => t + 1);
   useEffect(() => { const { charged } = runDue(); if (charged) setProfile(p => ({ ...p, subscriptionStatus: "active" })); refreshNotifs(); }, []);
+  // One-time repair: older builds stored full-resolution photos (up to ~5.3 MB of
+  // base64 each) in photoLogs, which can exhaust the ~5 MB localStorage quota
+  // (writeStored swallows the failure). Recompress oversized entries in place and
+  // blank images past a total budget — newest photos keep theirs, nutrition data
+  // is always kept. compactPhotoLogs returns null when there is nothing to do,
+  // so this is a cheap length-scan no-op on healthy profiles.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const compacted = await compactPhotoLogs(profile.photoLogs);
+      if (!cancelled && compacted) setProfile(p => ({ ...p, photoLogs: compacted }));
+    })();
+    return () => { cancelled = true; };
+    // Mount-only by design: repairs the profile as loaded from localStorage.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // Real auth: keep the entry flow in sync with the session.
   //  • Sign out anywhere → back to welcome.
   //  • On sign-in, Supabase is the source of truth, restore preferences_json
@@ -577,23 +620,34 @@ export default function App() {
 
       if (prefs && prefs.onboarded === true) {
         // Supabase has a completed profile, restore it (handles new-device login).
-        const restored = { ...defaultProfile, ...prefs, email: session.user.email ?? "" } as Profile;
-        setProfile(restored);
+        // photoLogs never sync through preferences_json: drop any legacy remote
+        // copy and keep whatever photos are already on this device.
+        const { photoLogs: _remotePhotoLogs, ...remotePrefs } = prefs;
+        const restored = { ...defaultProfile, ...remotePrefs, email: session.user.email ?? "" } as Profile;
+        setProfile(prev => ({ ...restored, photoLogs: Array.isArray(prev.photoLogs) ? prev.photoLogs : [] }));
         setEntry(prev => (prev === "welcome" || prev === "login") ? "app" : prev);
         return;
       }
 
       // Supabase profile is empty/incomplete. Check local storage first.
       if (storedProfile.onboarded) {
-        // Local profile is complete, push it to Supabase now we have a session.
-        supabase.from("profiles").upsert({
+        // Local profile is complete: enter the app immediately (local data is
+        // the source of truth on this branch), then push it up. The upsert must
+        // be awaited — postgrest builders are lazy thenables and only issue the
+        // HTTP request when then()/await is invoked.
+        setEntry(prev => (prev === "welcome" || prev === "login") ? "app" : prev);
+        const { error } = await supabase.from("profiles").upsert({
           id: session.user.id,
           display_name: storedProfile.name,
           onboarded: true,
-          preferences_json: storedProfile,
+          preferences_json: prefsForUpsert(storedProfile),
           updated_at: new Date().toISOString(),
         }, { onConflict: "id" });
-        setEntry(prev => (prev === "welcome" || prev === "login") ? "app" : prev);
+        if (error) {
+          // Non-fatal: the debounced profile-sync effect below retries on the
+          // next profile change, and this handler re-runs on the next sign-in.
+          console.error("[auth] failed to push local profile to Supabase:", error.message);
+        }
         return;
       }
 
@@ -628,7 +682,7 @@ export default function App() {
         id: user.id,
         display_name: profile.name,
         onboarded: profile.onboarded,
-        preferences_json: profile,
+        preferences_json: prefsForUpsert(profile),
         updated_at: new Date().toISOString(),
       }, { onConflict: "id" });
     }, 1500);
@@ -646,7 +700,7 @@ export default function App() {
       // Poll the subscriptions table until the webhook has written the record.
       syncSubscriptionFromDB().then(sub => {
         if (sub) {
-          setProfile(p => ({ ...p, subscriptionStatus: sub.status as any, plan: sub.plan, trialEndsAt: sub.currentPeriodEnd }));
+          setProfile(p => ({ ...p, subscriptionStatus: parseSubscriptionStatus(sub.status), plan: sub.plan, trialEndsAt: sub.currentPeriodEnd }));
           setEntry("app");
         } else {
           // Webhook hasn't fired yet, optimistically mark as trialing and enter.
@@ -673,6 +727,16 @@ export default function App() {
   const open = (recipe: Recipe) => {
     setCatalog(prev => prev.some(r => r.id === recipe.id) ? prev : [recipe, ...prev]);
     setDetailReturnMoody(false); setSelected(recipe); setDetailReturnPage(page); go("detail");
+  };
+  // Log a food photo: show it instantly (optimistic, inline data URL), then push
+  // the binary to private Storage in the background and swap image→imagePath so it
+  // stops riding in localStorage. Upload skipped/failed → the inline copy stays.
+  const addPhoto = (p: FoodPhoto) => {
+    setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }));
+    void persistFoodPhoto(p).then(stored => {
+      if (stored === p) return;
+      setProfile(prev => ({ ...prev, photoLogs: prev.photoLogs.map(l => (l.id === stored.id ? stored : l)) }));
+    });
   };
   const openFromMoody = (recipe: Recipe) => {
     setCatalog(prev => prev.some(r => r.id === recipe.id) ? prev : [recipe, ...prev]);
@@ -782,16 +846,16 @@ export default function App() {
     <PullRefreshIndicator pullY={pullY} />
     {page !== "cook" && <DesktopNav page={page} go={go} openMoody={() => setMoodyOpen(true)} />}
     <main>
-      {page === "home" && <HomeScreen profile={profile} diary={diary} saved={saved} catalog={catalog} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results={false} setResults={setResults} beginResults={() => { setSearchRequest(null); setCurating(true); setAiRanked(null); setHasFetched(false); setResults(true); go("results"); }} ranked={ranked} curating={curating} loadMore={loadMore} live={aiRanked !== null || deterministicLive !== null} curated={aiRanked !== null} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} onPickSuggestion={r => runSearch({ query: r.title, filters: { query: r.title } })} toggleSave={toggleSavedRecipe} />}
+      {page === "home" && <HomeScreen profile={profile} diary={diary} saved={saved} catalog={catalog} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results={false} setResults={setResults} beginResults={() => { setSearchRequest(null); setCurating(true); setAiRanked(null); setHasFetched(false); setResults(true); go("results"); }} ranked={ranked} curating={curating} loadMore={loadMore} live={aiRanked !== null || deterministicLive !== null} curated={aiRanked !== null} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={addPhoto} onPickSuggestion={r => runSearch({ query: r.title, filters: { query: r.title } })} toggleSave={toggleSavedRecipe} />}
       {page === "search" && <SearchScreen profile={sharedProfile} diary={diary} saved={saved} catalog={catalog} onSearch={request => runSearch(request)} />}
       {page === "results" && (searchRequest
         ? <SearchResultsScreen results={searchResults} loading={searchLoading} request={searchRequest} relaxed={searchRelaxed} more={() => runSearch(searchRequest, true)} home={() => go("home")} search={() => go("search")} open={open} saved={saved} toggleSave={toggleSavedRecipe} />
         : results
-          ? <HomeScreen profile={profile} diary={diary} saved={saved} catalog={catalog} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results setResults={v => { setResults(v); if (!v) go("home"); }} beginResults={() => {}} ranked={ranked} curating={curating} hasFetched={hasFetched} loadMore={loadMore} live={aiRanked !== null || deterministicLive !== null} curated={aiRanked !== null} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} onPickSuggestion={r => runSearch({ query: r.title, filters: { query: r.title } })} toggleSave={toggleSavedRecipe} />
+          ? <HomeScreen profile={profile} diary={diary} saved={saved} catalog={catalog} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results setResults={v => { setResults(v); if (!v) go("home"); }} beginResults={() => {}} ranked={ranked} curating={curating} hasFetched={hasFetched} loadMore={loadMore} live={aiRanked !== null || deterministicLive !== null} curated={aiRanked !== null} retry={() => setRecipeNonce(n => n + 1)} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={addPhoto} onPickSuggestion={r => runSearch({ query: r.title, filters: { query: r.title } })} toggleSave={toggleSavedRecipe} />
           : <EmptyResultsScreen home={() => go("home")} search={() => go("search")} />)}
-      {page === "detail" && selected && <DetailScreen recipe={selected} servings={eaterCount} back={backFromDetail} cook={() => go("cook")} saved={saved.includes(selected.id)} toggleSave={() => toggleSavedRecipe(selected)} addGroceries={() => setGroceries(v => [...new Set([...v, ...selected.ingredients])])} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} shareToCommunity={() => shareRecipe(selected)} allergies={profile.allergies} />}
-      {page === "cook" && selected && <CookScreen recipe={selected} exit={() => go("detail")} allergies={profile.allergies} finish={(rating, photo) => { setDiary(v => [{ recipe: selected, rating, when: "Today" }, ...v]); if (photo) setProfile(p => ({ ...p, photoLogs: [photo, ...p.photoLogs] })); if (behavioralConsent) void recordRating({ providerRecipeId: selected.id, title: selected.title, cuisine: selected.cuisine, source: aiCuration ? "ai" : "deterministic", rating, mood }); go("diary"); }} />}
-      {page === "diary" && <DiaryScreen diary={diary} open={open} photoLogs={profile.photoLogs} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} goFoodLog={() => go("food-log")} allergies={profile.allergies} />}
+      {page === "detail" && selected && <DetailScreen recipe={selected} servings={eaterCount} back={backFromDetail} cook={() => go("cook")} saved={saved.includes(selected.id)} toggleSave={() => toggleSavedRecipe(selected)} addGroceries={() => setGroceries(v => [...new Set([...v, ...selected.ingredients])])} addPhoto={addPhoto} shareToCommunity={() => shareRecipe(selected)} allergies={profile.allergies} />}
+      {page === "cook" && selected && <CookScreen recipe={selected} exit={() => go("detail")} allergies={profile.allergies} finish={(rating, photo) => { setDiary(v => [{ recipe: selected, rating, when: "Today" }, ...v]); if (photo) addPhoto(photo); if (behavioralConsent) void recordRating({ providerRecipeId: selected.id, title: selected.title, cuisine: selected.cuisine, source: aiCuration ? "ai" : "deterministic", rating, mood }); go("diary"); }} />}
+      {page === "diary" && <DiaryScreen diary={diary} open={open} photoLogs={profile.photoLogs} addPhoto={addPhoto} goFoodLog={() => go("food-log")} allergies={profile.allergies} />}
       {page === "grocery" && <GroceryScreen items={groceries} setItems={setGroceries} />}
       {page === "pantry" && <PantryScreen items={profile.pantryStaples} setItems={items => setProfile(p => ({ ...p, pantryStaples: items }))} addToGrocery={item => setGroceries(v => v.includes(item) ? v : [...v, item])} />}
       {page === "planner" && <PlannerScreen open={open} />}
@@ -812,7 +876,7 @@ export default function App() {
       {page === "health-patterns" && <HealthDetail kind="patterns" diary={diary} back={() => go("health")} />}
       {page === "family-health" && <FamilyHealth diary={diary} diners={diners} back={() => go("health")} />}
       {page === "diners" && <DinersScreen diners={diners} save={setDiners} back={() => go("settings")} />}
-      {page === "food-log" && <FoodLogScreen logs={profile.photoLogs} addPhoto={p => setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }))} back={() => go("diary")} allergies={profile.allergies} />}
+      {page === "food-log" && <FoodLogScreen logs={profile.photoLogs} addPhoto={addPhoto} back={() => go("diary")} allergies={profile.allergies} />}
       {page === "help" && <HelpScreen back={() => go("settings")} />}
     </main>
     {page !== "cook" && <BottomNav page={page} go={go} />}
@@ -2204,6 +2268,23 @@ function CookScreen({ recipe, exit, finish, allergies }: { recipe: Recipe; exit:
   </div>;
 }
 
+// Renders a persisted food-photo log. Uses the inline data URL when present
+// (pre-upload or offline fallback); otherwise resolves a signed URL from the
+// private food-photos bucket. Falls back to a placeholder when neither exists.
+function FoodPhotoImg({ photo, className, placeholder }: { photo: FoodPhoto; className?: string; placeholder?: string }) {
+  const [url, setUrl] = useState<string | null>(photo.image || null);
+  useEffect(() => {
+    if (photo.image) { setUrl(photo.image); return; }
+    if (!photo.imagePath) { setUrl(null); return; }
+    let on = true;
+    void foodPhotoUrl(photo.imagePath).then(u => { if (on) setUrl(u); });
+    return () => { on = false; };
+  }, [photo.image, photo.imagePath]);
+  return url
+    ? <img src={url} alt={photo.dish} className={className} />
+    : <span className={placeholder ?? "photo-placeholder"}><Camera size={16} /></span>;
+}
+
 function DiaryScreen({ diary, open, photoLogs, addPhoto, goFoodLog, allergies }: {
   diary: { recipe: Recipe; rating: number; when: string }[];
   open: (r: Recipe) => void;
@@ -2228,7 +2309,7 @@ function DiaryScreen({ diary, open, photoLogs, addPhoto, goFoodLog, allergies }:
           <div className="dps-row">
             {recentPhotos.map(p => (
               <div className="dps-thumb" key={p.id}>
-                <img src={p.image} alt={p.dish} />
+                <FoodPhotoImg photo={p} placeholder="dps-thumb-empty" />
                 <span>{p.calories} kcal</span>
               </div>
             ))}
@@ -3119,7 +3200,7 @@ function FoodLogScreen({ logs, addPhoto, back, allergies }: { logs: FoodPhoto[];
             <div className="flog-grid">
               {items.map(p => (
                 <div key={p.id} className="flog-card">
-                  <img src={p.image} alt={p.dish} />
+                  <FoodPhotoImg photo={p} placeholder="flog-noimg" />
                   <div className="flog-info">
                     <b>{p.dish}</b>
                     <span><FlameKindling size={12} /> {p.calories} kcal</span>

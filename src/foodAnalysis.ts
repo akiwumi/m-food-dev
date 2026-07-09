@@ -12,7 +12,8 @@ export type Vitamin = {
 
 export type FoodPhoto = {
   id: string;
-  image: string;         // base64 data-URL, safe to store in localStorage
+  image: string;         // compressed JPEG data-URL (≤1024 px); "" once uploaded to Storage or blanked by compaction
+  imagePath?: string;    // Storage object path "<uid>/<id>.jpg" in bucket food-photos
   dish: string;          // detected or user-supplied name
   calories: number;
   protein: number;       // grams

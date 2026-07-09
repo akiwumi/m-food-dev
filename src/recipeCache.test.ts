@@ -19,6 +19,17 @@ describe("normalizeMoodTag", () => {
     expect(normalizeMoodTag("Romantic")).toBe("happy");
   });
 
+  it("routes anxious and low/sad labels to their own distinct canonical moods", () => {
+    // These must NOT fold into happy/stressed — the seed writes a separate
+    // per-mood recipe slice for each, so the mapping is what makes those rows
+    // reachable by a live search.
+    expect(normalizeMoodTag("anxious")).toBe("anxious");
+    expect(normalizeMoodTag("worried")).toBe("anxious");
+    expect(normalizeMoodTag("sad")).toBe("sad");
+    expect(normalizeMoodTag("Low / Sad")).toBe("sad");
+    expect(normalizeMoodTag("anxious")).not.toBe(normalizeMoodTag("Stressed"));
+  });
+
   it("is case-insensitive and trims whitespace", () => {
     expect(normalizeMoodTag("  HAPPY ")).toBe("happy");
     expect(normalizeMoodTag("  TIRED ")).toBe("tired");

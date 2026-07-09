@@ -64,6 +64,21 @@ Deno.serve(async (req) => {
     data[table] = await adminSelect(`/${table}?owner_id=eq.${userId}&select=*`);
   }
 
+  // Storage objects the user owns (binaries retrievable via signed URLs). Lists
+  // metadata only — kept in lockstep with delete-account's Storage purge so
+  // "what we hold about you" and "what we delete" stay aligned.
+  const storageObjects: unknown[] = [];
+  for (const bucket of ["food-photos", "avatars", "community-images"]) {
+    const listRes = await fetch(`${SUPABASE_URL}/storage/v1/object/list/${bucket}`, {
+      method: "POST",
+      headers: { apikey: SERVICE_ROLE_KEY, authorization: `Bearer ${SERVICE_ROLE_KEY}`, "content-type": "application/json" },
+      body: JSON.stringify({ prefix: `${userId}/`, limit: 1000 }),
+    });
+    const objects: { name: string; updated_at?: string; metadata?: unknown }[] = listRes.ok ? await listRes.json() : [];
+    for (const o of objects) storageObjects.push({ bucket, path: `${userId}/${o.name}`, updated_at: o.updated_at, metadata: o.metadata });
+  }
+  data.storage_objects = storageObjects;
+
   return Response.json(
     { ok: true, exported_at: new Date().toISOString(), user_id: userId, data },
     { headers: corsHeaders(origin) },

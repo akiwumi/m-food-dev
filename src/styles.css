@@ -431,6 +431,7 @@ body,.app{background:linear-gradient(180deg,#dceef2 0%,#eaf4f3 30%,#f5fbfa 100%)
 .dps-thumb{flex-shrink:0;width:80px;height:80px;border-radius:16px;overflow:hidden;position:relative;box-shadow:var(--shadow-sm)}
 .dps-thumb img{width:100%;height:100%;object-fit:cover}
 .dps-thumb span{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.55);color:#fff;font-size:10px;font-weight:700;padding:3px 6px;text-align:center}
+.dps-thumb .dps-thumb-empty{position:static;inset:auto;display:flex;align-items:center;justify-content:center;width:100%;height:100%;background:var(--glass-strong);color:var(--blue-deep);padding:0}
 
 /* Food log screen */
 .flog-day{margin-bottom:20px}
@@ -439,6 +440,7 @@ body,.app{background:linear-gradient(180deg,#dceef2 0%,#eaf4f3 30%,#f5fbfa 100%)
 .flog-grid{display:grid;gap:10px}
 .flog-card{background:var(--glass-strong);border:1px solid rgba(255,255,255,.75);border-radius:18px;overflow:hidden;display:grid;grid-template-columns:90px 1fr;box-shadow:var(--shadow-sm)}
 .flog-card img{width:90px;height:90px;object-fit:cover}
+.flog-noimg{width:90px;height:90px;display:flex;align-items:center;justify-content:center;background:var(--glass-strong);color:var(--blue-deep)}
 .flog-info{padding:12px;display:flex;flex-direction:column;gap:3px}
 .flog-info b{font-size:14px;font-weight:800}
 .flog-info span{font-size:12px;display:flex;align-items:center;gap:4px;color:var(--muted)}
