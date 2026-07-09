@@ -9,8 +9,9 @@
     "csp:sync": "node scripts/sync-vercel-csp.mjs",
     "csp:check": "node scripts/sync-vercel-csp.mjs --check",
     "test": "vitest run",
+    "lint": "eslint .",
     "security:audit": "npm audit --audit-level=high",
-    "verify": "npm run security:audit && npm test && npm run build"
+    "verify": "npm run security:audit && npm run lint && npm test && npm run build"
   },
   "keywords": [],
   "author": "",
@@ -27,11 +28,16 @@
     "react-dom": "^19.2.7"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^25.9.1",
     "@types/react": "^19.2.16",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.2",
+    "eslint": "^10.6.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.7.0",
     "typescript": "^6.0.3",
+    "typescript-eslint": "^8.63.0",
     "vite": "^8.0.16",
     "vitest": "^4.1.8"
   }

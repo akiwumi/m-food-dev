@@ -481,7 +481,7 @@ export default function App() {
   useEffect(() => {
     if (entry !== "app") return;
     let cancelled = false;
-    getConsents().then(c => { if (!cancelled) setBehavioralConsent(c.behavioral_learning); });
+    void getConsents().then(c => { if (!cancelled) setBehavioralConsent(c.behavioral_learning); });
     return () => { cancelled = true; };
   }, [entry, page]);
   // Derive the signal whenever the user has consented — so they can SEE what we've
@@ -490,7 +490,7 @@ export default function App() {
   useEffect(() => {
     if (entry !== "app" || !behavioralConsent) { setCuisineSignal(null); setMoodSignal(null); return; }
     let cancelled = false;
-    fetchRatingHistory().then(h => {
+    void fetchRatingHistory().then(h => {
       if (cancelled) return;
       setCuisineSignal(suppressSignal(deriveCuisineSignal(h), suppressedCuisines));
       // Mood-pattern signal, with the same "forget" list applied to each mood's list.
@@ -513,7 +513,7 @@ export default function App() {
     setLiveSet(null);
     setMoreOffset(0);
     const startedAt = performance.now();
-    fetchCuratedRecipes(sharedProfile, mood, energy, time, "", { type: mealCategory || undefined, cuisines: cuisine ? [cuisine] : undefined, diet: homeDiet !== "Any" ? homeDiet : undefined }, foodHistory, 0, true, aiCuration)
+    void fetchCuratedRecipes(sharedProfile, mood, energy, time, "", { type: mealCategory || undefined, cuisines: cuisine ? [cuisine] : undefined, diet: homeDiet !== "Any" ? homeDiet : undefined }, foodHistory, 0, true, aiCuration)
       .then(list => {
         if (cancelled) return;
         if (list?.length) {
@@ -698,7 +698,7 @@ export default function App() {
     window.history.replaceState({}, "", window.location.pathname);
     if (checkout === "success") {
       // Poll the subscriptions table until the webhook has written the record.
-      syncSubscriptionFromDB().then(sub => {
+      void syncSubscriptionFromDB().then(sub => {
         if (sub) {
           setProfile(p => ({ ...p, subscriptionStatus: parseSubscriptionStatus(sub.status), plan: sub.plan, trialEndsAt: sub.currentPeriodEnd }));
           setEntry("app");
@@ -860,7 +860,7 @@ export default function App() {
       {page === "pantry" && <PantryScreen items={profile.pantryStaples} setItems={items => setProfile(p => ({ ...p, pantryStaples: items }))} addToGrocery={item => setGroceries(v => v.includes(item) ? v : [...v, item])} />}
       {page === "planner" && <PlannerScreen open={open} />}
       {page === "insights" && <InsightsScreen diary={diary} />}
-      {page === "settings" && <SettingsScreen profile={profile} save={setProfile} go={go} logout={() => { authSignOut(); setEntry("welcome"); }} aiCuration={aiCuration} setAiCuration={setAiCuration} learnedSignals={learnedSignals} setLearnedSignals={setLearnedSignals} behavioralConsent={behavioralConsent} />}
+      {page === "settings" && <SettingsScreen profile={profile} save={setProfile} go={go} logout={() => { void authSignOut(); setEntry("welcome"); }} aiCuration={aiCuration} setAiCuration={setAiCuration} learnedSignals={learnedSignals} setLearnedSignals={setLearnedSignals} behavioralConsent={behavioralConsent} />}
       {page === "privacy" && <DataPrivacyScreen signal={cuisineSignal} moodSignal={moodSignal} suppressed={suppressedCuisines} learningOn={learnedSignals} onForget={c => setSuppressedCuisines(prev => [...new Set([...prev, c])])} onRestore={c => setSuppressedCuisines(prev => prev.filter(x => x !== c))} />}
       {page === "favorites" && <LibraryScreen title="Saved recipes" source={safeRecipes.filter(r => saved.includes(r.id))} open={open} remove={r => setSaved(saved.filter(id => id !== r.id))} />}
       {page === "import" && <ImportScreen />}
@@ -883,7 +883,7 @@ export default function App() {
     {page !== "cook" && <MoodyFab onOpen={() => setMoodyOpen(true)} />}
     {moodyOpen && <MoodyPanel profile={sharedProfile} catalog={safeRecipes} loadCatalog={loadMoodyCatalog} turns={moodyTurns} setTurns={setMoodyTurns} close={() => setMoodyOpen(false)} openRecipe={openFromMoody} />}
     {notifOpen && <NotificationsPanel close={() => setNotifOpen(false)} profile={profile} save={setProfile} refresh={refreshNotifs} />}
-    {menuOpen && <MainMenu profile={profile} page={page} go={go} close={() => setMenuOpen(false)} openNotifs={openNotifs} unread={unreadCount()} logout={() => { authSignOut(); setEntry("welcome"); }} />}
+    {menuOpen && <MainMenu profile={profile} page={page} go={go} close={() => setMenuOpen(false)} openNotifs={openNotifs} unread={unreadCount()} logout={() => { void authSignOut(); setEntry("welcome"); }} />}
   </div></MenuCtx.Provider>;
 }
 
@@ -2393,7 +2393,7 @@ function DataPrivacyScreen({ signal, moodSignal, suppressed, learningOn, onForge
   const [summary, setSummary] = useState<{ summary: string; source: "ai" | "fallback" } | null>(null);
   const shownSummary = summary?.summary ?? deterministicTasteSummary(signal, moodSignal);
 
-  useEffect(() => { getConsents().then(c => { setConsents(c); setLoaded(true); }); }, []);
+  useEffect(() => { void getConsents().then(c => { setConsents(c); setLoaded(true); }); }, []);
   // Reset any AI prose when the underlying signal changes — prose is always
   // regenerable and must never drift from the canonical signal.
   useEffect(() => { setSummary(null); }, [signal, moodSignal]);
@@ -2961,7 +2961,7 @@ function MoodyPanel({ profile, catalog, loadCatalog, turns, setTurns, close, ope
     recognitionRef.current = rec;
     rec.continuous = false;
     rec.interimResults = false;
-    rec.onresult = (e: { results: { [n: number]: { [n: number]: { transcript: string } } } }) => { setListening(false); send(e.results[0][0].transcript); };
+    rec.onresult = (e: { results: { [n: number]: { [n: number]: { transcript: string } } } }) => { setListening(false); void send(e.results[0][0].transcript); };
     rec.onerror = () => setListening(false);
     rec.onend = () => setListening(false);
     rec.start();
@@ -3007,7 +3007,7 @@ function MoodyPanel({ profile, catalog, loadCatalog, turns, setTurns, close, ope
   return <div className="panel-bg" onClick={close}><VoiceFab listening={listening} onPress={listening ? stopVoice : startVoice} /><aside className="moody-panel" onClick={e => e.stopPropagation()}><header><Moody /><div><b>Moody</b><span>Your dinner co-pilot</span></div><button onClick={close}><X /></button></header><div className="chat"><p>I can choose dinner, explain a recommendation, or help rescue the step you’re on.</p>{turns.map((t, i) => {
     const linkedRecipe = (t.recipe as Recipe | undefined) ?? resolveMoodyRecipe(t.recipeId, catalog, profile);
     return <Fragment key={i}><p className={t.role === "user" ? "user-message" : "moody-message"}>{t.content}</p>{linkedRecipe && <button className="moody-pick" onClick={() => openRecipe(linkedRecipe)}><img src={linkedRecipe.image} alt="" /><span><small>MOODY’S RECOMMENDATION</small><b>{linkedRecipe.title}</b><em>{linkedRecipe.time} min · {linkedRecipe.reason}</em><strong>View recipe <ChevronRight size={14} /></strong></span></button>}</Fragment>;
-  })}{busy && <p className="moody-message">…</p>}<div ref={bottomRef} /></div><div className="prompt-row"><button onClick={() => send("Pick the easiest safe dinner.")}>Pick the easiest</button><button onClick={() => send("I only have 15 minutes.")}>Only 15 minutes</button>{latestRecipe && <button onClick={() => send(`Why are you recommending ${latestRecipe.title}?`)}>Explain this pick</button>}</div><form onSubmit={e => { e.preventDefault(); send(input); }}><input value={input} onChange={e => setInput(e.target.value)} placeholder="Tell Moody what you need..." /><button disabled={busy}><ArrowRight /></button></form></aside></div>;
+  })}{busy && <p className="moody-message">…</p>}<div ref={bottomRef} /></div><div className="prompt-row"><button onClick={() => send("Pick the easiest safe dinner.")}>Pick the easiest</button><button onClick={() => send("I only have 15 minutes.")}>Only 15 minutes</button>{latestRecipe && <button onClick={() => send(`Why are you recommending ${latestRecipe.title}?`)}>Explain this pick</button>}</div><form onSubmit={e => { e.preventDefault(); void send(input); }}><input value={input} onChange={e => setInput(e.target.value)} placeholder="Tell Moody what you need..." /><button disabled={busy}><ArrowRight /></button></form></aside></div>;
 }
 
 function NotificationsPanel({ close, profile, save, refresh }: { close: () => void; profile: Profile; save: (p: Profile) => void; refresh: () => void }) {

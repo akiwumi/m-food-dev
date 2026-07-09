@@ -2,6 +2,9 @@ const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 export function cleanText(value: string, maxLength = 500) {
+  // Intentionally strips control characters from user-supplied text (XSS/log-
+  // injection hygiene) — the control-char class in this regex is the point.
+  // eslint-disable-next-line no-control-regex
   return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").trim().slice(0, maxLength);
 }
 
