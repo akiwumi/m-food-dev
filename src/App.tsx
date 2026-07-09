@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useCallback, createContext, useContext, Fragment } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback, useContext, Fragment } from "react";
 import {
   ArrowLeft, ArrowRight, Bell, BookOpen, CalendarDays, Check, ChefHat, ChevronRight,
   Clock3, Heart, Home, ListChecks, Menu, Mic, MoreVertical, Play, RotateCcw, Search,
@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { moods, cookingMoods, skillLevels, type Recipe } from "./data";
 import { bundledRecipes } from "./bundledRecipes";
-import { clearStored, defaultDiners, defaultProfile, readStored, useStoredState, writeStored, type Diner, type Profile, type SocialPost } from "./store";
+import { clearStored, defaultDiners, defaultProfile, useStoredState, type Diner, type Profile, type SocialPost } from "./store";
 import { profileForDiners, recommend, safeRecipes as applySafety, RANKING_CONFIG_VERSION, type CuisineSignal, type MoodCuisineSignal, type LearnedSignals } from "./recommendation";
 import { recordRating, recordRun, fetchRatingHistory, deriveCuisineSignal, deriveMoodCuisineSignal, suppressSignal } from "./behavioral";
 import { cleanText, compactPhotoLogs, readSafeImage, validateEmail } from "./security";
@@ -54,44 +54,14 @@ import { moodyCandidates, resolveMoodyRecipe } from "./moodyRecipes";
 import { moodSearchTags, type Mood } from "@/data/moodTags";
 import { buildMoodSearchQuery, getMoodByValue } from "@/lib/moodSearch";
 import gsap from "gsap";
-
-const SUPABASE_FN = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
-
-async function callFn<T>(fn: string, body: unknown): Promise<T> {
-  if (!supabase) throw new Error("Backend not configured.");
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) throw new Error("Not signed in.");
-  const res = await fetch(`${SUPABASE_FN}/${fn}`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${session.access_token}`, "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  return res.json() as Promise<T>;
-}
-
-async function redeemInviteCode(code: string): Promise<{ ok: boolean; subscriptionEnd?: string; error?: string }> {
-  try { return await callFn("redeem-invite", { code: code.trim().toUpperCase() }); }
-  catch (e) { return { ok: false, error: (e as Error).message }; }
-}
-
-async function startCheckout(plan: string): Promise<{ url?: string; error?: string }> {
-  try { return await callFn("create-checkout", { plan }); }
-  catch (e) { return { error: (e as Error).message }; }
-}
-
-// Permanently delete the signed-in user: cancels any Stripe subscription,
-// removes their rows, and deletes the auth account server-side.
-async function deleteAccount(): Promise<{ ok: boolean; error?: string }> {
-  try { return await callFn("delete-account", {}); }
-  catch (e) { return { ok: false, error: (e as Error).message }; }
-}
-
-// Every localStorage key MoodFood owns, wiped when an account is cancelled.
-const MOODFOOD_KEYS = [
-  "moodfood-entry", "moodfood-profile", "moodfood-saved", "moodfood-diary",
-  "moodfood-groceries", "moodfood-posts", "moodfood-connections", "moodfood-diners",
-  "moodfood-eater-count", "moodfood-onboarding-step", "moodfood-a2hs-dismissed",
-];
+import { deleteAccount, MOODFOOD_KEYS, redeemInviteCode, startCheckout, syncSubscriptionFromDB } from "./api/backend";
+import { PLANS, type DiaryEntry, type Entry, type Page, type SearchRequest } from "./appTypes";
+import { MenuCtx } from "./components/MenuCtx";
+import { usePullToRefresh } from "./hooks/usePullToRefresh";
+import { PullRefreshIndicator } from "./components/PullRefreshIndicator";
+import { toggle } from "./lib/toggle";
+import { deriveDailySuggestions } from "./lib/dailySuggestions";
+import { FALLBACK_FOOD, LOGIN_PHOTO, SECTION_PHOTOS } from "./components/photos";
 
 // photoLogs carry base64 image data (megabytes). They must never travel in
 // preferences_json: they bloat the profiles row, the debounced upsert, and the
@@ -99,20 +69,6 @@ const MOODFOOD_KEYS = [
 function prefsForUpsert(p: Profile): Omit<Profile, "photoLogs"> {
   const { photoLogs: _photoLogs, ...prefs } = p;
   return prefs;
-}
-
-// After Stripe redirects back with ?checkout=success, poll the subscriptions
-// table for up to 10 s to get the confirmed status.
-async function syncSubscriptionFromDB(): Promise<{ status: string; plan: string; currentPeriodEnd: string } | null> {
-  if (!supabase) return null;
-  for (let i = 0; i < 5; i++) {
-    await new Promise(r => setTimeout(r, i === 0 ? 500 : 2000));
-    const { data } = await supabase.from("subscriptions").select("*").maybeSingle();
-    if (data?.status && data.status !== "none") {
-      return { status: data.status, plan: data.plan ?? "annual", currentPeriodEnd: data.current_period_end ?? "" };
-    }
-  }
-  return null;
 }
 
 // The subscriptions table can hold statuses the client union doesn't model —
@@ -133,82 +89,10 @@ function parseSubscriptionStatus(raw: unknown): Profile["subscriptionStatus"] {
   return "trialing";
 }
 
-// Lets any header (AppHeader, TopBar) open the global hamburger menu without
-// every screen threading a callback through its props.
-const MenuCtx = createContext<() => void>(() => {});
-
-type Page = "home" | "search" | "results" | "diary" | "grocery" | "planner" | "detail" | "cook" | "insights" | "settings" | "favorites" | "import" | "admin" | "billing" | "psych-profile" | "food-profile" | "account" | "community" | "health" | "health-nutrition" | "health-variety" | "health-patterns" | "family-health" | "diners" | "food-log" | "pantry" | "help" | "privacy";
-type SearchRequest = { query: string; filters: RecipeFilters };
-type Entry = "welcome" | "login" | "quick-start" | "first-pick" | "onboarding" | "account" | "verify" | "verified" | "subscription" | "app";
-const PLANS = [
-  { id: "annual", name: "Annual", price: "$120/year", note: "Best value, about 2 months free" },
-  { id: "quarterly", name: "Quarterly", price: "$36/quarter", note: "Save 20%, billed every 3 months" },
-  { id: "monthly", name: "Monthly", price: "$15/month", note: "Cancel anytime" },
-] as const;
 const nav = [
   ["home", "Home", Home], ["search", "Search", Search], ["results", "Results", ListChecks],
   ["grocery", "Grocery", ShoppingCart], ["planner", "Planner", CalendarDays],
 ] as const;
-
-const PULL_THRESHOLD = 72;  // px to trigger reload
-const PULL_MAX = 110;       // px max visual travel
-
-function usePullToRefresh() {
-  const [pullY, setPullY] = useState(0);
-  const startYRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    const onStart = (e: TouchEvent) => {
-      if (window.scrollY === 0) startYRef.current = e.touches[0].clientY;
-    };
-    const onMove = (e: TouchEvent) => {
-      if (startYRef.current === null || window.scrollY > 0) return;
-      const delta = Math.max(0, e.touches[0].clientY - startYRef.current);
-      if (delta > 0) {
-        // Resist: travel slows as it approaches PULL_MAX
-        const clamped = PULL_MAX * (1 - Math.exp(-delta / PULL_MAX));
-        setPullY(clamped);
-      }
-    };
-    const onEnd = () => {
-      if (pullY >= PULL_THRESHOLD) {
-        window.location.reload();
-      } else {
-        setPullY(0);
-      }
-      startYRef.current = null;
-    };
-    document.addEventListener("touchstart", onStart, { passive: true });
-    document.addEventListener("touchmove", onMove, { passive: true });
-    document.addEventListener("touchend", onEnd);
-    return () => {
-      document.removeEventListener("touchstart", onStart);
-      document.removeEventListener("touchmove", onMove);
-      document.removeEventListener("touchend", onEnd);
-    };
-  }, [pullY]);
-
-  return pullY;
-}
-
-function PullRefreshIndicator({ pullY }: { pullY: number }) {
-  const progress = Math.min(pullY / PULL_THRESHOLD, 1);
-  const ready = pullY >= PULL_THRESHOLD;
-  if (pullY < 2) return null;
-  return (
-    <div
-      className="ptr-indicator"
-      style={{ transform: `translateY(${pullY - 44}px)`, opacity: progress }}
-    >
-      <div
-        className={"ptr-circle" + (ready ? " ready" : "")}
-        style={{ transform: `rotate(${progress * 210}deg)` }}
-      >
-        <RotateCcw size={18} />
-      </div>
-    </div>
-  );
-}
 
 export default function App() {
   const pullY = usePullToRefresh();
@@ -336,7 +220,6 @@ export default function App() {
   const [moreOffset, setMoreOffset] = useState(0);
   const [recipeNonce, setRecipeNonce] = useState(0); // bump to force a re-fetch (Retry)
   const safeRecipes = useMemo(() => applySafety(catalog, sharedProfile), [catalog, sharedProfile]);
-  const localRanked = useMemo(() => recommend(catalog, sharedProfile, mood, energy, time, appliedSignals).map(item => item.recipe), [catalog, sharedProfile, mood, energy, time, appliedSignals]);
   const ACCESSORY_TYPES = useMemo(() => new Set(["dessert", "desserts", "snack", "snacks", "drink", "drinks", "beverage", "beverages", "sweet", "sweets"]), []);
   // Offline fallback: rank the bundled catalog for this profile when a live fetch
   // fails/empties. Honors the home check-in's cuisine / course / diet selections
@@ -1044,23 +927,6 @@ function FirstPickScreen({
     </div>
   );
 }
-
-function toggle(values: string[], value: string) { return nextSavedRecipeIds(values, value); }
-
-const FALLBACK_FOOD  = "https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?auto=format&fit=crop&w=900&q=80";
-const LOGIN_PHOTO    = "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1400&q=85";
-
-// One curated food photo per onboarding section.
-const SECTION_PHOTOS: Record<string, string> = {
-  "Your moods":           "https://images.unsplash.com/photo-1493770348161-369560ae357d?auto=format&fit=crop&w=900&q=80",
-  "Food & safety":        "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=900&q=80",
-  "Your palate":          "https://images.unsplash.com/photo-1565958011703-44f9829ba187?auto=format&fit=crop&w=900&q=80",
-  "Ingredients":          "https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?auto=format&fit=crop&w=900&q=80",
-  "Food psychology":      "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&w=900&q=80",
-  "Comfort & mood":       "https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=900&q=80",
-  "Kitchen, time & table":"https://images.unsplash.com/photo-1490645935967-10de6ba17061?auto=format&fit=crop&w=900&q=80",
-  "Habits & values":      "https://images.unsplash.com/photo-1466637574441-749b8f19452f?auto=format&fit=crop&w=900&q=80",
-};
 
 function AccountSetupScreen({ profile, back, submit, simulate = false }: { profile: Profile; back: () => void; submit: (patch: Partial<Profile>, opts?: { hasSession: boolean }) => void; simulate?: boolean }) {
   const [name, setName] = useState(profile.name);
@@ -1898,72 +1764,6 @@ function TokenInput({ tokens, setTokens, placeholder }: { tokens: string[]; setT
     <form className="add-cue" onSubmit={add}><input value={text} onChange={e => setText(e.target.value)} placeholder={placeholder} /><button><Plus /></button></form>
     {!!tokens.length && <div className="choice" style={{ marginTop: 8 }}>{tokens.map(t => <button className="custom-cue" onClick={() => setTokens(tokens.filter(x => x !== t))} key={t}>{t}<X size={13} /></button>)}</div>}
   </>;
-}
-
-type DiaryEntry = { recipe: Recipe; rating: number; when: string };
-
-function deriveDailySuggestions(
-  diary: DiaryEntry[],
-  saved: string[],
-  catalog: Recipe[],
-  profile: Profile,
-  count = 5,
-): Recipe[] {
-  // Stable seed from today's date so picks rotate overnight but don't shuffle on re-render.
-  const seed = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  const seededRandom = (n: number) => {
-    let h = parseInt(seed) ^ (n * 2654435761);
-    h = ((h >>> 16) ^ h) * 0x45d9f3b;
-    h = ((h >>> 16) ^ h);
-    return (h >>> 0) / 0xffffffff;
-  };
-
-  // Build cuisine affinity from diary — high ratings weight more.
-  const cuisineScore: Record<string, number> = {};
-  diary.forEach(({ recipe, rating }) => {
-    const weight = rating >= 4 ? 2 : rating >= 3 ? 1 : 0.3;
-    cuisineScore[recipe.cuisine] = (cuisineScore[recipe.cuisine] ?? 0) + weight;
-  });
-
-  const recentIds = new Set(diary.slice(0, 7).map(d => d.recipe.id));
-  const savedSet = new Set(saved);
-
-  const pool = catalog.filter(r =>
-    r.status === "published" &&
-    (!profile.diet || profile.diet === "Everything" || profile.diet === "Any" || r.diets.includes(profile.diet)) &&
-    !profile.allergies.some(a => r.allergens.map(x => x.toLowerCase()).includes(a.toLowerCase())),
-  );
-
-  const scored = pool.map((r, i) => {
-    const affinity = cuisineScore[r.cuisine] ?? 0;
-    const savedBonus = savedSet.has(r.id) && !recentIds.has(r.id) ? 1.5 : 0;
-    const freshnessBonus = recentIds.has(r.id) ? -3 : 0;
-    const jitter = seededRandom(i) * 0.8;
-    return { recipe: r, score: affinity + savedBonus + freshnessBonus + jitter };
-  });
-
-  scored.sort((a, b) => b.score - a.score);
-
-  // Pick with cuisine variety — no two consecutive cards share a cuisine.
-  const picks: Recipe[] = [];
-  const usedCuisines = new Set<string>();
-  for (const { recipe } of scored) {
-    if (picks.length >= count) break;
-    if (usedCuisines.has(recipe.cuisine) && picks.length < count - 1) continue;
-    picks.push(recipe);
-    usedCuisines.add(recipe.cuisine);
-  }
-
-  // If variety filtering left us short, fill from the top of the scored list.
-  if (picks.length < count) {
-    const pickIds = new Set(picks.map(r => r.id));
-    for (const { recipe } of scored) {
-      if (picks.length >= count) break;
-      if (!pickIds.has(recipe.id)) { picks.push(recipe); pickIds.add(recipe.id); }
-    }
-  }
-
-  return picks;
 }
 
 function DailySuggestionCarousel({ suggestions, onPick, showHero = true }: { suggestions: Recipe[]; onPick: (r: Recipe) => void; showHero?: boolean }) {
