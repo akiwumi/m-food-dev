@@ -12,7 +12,6 @@ import App from "./App";
 beforeAll(() => {
   // jsdom omits a few browser APIs that Landing/App touch on mount.
   if (!window.matchMedia) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     window.matchMedia = ((query: string) => ({
       matches: false, media: query, onchange: null,
       addListener() {}, removeListener() {},

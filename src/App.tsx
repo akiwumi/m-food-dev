@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState, useCallback, Fragment } from "react";
 import {
   ArrowLeft, ArrowRight, Check, ChefHat, ChevronRight,
-  Clock3, Heart, Home, MoreVertical, Play, RotateCcw, Search,
-  Settings2, ShoppingCart, Sparkles, Star, Timer, X, ShieldCheck, UserRound, BarChart3,
-  Upload, LogOut, Plus, ClipboardCheck, LayoutDashboard, Camera, Users, MessageCircle,
-  Send, UserPlus, Lock, Globe2, Activity, Wheat, Droplets, Mail,
-  HelpCircle, Info, FlameKindling, Dna, BookMarked, Share2, Trash2,
+  Clock3, Heart, Home, Play, RotateCcw, Search,
+  Settings2, ShoppingCart, Sparkles, Star, Timer, X, ShieldCheck, UserRound,
+  Plus, Camera, Users,
+  Lock, Globe2, Activity, Wheat, Droplets, Mail,
+  Info, FlameKindling, Dna, BookMarked, Share2,
   Eye, EyeOff,
 } from "lucide-react";
 import { moods, cookingMoods, skillLevels, type Recipe } from "./data";
@@ -37,8 +37,7 @@ import { RecipeImage } from "./RecipeImage";
 import { finalizeSearchResults } from "./searchResults";
 import { nextSavedRecipeIds } from "./savedRecipes";
 import { trackSearch } from "./telemetry";
-import { getConsents, setConsent, resetLearningData, exportMyData, NO_CONSENT, type ConsentState, type ConsentScope } from "./governance";
-import { deterministicTasteSummary, fetchTasteSummary } from "./tasteSummary";
+import { getConsents } from "./governance";
 import { Landing } from "./Landing";
 import { searchFoods, type NutritionFood } from "./nutrition";
 import { readDevTestState } from "./devTestState";
@@ -67,7 +66,7 @@ import { Moody } from "./components/Moody";
 import { MainMenu } from "./components/MainMenu";
 import { PickCard } from "./components/PickCard";
 import { TokenInput } from "./components/TokenInput";
-import { Avatar, Choice, EditableCues, PlanPicker, ProfileEditor, SettingsGroup, SetupStep } from "./components/misc";
+import { Choice, EditableCues, PlanPicker, ProfileEditor, SetupStep } from "./components/misc";
 import { DailySuggestionCarousel } from "./components/DailySuggestionCarousel";
 import { NotificationsPanel } from "./components/NotificationsPanel";
 import { FoodCamera } from "./components/FoodCamera";
@@ -85,6 +84,11 @@ import { DinersScreen } from "./screens/DinersScreen";
 import { HealthHub } from "./screens/health/HealthHub";
 import { HealthDetail } from "./screens/health/HealthDetail";
 import { FamilyHealth } from "./screens/health/FamilyHealth";
+import { SettingsScreen } from "./screens/SettingsScreen";
+import { DataPrivacyScreen } from "./screens/DataPrivacyScreen";
+import { BillingScreen } from "./screens/BillingScreen";
+import { AccountScreen } from "./screens/AccountScreen";
+import { CommunityScreen } from "./screens/CommunityScreen";
 
 // photoLogs carry base64 image data (megabytes). They must never travel in
 // preferences_json: they bloat the profiles row, the debounced upsert, and the
@@ -1965,93 +1969,6 @@ function DiaryScreen({ diary, open, photoLogs, addPhoto, goFoodLog, allergies }:
     </div>
   );
 }
-function SettingsScreen({ profile, save, go, logout, aiCuration, setAiCuration, learnedSignals, setLearnedSignals, behavioralConsent }: { profile: Profile; save: (p: Profile) => void; go: (p: Page) => void; logout: () => void; aiCuration: boolean; setAiCuration: (v: boolean) => void; learnedSignals: boolean; setLearnedSignals: (v: boolean) => void; behavioralConsent: boolean }) {
-  return <div className="screen"><TopBar title="Profile & settings" /><section className="profile-card">{profile.avatar ? <img src={profile.avatar} alt={profile.name} /> : <div>{profile.name.slice(0, 2).toUpperCase()}</div>}<h2>{profile.name}</h2><p>{profile.email || "Pilot preview profile"}</p><span>{profile.diet} · {profile.skill}</span></section><SettingsGroup title="ACCOUNT & COMMUNITY"><button onClick={() => go("account")}><UserRound />Account and public profile<ChevronRight /></button><button onClick={() => go("community")}><Users />Community and connections<ChevronRight /></button><button onClick={() => go("diners")}><UserPlus />Household diners<ChevronRight /></button></SettingsGroup><SettingsGroup title="HEALTH & FOOD PROFILE"><button onClick={() => go("food-profile")}><ClipboardCheck />Food profile &amp; preferences<ChevronRight /></button><button onClick={() => go("health")}><Activity />Health trends<ChevronRight /></button><button onClick={() => go("food-log")}><Camera />Food photo log<ChevronRight /></button><button onClick={() => go("psych-profile")}><Sparkles />Psychological food profile<ChevronRight /></button><button onClick={() => go("favorites")}><Heart />Saved recipes<ChevronRight /></button><button onClick={() => go("insights")}><BarChart3 />Weekly reflections<ChevronRight /></button><button><ShieldCheck />Safety filters<span>{profile.allergies.join(", ") || "None"}</span></button></SettingsGroup><SettingsGroup title="PREFERENCES"><label>Usual servings<input type="number" min="1" max="10" value={profile.servings} onChange={e => save({ ...profile, servings: +e.target.value })} /></label><label className="settings-toggle"><span><Sparkles size={15} />Let Moody personalize my mood feed<small>AI re-ranks your live picks. Off by default — your picks are mood-matched without it. Search always stays AI-free.</small></span><input type="checkbox" checked={aiCuration} onChange={e => setAiCuration(e.target.checked)} /></label><label className="settings-toggle"><span><BarChart3 size={15} />Learn from what I cook &amp; rate<small>{behavioralConsent ? "Nudges your picks toward cuisines you rate highly. Needs a few ratings first." : "Turn on “Learn from my recipe behaviour” in Data & privacy first."}</small></span><input type="checkbox" disabled={!behavioralConsent} checked={learnedSignals && behavioralConsent} onChange={e => setLearnedSignals(e.target.checked)} /></label><button onClick={() => go("privacy")}><ShieldCheck />Data &amp; privacy<ChevronRight /></button><button onClick={() => go("billing")}><Star />Subscription &amp; billing<ChevronRight /></button><button onClick={() => go("import")}><Upload />Import a recipe<ChevronRight /></button><button onClick={() => go("admin")}><LayoutDashboard />Editorial console<ChevronRight /></button><button onClick={() => go("help")}><HelpCircle />Help, tutorial &amp; FAQ<ChevronRight /></button></SettingsGroup><button className="danger" onClick={logout}><LogOut />Sign out and replay first launch</button></div>;
-}
-// Slice 1.5 (roadmap v3): the Data Governance surface. Granular consent (default
-// off, recorded), export, and the distinct pause / reset controls — all gated on
-// being signed in, since the data lives server-side.
-function DataPrivacyScreen({ signal, moodSignal, suppressed, learningOn, onForget, onRestore }: { signal: CuisineSignal | null; moodSignal: MoodCuisineSignal | null; suppressed: string[]; learningOn: boolean; onForget: (c: string) => void; onRestore: (c: string) => void }) {
-  const [consents, setConsents] = useState<ConsentState>(NO_CONSENT);
-  const [loaded, setLoaded] = useState(false);
-  const [busy, setBusy] = useState("");
-  const [note, setNote] = useState("");
-  // Slice 5: deterministic summary is shown by default; AI rephrase only on request.
-  const [summary, setSummary] = useState<{ summary: string; source: "ai" | "fallback" } | null>(null);
-  const shownSummary = summary?.summary ?? deterministicTasteSummary(signal, moodSignal);
-
-  useEffect(() => { void getConsents().then(c => { setConsents(c); setLoaded(true); }); }, []);
-  // Reset any AI prose when the underlying signal changes — prose is always
-  // regenerable and must never drift from the canonical signal.
-  useEffect(() => { setSummary(null); }, [signal, moodSignal]);
-
-  const askMoody = async () => {
-    setBusy("summary");
-    setSummary(await fetchTasteSummary(signal, moodSignal));
-    setBusy("");
-  };
-
-  const toggle = async (scope: ConsentScope, granted: boolean) => {
-    setConsents(prev => ({ ...prev, [scope]: granted })); // optimistic
-    const ok = await setConsent(scope, granted);
-    if (!ok) { setConsents(await getConsents()); setNote("Couldn’t save that — sign in and try again."); }
-    else setNote(granted ? "Consent recorded." : "Consent withdrawn — learning is paused.");
-  };
-
-  const doExport = async () => {
-    setBusy("export"); setNote("");
-    const data = await exportMyData();
-    setBusy("");
-    if (!data) { setNote("Export needs you to be signed in. Try again once signed in."); return; }
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `moodfood-data-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click(); URL.revokeObjectURL(url);
-    setNote("Your data was exported as a JSON file.");
-  };
-
-  const doReset = async () => {
-    if (!window.confirm("Delete everything MoodFood has learned from your behaviour? Your account stays. This can’t be undone.")) return;
-    setBusy("reset"); setNote("");
-    const ok = await resetLearningData();
-    setBusy("");
-    setNote(ok ? "Learning data deleted." : "Couldn’t reset — sign in and try again.");
-  };
-
-  return <div className="screen"><TopBar title="Data & privacy" />
-    <section className="privacy-intro">
-      <ShieldCheck />
-      <h2>You decide what MoodFood learns.</h2>
-      <p>To improve your recommendations we can record what you cook, save, and rate, plus the mood you pick at check-in. It’s stored on your MoodFood account, used only to personalise your picks, and you can pause it, export it, or delete it here at any time. Both switches are off until you turn them on.</p>
-    </section>
-    <SettingsGroup title="LEARNING CONSENT">
-      <label className="settings-toggle"><span><Sparkles size={15} />Learn from my recipe behaviour<small>Saves, cooks, and ratings improve your ranking. Off = no behavioural data is recorded.</small></span>
-        <input type="checkbox" disabled={!loaded} checked={consents.behavioral_learning} onChange={e => toggle("behavioral_learning", e.target.checked)} /></label>
-      <label className="settings-toggle"><span><Activity size={15} />Use my mood &amp; health context<small>Lets check-in mood and health-trend context feed learning. Separate from the above.</small></span>
-        <input type="checkbox" disabled={!loaded} checked={consents.mood_health_context} onChange={e => toggle("mood_health_context", e.target.checked)} /></label>
-    </SettingsGroup>
-    {consents.behavioral_learning && <SettingsGroup title="WHAT MOODFOOD HAS LEARNED">
-      <p className="taste-summary">{shownSummary}</p>
-      {signal && signal.preferred.length > 0 && <button className="link-button" onClick={askMoody} disabled={busy === "summary"}><Sparkles size={14} />{busy === "summary" ? "Asking Moody…" : summary?.source === "ai" ? "Reworded by Moody" : "Say it in Moody’s words"}</button>}
-      {signal && signal.preferred.length > 0 ? <>
-        <p className="quiet">From the meals you’ve rated{learningOn ? ", these gently lift matching picks." : " (turn on “Learn from what I cook & rate” to use them)."}</p>
-        {signal.preferred.map(c => {
-          const n = signal.support[c] ?? 0;
-          const confidence = n >= 6 ? "strong signal" : n >= 4 ? "growing signal" : "early signal";
-          return <div className="taste-row" key={c}><span><b>{c}</b><small>{n} highly-rated {n === 1 ? "cook" : "cooks"} · {confidence}</small></span><button onClick={() => onForget(c)}>Forget</button></div>;
-        })}
-      </> : <p className="quiet">Nothing yet — cook and rate a few meals and the cuisines you enjoy will appear here. A couple of ratings are never treated as a permanent verdict.</p>}
-      {suppressed.length > 0 && <div className="taste-suppressed"><small>FORGOTTEN</small>{suppressed.map(c => <div className="taste-row" key={c}><span>{c}</span><button onClick={() => onRestore(c)}>Restore</button></div>)}</div>}
-    </SettingsGroup>}
-    <SettingsGroup title="YOUR DATA">
-      <button onClick={doExport} disabled={busy === "export"}><Upload />{busy === "export" ? "Preparing…" : "Export my data (JSON)"}<ChevronRight /></button>
-      <button className="danger" onClick={doReset} disabled={busy === "reset"}><RotateCcw />{busy === "reset" ? "Deleting…" : "Reset what MoodFood has learned"}</button>
-      <p className="quiet">To erase your whole account and everything in it, use Account → Delete account.</p>
-    </SettingsGroup>
-    {note && <p className="source-note live"><Check size={13} /> {note}</p>}
-  </div>;
-}
 function SubscriptionScreen({ profile, save, proceed, onStarted }: { profile: Profile; save: (p: Profile) => void; proceed: () => void; onStarted?: () => void }) {
   const [plan, setPlan] = useState(profile.plan || "annual");
   const [mode, setMode] = useState<"trial" | "invite">("trial");
@@ -2141,135 +2058,6 @@ function SubscriptionScreen({ profile, save, proceed, onStarted }: { profile: Pr
       </section>
     </div>
   );
-}
-function BillingScreen({ profile, save }: { profile: Profile; save: (p: Profile) => void }) {
-  const [plan, setPlan] = useState(profile.plan || "annual");
-  const [mode, setMode] = useState<"plan" | "invite">("plan");
-  const [inviteInput, setInviteInput] = useState("");
-  const [inviteError, setInviteError] = useState("");
-  const [inviteLoading, setInviteLoading] = useState(false);
-  const [inviteSuccess, setInviteSuccess] = useState(false);
-  const chosen = PLANS.find(p => p.id === plan);
-
-  const redeem = async () => {
-    const code = inviteInput.trim().toUpperCase();
-    if (!code) { setInviteError("Please enter your invite code."); return; }
-    setInviteLoading(true);
-    setInviteError("");
-    const result = await redeemInviteCode(code);
-    setInviteLoading(false);
-    if (!result.ok) { setInviteError(result.error ?? "Invalid code."); return; }
-    save({ ...profile, subscriptionStatus: "active", inviteCode: code, inviteSubEnd: result.subscriptionEnd ?? "" });
-    setInviteSuccess(true);
-  };
-
-  return (
-    <div className="screen">
-      <TopBar title="Subscription" />
-      <section className="billing">
-        <span>{profile.inviteCode ? "INVITE: 1 YEAR ACCESS" : "7-DAY FULL ACCESS"}</span>
-        <h1>Keep dinner feeling lighter.</h1>
-        {profile.inviteCode ? (
-          <p>Your invite code <b>{profile.inviteCode}</b> is active. Access expires {profile.inviteSubEnd ? new Date(profile.inviteSubEnd).toLocaleDateString() : "in 1 year"}.</p>
-        ) : (
-          <>
-            <div className="sub-mode-toggle">
-              <button className={mode === "plan" ? "active" : ""} onClick={() => setMode("plan")}>Subscription</button>
-              <button className={mode === "invite" ? "active" : ""} onClick={() => setMode("invite")}>Invite code</button>
-            </div>
-            {mode === "plan" ? (
-              <>
-                <p>Personalized decisions, safe recommendations, cook mode, and weekly reflections.</p>
-                <PlanPicker plan={plan} setPlan={setPlan} />
-                <button className="primary" onClick={async () => {
-                  if (isSupabaseConfigured) {
-                    const result = await startCheckout(plan);
-                    if (result.url) window.location.href = result.url;
-                  } else {
-                    save({ ...profile, plan });
-                  }
-                }}>
-                  {profile.subscriptionStatus === "active" || profile.subscriptionStatus === "trialing"
-                    ? "Manage subscription on Stripe"
-                    : `Start free trial: ${chosen?.name}`}
-                </button>
-                <small>Managed securely by Stripe. Cancel anytime.</small>
-              </>
-            ) : inviteSuccess ? (
-              <p className="invite-success"><Check size={18} /> Code redeemed, you now have 1 year of full access.</p>
-            ) : (
-              <>
-                <p>Enter an invite code to unlock a full year of MoodFood, no payment required.</p>
-                <input
-                  className="invite-code-input"
-                  value={inviteInput}
-                  onChange={e => { setInviteInput(e.target.value.toUpperCase()); setInviteError(""); }}
-                  placeholder="e.g. FOUNDER-A"
-                  maxLength={40}
-                  autoCapitalize="characters"
-                  spellCheck={false}
-                />
-                {inviteError && <p className="invite-error">{inviteError}</p>}
-                <button className="primary" onClick={redeem} disabled={inviteLoading}>
-                  {inviteLoading ? "Checking…" : <>Redeem code <ArrowRight /></>}
-                </button>
-              </>
-            )}
-          </>
-        )}
-      </section>
-    </div>
-  );
-}
-function AccountScreen({ profile, save, posts, back, cancelAccount }: { profile: Profile; save: (p: Profile) => void; posts: SocialPost[]; back: () => void; cancelAccount: () => Promise<{ ok: boolean; error?: string }> }) {
-  const update = (patch: Partial<Profile>) => save({ ...profile, ...patch });
-  const [uploadError, setUploadError] = useState("");
-  const upload = async (file?: File) => { if (!file) return; try { update({ avatar: await readSafeImage(file) }); setUploadError(""); } catch (error) { setUploadError((error as Error).message); } };
-  return <div className="screen account"><TopBar title="Your account" back={back} /><section className="account-hero"><label>{profile.avatar ? <img src={profile.avatar} alt={profile.name} /> : <span>{profile.name.slice(0, 2).toUpperCase()}</span>}<i><Camera size={16} /></i><input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => upload(e.target.files?.[0])} /></label>{uploadError && <em>{uploadError}</em>}<h1>{profile.name}</h1><p>{profile.bio}</p><small>{posts.length} posts · Profile linked to your shared cooks</small></section><ProfileEditor title="Public profile" text="This is what people you connect with can see."><label className="account-field">Display name<input maxLength={80} value={profile.name} onChange={e => update({ name: cleanText(e.target.value, 80) })} /></label><label className="account-field">Bio<textarea maxLength={300} value={profile.bio} onChange={e => update({ bio: cleanText(e.target.value, 300) })} /></label><label className="account-field">Location<input maxLength={100} value={profile.location} onChange={e => update({ location: cleanText(e.target.value, 100) })} placeholder="Optional" /></label></ProfileEditor><ProfileEditor title="Privacy and sharing" text="Your psychological profile, raw mood entries, and private diary are never shown here."><Choice values={["connections", "public", "private"]} active={profile.profileVisibility} pick={v => update({ profileVisibility: v as Profile["profileVisibility"] })} /><label className="toggle-row"><span><b>Offer to share completed cooks</b><small>You always confirm before anything is posted.</small></span><input type="checkbox" checked={profile.shareCookedMeals} onChange={e => update({ shareCookedMeals: e.target.checked })} /></label></ProfileEditor>{posts.length > 0 && <ProfileEditor title="Posts linked to your profile" text="Images and tips you chose to share."><div className="profile-gallery">{posts.map(p => <img src={p.image} alt="" key={p.id} />)}</div></ProfileEditor>}<CancelAccount cancelAccount={cancelAccount} /></div>;
-}
-function CancelAccount({ cancelAccount }: { cancelAccount: () => Promise<{ ok: boolean; error?: string }> }) {
-  const [confirming, setConfirming] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const run = async () => {
-    setBusy(true); setError("");
-    const res = await cancelAccount();
-    if (!res.ok) { setBusy(false); setError(res.error || "We couldn't cancel your account. Please try again."); }
-    // On success the app reloads, so no need to reset state here.
-  };
-  return <section className="cancel-account">
-    <h2>Cancel account</h2>
-    <p>Permanently delete your MoodFood account, food profile, diary, and saved recipes. Any active subscription is cancelled. This can't be undone.</p>
-    {!confirming
-      ? <button className="cancel-account-btn" onClick={() => setConfirming(true)}><Trash2 size={16} /> Cancel my account</button>
-      : <div className="cancel-account-confirm">
-          <b>Are you sure? This is permanent.</b>
-          {error && <span className="err">{error}</span>}
-          <div className="cancel-account-actions">
-            <button className="secondary" onClick={() => { setConfirming(false); setError(""); }} disabled={busy}>Keep my account</button>
-            <button className="cancel-account-btn" onClick={run} disabled={busy}>{busy ? "Cancelling…" : "Yes, delete everything"}</button>
-          </div>
-        </div>}
-  </section>;
-}
-function CommunityScreen({ profile, posts, setPosts, connections, setConnections, openRecipe, catalog, initialRecipeId, clearInitial }: { profile: Profile; posts: SocialPost[]; setPosts: (p: SocialPost[]) => void; connections: string[]; setConnections: (p: string[]) => void; openRecipe: (r: Recipe) => void; catalog: Recipe[]; initialRecipeId?: string; clearInitial?: () => void }) {
-  const [composer, setComposer] = useState(false); const [text, setText] = useState(""); const [image, setImage] = useState(""); const [recipeId, setRecipeId] = useState("");
-  const [comment, setComment] = useState<Record<string, string>>({});
-  const [uploadError, setUploadError] = useState("");
-  const findRecipe = (id?: string) => catalog.find(r => r.id === id);
-  // When a recipe was shared from the detail screen, open the composer prefilled.
-  useEffect(() => {
-    if (initialRecipeId) {
-      const r = findRecipe(initialRecipeId);
-      setComposer(true); setRecipeId(initialRecipeId);
-      setText(t => t || (r ? `Just found ${r.title} on MoodFood, looks perfect. ` : ""));
-      clearInitial?.();
-    }
-  }, [initialRecipeId]);
-  const upload = async (file?: File) => { if (!file) return; try { setImage(await readSafeImage(file)); setUploadError(""); } catch (error) { setUploadError((error as Error).message); } };
-  const publish = () => { const safeText = cleanText(text, 1000); if (!safeText && !image && !recipeId) return; setPosts([{ id: crypto.randomUUID(), author: cleanText(profile.name, 80), avatar: profile.avatar, text: safeText, image: image || findRecipe(recipeId)?.image || "", recipeId: recipeId || undefined, createdAt: "Just now", likes: [], comments: [] }, ...posts.slice(0, 99)]); setText(""); setImage(""); setRecipeId(""); setComposer(false); };
-  const updatePost = (id: string, change: (p: SocialPost) => SocialPost) => setPosts(posts.map(p => p.id === id ? change(p) : p));
-  return <div className="screen community"><TopBar title="Community" /><section className="community-intro"><div><b>Cook together, from wherever.</b><p>Share recipes, photos, and useful tips. Your private mood and psychological profile stay private.</p></div><button className="primary" onClick={() => setComposer(!composer)}><Plus />Post</button></section>{composer && <section className="composer"><div><Avatar name={profile.name} image={profile.avatar} /><textarea maxLength={1000} value={text} onChange={e => setText(e.target.value)} placeholder="Share a cook, recipe, or tip..." /></div>{image && <img src={image} alt="Post preview" />}{recipeId && findRecipe(recipeId) && <div className="composer-recipe"><ChefHat size={15} /><span>Linking <b>{findRecipe(recipeId)!.title}</b></span><button onClick={() => setRecipeId("")} aria-label="Remove linked recipe"><X size={14} /></button></div>}<select value={recipeId} onChange={e => setRecipeId(e.target.value)}><option value="">Link a recipe (optional)</option>{catalog.map(r => <option value={r.id} key={r.id}>{r.title}</option>)}</select>{uploadError && <p className="upload-error">{uploadError}</p>}<footer><label><Camera />Add photo<input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => upload(e.target.files?.[0])} /></label><button className="primary" onClick={publish}><Send />Share</button></footer></section>}<div className="feed">{posts.length === 0 && !composer && <div className="empty-state" style={{ margin: "24px 16px" }}><Users /><h2>Be the first to post</h2><p>Share a cook, tip, or recipe. Your psychological profile and diary stay completely private.</p></div>}{posts.map(post => <article className="social-post" key={post.id}><header><Avatar name={post.author} image={post.avatar} /><div><b>{post.author}</b><span>{post.createdAt}</span></div><MoreVertical /></header><p>{post.text}</p>{post.image && <img src={post.image} alt="Cooked meal" />}{post.recipeId && findRecipe(post.recipeId) && <button className="linked-recipe" onClick={() => { const r = findRecipe(post.recipeId); if (r) openRecipe(r); }}><ChefHat /><span><small>LINKED RECIPE</small><b>{findRecipe(post.recipeId)?.title}</b></span><ChevronRight /></button>}<div className="social-actions"><button onClick={() => updatePost(post.id, p => ({ ...p, likes: toggle(p.likes, profile.name) }))}><Heart fill={post.likes.includes(profile.name) ? "currentColor" : "none"} />{post.likes.length}</button><button><MessageCircle />{post.comments.length}</button></div>{post.comments.map((c, n) => <p className="comment" key={n}><b>{c.author}</b> {c.text}</p>)}<form className="comment-form" onSubmit={e => { e.preventDefault(); if (!comment[post.id]?.trim()) return; updatePost(post.id, p => ({ ...p, comments: [...p.comments, { author: profile.name, text: cleanText(comment[post.id], 500) }] })); setComment({ ...comment, [post.id]: "" }); }}><input maxLength={500} value={comment[post.id] || ""} onChange={e => setComment({ ...comment, [post.id]: cleanText(e.target.value, 500) })} placeholder="Add a helpful comment..." /><button><Send /></button></form></article>)}</div></div>;
 }
 // Pull the option list for an onboarding question so the profile editor and the
 // onboarding flow always offer the same suggestions.
