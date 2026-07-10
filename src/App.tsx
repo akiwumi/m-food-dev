@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState, useCallback, useContext, Fragment } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback, Fragment } from "react";
 import {
-  ArrowLeft, ArrowRight, Bell, BookOpen, CalendarDays, Check, ChefHat, ChevronRight,
-  Clock3, Heart, Home, ListChecks, Menu, Mic, MoreVertical, Play, RotateCcw, Search,
+  ArrowLeft, ArrowRight, Bell, Check, ChefHat, ChevronRight,
+  Clock3, Heart, Home, Mic, MoreVertical, Play, RotateCcw, Search,
   Settings2, ShoppingCart, Sparkles, Star, Timer, X, ShieldCheck, UserRound, BarChart3,
   Upload, LogOut, Plus, ClipboardCheck, LayoutDashboard, Camera, Users, MessageCircle,
   Send, UserPlus, Lock, Globe2, Activity, Salad, Wheat, Droplets, TrendingUp, Mail, CreditCard,
@@ -62,6 +62,12 @@ import { PullRefreshIndicator } from "./components/PullRefreshIndicator";
 import { toggle } from "./lib/toggle";
 import { deriveDailySuggestions } from "./lib/dailySuggestions";
 import { FALLBACK_FOOD, LOGIN_PHOTO, SECTION_PHOTOS } from "./components/photos";
+import { AppHeader, BottomNav, DesktopNav, TopBar } from "./components/AppChrome";
+import { Moody } from "./components/Moody";
+import { MainMenu } from "./components/MainMenu";
+import { PickCard } from "./components/PickCard";
+import { TokenInput } from "./components/TokenInput";
+import { Avatar, Choice, EditableCues, PlanPicker, ProfileEditor, SettingsGroup, SetupStep, Trend } from "./components/misc";
 
 // photoLogs carry base64 image data (megabytes). They must never travel in
 // preferences_json: they bloat the profiles row, the debounced upsert, and the
@@ -89,10 +95,6 @@ function parseSubscriptionStatus(raw: unknown): Profile["subscriptionStatus"] {
   return "trialing";
 }
 
-const nav = [
-  ["home", "Home", Home], ["search", "Search", Search], ["results", "Results", ListChecks],
-  ["grocery", "Grocery", ShoppingCart], ["planner", "Planner", CalendarDays],
-] as const;
 
 export default function App() {
   const pullY = usePullToRefresh();
@@ -1430,80 +1432,6 @@ function MultiField({ q, values, update }: { q: OnboardingQuestion; values: stri
     <p className="multi-hint">{values.length ? `${values.length} selected, pick as many as you like` : "Select all that apply"}</p>
   </>;
 }
-function SetupStep({ eyebrow, title, text, children }: { eyebrow: string; title: string; text: string; children: React.ReactNode }) { return <section className="setup-step"><span>{eyebrow}</span><h1>{title}</h1><p>{text}</p>{children}</section>; }
-function Choice({ values, active, pick, multi }: { values: string[]; active: string | string[]; pick: (v: string) => void; multi?: boolean }) { return <div className="choice">{values.map(v => <button className={(multi ? (active as string[]).includes(v) : active === v) ? "active" : ""} onClick={() => pick(v)} key={v}>{v}</button>)}</div>; }
-
-function DesktopNav({ page, go, openMoody }: { page: Page; go: (p: Page) => void; openMoody: () => void }) {
-  return <aside className="desktop-nav">
-    <nav>
-      {nav.map(([id, label, Icon]) => <button className={page === id ? "active" : ""} onClick={() => go(id)} key={id}><Icon size={19} />{label}</button>)}
-      <button className={page === "pantry" ? "active" : ""} onClick={() => go("pantry")}><Salad size={19} />Pantry</button>
-      <button className={page === "favorites" ? "active" : ""} onClick={() => go("favorites")}><Heart size={19} />Saved</button>
-    </nav>
-    <button className="desktop-wordmark" onClick={() => go("home")} aria-label="MoodFood home">
-      <img src="/images/logo-1.png" alt="" />
-      <span>MOODFOOD</span>
-    </button>
-    <div className="desktop-actions">
-      <button className="moody-side" onClick={openMoody}><Sparkles size={18} />Ask Moody</button>
-      <button className="desktop-account" onClick={() => go("settings")}><UserRound size={18} />My MoodFood</button>
-    </div>
-  </aside>;
-}
-function BottomNav({ page, go }: { page: Page; go: (p: Page) => void }) {
-  const items: [Page, string, typeof Home][] = [
-    ["home", "Home", Home],
-    ["search", "Search", Search],
-    ["results", "Results", ListChecks],
-    ["favorites", "Saved", Heart],
-    ["grocery", "Grocery", ShoppingCart],
-  ];
-  return <nav className="bottom-nav">{items.map(([id, label, Icon]) => <button className={page === id ? "active" : ""} onClick={() => go(id)} key={id}><Icon size={19} /><span>{label}</span></button>)}</nav>;
-}
-// Full-height slide-in drawer surfacing every part of the app, the single
-// place to reach settings, food profile, camera log, health, billing, and more.
-function MainMenu({ profile, page, go, close, openNotifs, unread, logout }: { profile: Profile; page: Page; go: (p: Page) => void; close: () => void; openNotifs: () => void; unread: number; logout: () => void }) {
-  const nav = (p: Page) => { go(p); close(); };
-  const groups: { title: string; items: [Page, string, typeof Home][] }[] = [
-    { title: "COOK & PLAN", items: [["home", "Home", Home], ["search", "Search recipes", Search], ["diary", "Diary", BookOpen], ["pantry", "My pantry", Salad], ["grocery", "Grocery", ShoppingCart], ["planner", "Planner", CalendarDays]] },
-    { title: "DISCOVER", items: [["community", "Community", Users], ["favorites", "Saved recipes", Heart], ["import", "Import a recipe", Upload]] },
-    { title: "TRACK", items: [["food-log", "Food photo log (camera)", Camera], ["insights", "Weekly reflections", BarChart3], ["health", "Health trends", Activity]] },
-    { title: "YOUR PROFILE", items: [["food-profile", "Food profile & preferences", ClipboardCheck], ["psych-profile", "Psychological food profile", Sparkles], ["diners", "Household diners", UserPlus], ["account", "Account & public profile", UserRound]] },
-    { title: "ACCOUNT & APP", items: [["billing", "Subscription & billing", Star], ["admin", "Editorial console", LayoutDashboard], ["help", "Help & FAQ", HelpCircle], ["settings", "Settings", Settings2]] },
-  ];
-  return <div className="panel-bg menu-bg" onClick={close}>
-    <aside className="main-menu" onClick={e => e.stopPropagation()}>
-      <header className="mm-head">
-        <div className="mm-id">{profile.avatar ? <img src={profile.avatar} alt="" /> : <span>{(profile.name || "Y").slice(0, 1).toUpperCase()}</span>}<div><b>{profile.name || "Your profile"}</b><small>{profile.email || "MoodFood"}</small></div></div>
-        <button onClick={close} aria-label="Close menu"><X /></button>
-      </header>
-      <button className="mm-notifs" onClick={() => { openNotifs(); close(); }}><Bell size={18} />Notifications{!!unread && <span className="mm-badge">{unread}</span>}</button>
-      <div className="mm-scroll">
-        {groups.map(g => <section className="mm-group" key={g.title}><small>{g.title}</small>{g.items.map(([id, label, Icon]) => <button className={page === id ? "active" : ""} onClick={() => nav(id)} key={id}><Icon size={18} /><span>{label}</span><ChevronRight size={16} /></button>)}</section>)}
-      </div>
-      <button className="mm-logout" onClick={() => { logout(); close(); }}><LogOut size={18} />Sign out</button>
-    </aside>
-  </div>;
-}
-function AppHeader({ openNotifs, unread, profile }: { openNotifs?: () => void; unread?: number; profile?: Profile }) {
-  const openMenu = useContext(MenuCtx);
-  return (
-    <header className="app-header">
-      {profile?.avatar
-        ? <div className="user-avatar-ring"><img src={profile.avatar} alt={profile.name} /></div>
-        : <div className="logo-ring"><img src="/images/logo-1.png" alt="MoodFood" /></div>}
-      <div className="header-meta">
-        <span className="header-name">{profile?.name ? `Hey, ${profile.name.split(" ")[0]}.` : "MoodFood"}</span>
-        <span className="header-sub">Good food. Better mood.</span>
-      </div>
-      <button className="icon-btn notif-bell" aria-label="Notifications" onClick={openNotifs}>
-        <Bell size={20} />{!!unread && <span className="notif-dot">{unread}</span>}
-      </button>
-      <button className="icon-btn" aria-label="Open menu" onClick={openMenu}><Menu size={20} /></button>
-    </header>
-  );
-}
-
 function HomeScreen({ profile, diary, saved, catalog, mood, setMood, energy, setEnergy, time, setTime, mealCategory, setMealCategory, cuisine, setCuisine, diet, setDiet, results, setResults, beginResults, ranked, curating, hasFetched, loadMore, live, curated, retry, open, go, diners, selectedDiners, setSelectedDiners, eaterCount, setEaterCount, openNotifs, unread, addPhoto, onPickSuggestion, toggleSave }: {
   profile: Profile; diary: DiaryEntry[]; saved: string[]; catalog: Recipe[];
   mood: string; setMood: (v: string) => void; energy: number; setEnergy: (v: number) => void; time: number; setTime: (v: number) => void;
@@ -1747,23 +1675,6 @@ function HomeScreen({ profile, diary, saved, catalog, mood, setMood, energy, set
       </details>
     </div>
   );
-}
-function Moody() { return <div className="moody"><Sparkles size={25} /></div>; }
-function TopBar({ title, back }: { title: string; back?: () => void }) {
-  const openMenu = useContext(MenuCtx);
-  return <header className="top-bar"><button onClick={back} disabled={!back}><ArrowLeft /></button><h1>{title}</h1><button onClick={openMenu} aria-label="Open menu"><Menu /></button></header>;
-}
-function PickCard({ recipe, servings, open, reject, save, saved }: { recipe: Recipe; servings: number; open: () => void; reject: () => void; save: () => void; saved: boolean }) {
-  return <article className="pick-card"><RecipeImage sources={stepImageSources(undefined, recipe.image)} alt={recipe.title} /><div><h2>{recipe.title}</h2><span><Clock3 size={13} />{recipe.time} min</span><span><Users size={13} />Scaled for {servings}</span><span><Check size={13} />safe for everyone</span><button onClick={open}>View recipe</button><button className="reject" onClick={reject}>Not tonight</button></div><button className="save-mini" onClick={save} aria-label={saved ? "Saved" : "Save recipe"}><Heart size={17} fill={saved ? "currentColor" : "none"} /></button></article>;
-}
-
-function TokenInput({ tokens, setTokens, placeholder }: { tokens: string[]; setTokens: (v: string[]) => void; placeholder: string }) {
-  const [text, setText] = useState("");
-  const add = (e: React.FormEvent) => { e.preventDefault(); const c = cleanText(text, 30); if (c) { setTokens([...new Set([...tokens, c])]); setText(""); } };
-  return <>
-    <form className="add-cue" onSubmit={add}><input value={text} onChange={e => setText(e.target.value)} placeholder={placeholder} /><button><Plus /></button></form>
-    {!!tokens.length && <div className="choice" style={{ marginTop: 8 }}>{tokens.map(t => <button className="custom-cue" onClick={() => setTokens(tokens.filter(x => x !== t))} key={t}>{t}<X size={13} /></button>)}</div>}
-  </>;
 }
 
 function DailySuggestionCarousel({ suggestions, onPick, showHero = true }: { suggestions: Recipe[]; onPick: (r: Recipe) => void; showHero?: boolean }) {
@@ -2180,7 +2091,6 @@ function LibraryScreen({ title, source, open, remove }: { title: string; source:
 function SettingsScreen({ profile, save, go, logout, aiCuration, setAiCuration, learnedSignals, setLearnedSignals, behavioralConsent }: { profile: Profile; save: (p: Profile) => void; go: (p: Page) => void; logout: () => void; aiCuration: boolean; setAiCuration: (v: boolean) => void; learnedSignals: boolean; setLearnedSignals: (v: boolean) => void; behavioralConsent: boolean }) {
   return <div className="screen"><TopBar title="Profile & settings" /><section className="profile-card">{profile.avatar ? <img src={profile.avatar} alt={profile.name} /> : <div>{profile.name.slice(0, 2).toUpperCase()}</div>}<h2>{profile.name}</h2><p>{profile.email || "Pilot preview profile"}</p><span>{profile.diet} · {profile.skill}</span></section><SettingsGroup title="ACCOUNT & COMMUNITY"><button onClick={() => go("account")}><UserRound />Account and public profile<ChevronRight /></button><button onClick={() => go("community")}><Users />Community and connections<ChevronRight /></button><button onClick={() => go("diners")}><UserPlus />Household diners<ChevronRight /></button></SettingsGroup><SettingsGroup title="HEALTH & FOOD PROFILE"><button onClick={() => go("food-profile")}><ClipboardCheck />Food profile &amp; preferences<ChevronRight /></button><button onClick={() => go("health")}><Activity />Health trends<ChevronRight /></button><button onClick={() => go("food-log")}><Camera />Food photo log<ChevronRight /></button><button onClick={() => go("psych-profile")}><Sparkles />Psychological food profile<ChevronRight /></button><button onClick={() => go("favorites")}><Heart />Saved recipes<ChevronRight /></button><button onClick={() => go("insights")}><BarChart3 />Weekly reflections<ChevronRight /></button><button><ShieldCheck />Safety filters<span>{profile.allergies.join(", ") || "None"}</span></button></SettingsGroup><SettingsGroup title="PREFERENCES"><label>Usual servings<input type="number" min="1" max="10" value={profile.servings} onChange={e => save({ ...profile, servings: +e.target.value })} /></label><label className="settings-toggle"><span><Sparkles size={15} />Let Moody personalize my mood feed<small>AI re-ranks your live picks. Off by default — your picks are mood-matched without it. Search always stays AI-free.</small></span><input type="checkbox" checked={aiCuration} onChange={e => setAiCuration(e.target.checked)} /></label><label className="settings-toggle"><span><BarChart3 size={15} />Learn from what I cook &amp; rate<small>{behavioralConsent ? "Nudges your picks toward cuisines you rate highly. Needs a few ratings first." : "Turn on “Learn from my recipe behaviour” in Data & privacy first."}</small></span><input type="checkbox" disabled={!behavioralConsent} checked={learnedSignals && behavioralConsent} onChange={e => setLearnedSignals(e.target.checked)} /></label><button onClick={() => go("privacy")}><ShieldCheck />Data &amp; privacy<ChevronRight /></button><button onClick={() => go("billing")}><Star />Subscription &amp; billing<ChevronRight /></button><button onClick={() => go("import")}><Upload />Import a recipe<ChevronRight /></button><button onClick={() => go("admin")}><LayoutDashboard />Editorial console<ChevronRight /></button><button onClick={() => go("help")}><HelpCircle />Help, tutorial &amp; FAQ<ChevronRight /></button></SettingsGroup><button className="danger" onClick={logout}><LogOut />Sign out and replay first launch</button></div>;
 }
-function SettingsGroup({ title, children }: { title: string; children: React.ReactNode }) { return <section className="settings-group"><small>{title}</small>{children}</section>; }
 // Slice 1.5 (roadmap v3): the Data Governance surface. Granular consent (default
 // off, recorded), export, and the distinct pause / reset controls — all gated on
 // being signed in, since the data lives server-side.
@@ -2272,9 +2182,6 @@ function ImportScreen() {
 function AdminScreen({ catalog }: { catalog: Recipe[] }) {
   const [statuses, setStatuses] = useState<Record<string, string>>({});
   return <div className="admin"><header><img src="/images/logo-1.png" alt="" /><div><span>EDITORIAL CONSOLE</span><h1>Recipe quality desk</h1></div></header><div className="admin-stats"><article><b>{catalog.length}</b><span>Total recipes</span></article><article><b>{catalog.filter(r => r.status === "published").length}</b><span>Published & verified</span></article><article><b>0</b><span>Safety flags</span></article></div><section><h2>Review queue</h2>{catalog.length ? catalog.map(r => <article className="review-row" key={r.id}><img src={r.image} alt="" /><div><h3>{r.title}</h3><p>{r.cuisine} · {r.ingredients.length} ingredients · {r.steps.length} steps</p><span>Rights checked · Timing checked · Safety tags present</span></div><select value={statuses[r.id] || r.status} onChange={e => setStatuses({ ...statuses, [r.id]: e.target.value })}><option>draft</option><option>review</option><option>published</option><option>retired</option></select></article>) : <p className="quiet">No recipes in catalog yet. Recipes are added when you run a check-in while signed in.</p>}</section></div>;
-}
-function PlanPicker({ plan, setPlan }: { plan: string; setPlan: (p: string) => void }) {
-  return <>{PLANS.map(p => <button key={p.id} className={plan === p.id ? "active" : ""} onClick={() => setPlan(p.id)}><div><b>{p.name}</b><span>{p.note}</span></div><strong>{p.price}</strong></button>)}</>;
 }
 function SubscriptionScreen({ profile, save, proceed, onStarted }: { profile: Profile; save: (p: Profile) => void; proceed: () => void; onStarted?: () => void }) {
   const [plan, setPlan] = useState(profile.plan || "annual");
@@ -2495,12 +2402,10 @@ function CommunityScreen({ profile, posts, setPosts, connections, setConnections
   const updatePost = (id: string, change: (p: SocialPost) => SocialPost) => setPosts(posts.map(p => p.id === id ? change(p) : p));
   return <div className="screen community"><TopBar title="Community" /><section className="community-intro"><div><b>Cook together, from wherever.</b><p>Share recipes, photos, and useful tips. Your private mood and psychological profile stay private.</p></div><button className="primary" onClick={() => setComposer(!composer)}><Plus />Post</button></section>{composer && <section className="composer"><div><Avatar name={profile.name} image={profile.avatar} /><textarea maxLength={1000} value={text} onChange={e => setText(e.target.value)} placeholder="Share a cook, recipe, or tip..." /></div>{image && <img src={image} alt="Post preview" />}{recipeId && findRecipe(recipeId) && <div className="composer-recipe"><ChefHat size={15} /><span>Linking <b>{findRecipe(recipeId)!.title}</b></span><button onClick={() => setRecipeId("")} aria-label="Remove linked recipe"><X size={14} /></button></div>}<select value={recipeId} onChange={e => setRecipeId(e.target.value)}><option value="">Link a recipe (optional)</option>{catalog.map(r => <option value={r.id} key={r.id}>{r.title}</option>)}</select>{uploadError && <p className="upload-error">{uploadError}</p>}<footer><label><Camera />Add photo<input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => upload(e.target.files?.[0])} /></label><button className="primary" onClick={publish}><Send />Share</button></footer></section>}<div className="feed">{posts.length === 0 && !composer && <div className="empty-state" style={{ margin: "24px 16px" }}><Users /><h2>Be the first to post</h2><p>Share a cook, tip, or recipe. Your psychological profile and diary stay completely private.</p></div>}{posts.map(post => <article className="social-post" key={post.id}><header><Avatar name={post.author} image={post.avatar} /><div><b>{post.author}</b><span>{post.createdAt}</span></div><MoreVertical /></header><p>{post.text}</p>{post.image && <img src={post.image} alt="Cooked meal" />}{post.recipeId && findRecipe(post.recipeId) && <button className="linked-recipe" onClick={() => { const r = findRecipe(post.recipeId); if (r) openRecipe(r); }}><ChefHat /><span><small>LINKED RECIPE</small><b>{findRecipe(post.recipeId)?.title}</b></span><ChevronRight /></button>}<div className="social-actions"><button onClick={() => updatePost(post.id, p => ({ ...p, likes: toggle(p.likes, profile.name) }))}><Heart fill={post.likes.includes(profile.name) ? "currentColor" : "none"} />{post.likes.length}</button><button><MessageCircle />{post.comments.length}</button></div>{post.comments.map((c, n) => <p className="comment" key={n}><b>{c.author}</b> {c.text}</p>)}<form className="comment-form" onSubmit={e => { e.preventDefault(); if (!comment[post.id]?.trim()) return; updatePost(post.id, p => ({ ...p, comments: [...p.comments, { author: profile.name, text: cleanText(comment[post.id], 500) }] })); setComment({ ...comment, [post.id]: "" }); }}><input maxLength={500} value={comment[post.id] || ""} onChange={e => setComment({ ...comment, [post.id]: cleanText(e.target.value, 500) })} placeholder="Add a helpful comment..." /><button><Send /></button></form></article>)}</div></div>;
 }
-function Avatar({ name, image }: { name: string; image?: string }) { return image ? <img className="avatar-img" src={image} alt={name} /> : <span className="avatar-fallback">{name.split(" ").map(v => v[0]).join("").slice(0, 2)}</span>; }
 function HealthHub({ diary, go }: { diary: { recipe: Recipe; rating: number; when: string }[]; go: (p: Page) => void }) {
   const vegetarian = diary.filter(d => d.recipe.diets.includes("Vegetarian")).length;
   return <div className="screen health"><TopBar title="Your health" /><section className="health-hero"><span>LAST 30 DAYS</span><h1>Your dietary trends.</h1><p>A calm breakdown based on meals you logged. Informational only, never medical advice.</p><div><b>{diary.length}</b><small>meals logged</small><b>{new Set(diary.map(d => d.recipe.cuisine)).size}</b><small>cuisines</small><b>{vegetarian}</b><small>plant-forward</small></div></section><button className="family-health-link" onClick={() => go("family-health")}><Users /><span><b>Family health profile</b><small>Overall analytics for family meals only</small></span><ChevronRight /></button><div className="health-links"><button onClick={() => go("health-nutrition")}><Salad /><span><b>Nutrition balance</b><small>Calories, protein, fiber, and meal balance</small></span><ChevronRight /></button><button onClick={() => go("health-variety")}><TrendingUp /><span><b>Dietary variety</b><small>Cuisines, proteins, vegetables, and repetition</small></span><ChevronRight /></button><button onClick={() => go("health-patterns")}><Clock3 /><span><b>Eating patterns</b><small>Cook frequency, timing, and completion habits</small></span><ChevronRight /></button></div><section className="trend-preview"><h2>This month at a glance</h2><Trend label="Plant-forward meals" value={Math.min(100, vegetarian * 25 + 25)} /><Trend label="Recipe variety" value={Math.min(100, new Set(diary.map(d => d.recipe.id)).size * 28)} /><Trend label="Home-cooked rhythm" value={Math.min(100, diary.length * 18)} /></section></div>;
 }
-function Trend({ label, value }: { label: string; value: number }) { return <div className="trend"><span><b>{label}</b><em>{value}%</em></span><i><b style={{ width: `${value}%` }} /></i></div>; }
 function HealthDetail({ kind, diary, back }: { kind: "nutrition" | "variety" | "patterns"; diary: { recipe: Recipe; rating: number; when: string }[]; back: () => void }) {
   const n = diary.length;
   const avgCal   = n ? Math.round(diary.reduce((a, d) => a + d.recipe.calories, 0) / n) : 0;
@@ -2595,11 +2500,6 @@ function PsychProfileScreen({ profile, save, back }: { profile: Profile; save: (
 
     <ProfileEditor title="Your personal mood meanings" text="These notes are used the moment you check in feeling that way."><div className="mood-defs">{moods.map(m => <label key={m}><b>{m}</b><input value={profile.moodNeeds[m] || ""} onChange={e => update({ moodNeeds: { ...profile.moodNeeds, [m]: e.target.value } })} placeholder="Add what usually helps..." /></label>)}</div></ProfileEditor>
   </div>;
-}
-function ProfileEditor({ title, text, children }: { title: string; text: string; children: React.ReactNode }) { return <section className="profile-editor"><h2>{title}</h2><p>{text}</p>{children}</section>; }
-function EditableCues({ values, suggestions, save }: { values: string[]; suggestions: string[]; save: (v: string[]) => void }) {
-  const [custom, setCustom] = useState("");
-  return <><div className="choice">{suggestions.map(v => <button className={values.includes(v) ? "active" : ""} onClick={() => save(toggle(values, v))} key={v}>{v}</button>)}</div><form className="add-cue" onSubmit={e => { e.preventDefault(); if (custom.trim()) { save([...new Set([...values, custom.trim()])]); setCustom(""); } }}><input value={custom} onChange={e => setCustom(e.target.value)} placeholder="Add your own cue" /><button><Plus /></button></form>{values.filter(v => !suggestions.includes(v)).map(v => <button className="custom-cue" onClick={() => save(values.filter(x => x !== v))} key={v}>{v}<X size={13} /></button>)}</>;
 }
 // Editable view of every onboarding answer, grouped by section. This is the same
 // set of questions the user saw at first launch, they can refine anything here
