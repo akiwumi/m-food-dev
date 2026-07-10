@@ -10,14 +10,13 @@ import {
 import { moods, type Recipe } from "./data";
 import { bundledRecipes } from "./bundledRecipes";
 import { clearStored, defaultDiners, defaultProfile, useStoredState, type Diner, type Profile, type SocialPost } from "./store";
-import { profileForDiners, recommend, safeRecipes as applySafety, RANKING_CONFIG_VERSION, type CuisineSignal, type MoodCuisineSignal, type LearnedSignals } from "./recommendation";
-import { recordRating, recordRun, fetchRatingHistory, deriveCuisineSignal, deriveMoodCuisineSignal, suppressSignal } from "./behavioral";
+import { profileForDiners, recommend, safeRecipes as applySafety, RANKING_CONFIG_VERSION } from "./recommendation";
+import { recordRating, recordRun } from "./behavioral";
 import { compactPhotoLogs } from "./security";
 import { SPOON_CUISINES, MEAL_TYPES, SEARCH_DIETS, SORT_OPTIONS, type RecipeFilters } from "./searchFilters";
-import { sendConfirmationEmail, sendWelcomeEmail, runDue, unreadCount, markAllRead, cancelScheduled } from "./notifications";
+import { sendConfirmationEmail, sendWelcomeEmail, unreadCount, cancelScheduled } from "./notifications";
 import { sumNutrition, type FoodPhoto } from "./foodAnalysis";
 import { persistFoodPhoto } from "./photoStorage";
-import { type ChatTurn } from "./ai";
 import { fetchCuratedRecipes, buildFoodHistory } from "./recipes";
 import {
   signOut as authSignOut,
@@ -28,7 +27,6 @@ import { supabase } from "./supabase";
 import { finalizeSearchResults } from "./searchResults";
 import { nextSavedRecipeIds } from "./savedRecipes";
 import { trackSearch } from "./telemetry";
-import { getConsents } from "./governance";
 import { Landing } from "./Landing";
 import { readDevTestState } from "./devTestState";
 import { buildQuickStartProfilePatch } from "./activation";
@@ -39,6 +37,9 @@ import { deleteAccount, MOODFOOD_KEYS, syncSubscriptionFromDB } from "./api/back
 import { type DiaryEntry, type Entry, type Page, type SearchRequest } from "./appTypes";
 import { MenuCtx } from "./components/MenuCtx";
 import { usePullToRefresh } from "./hooks/usePullToRefresh";
+import { useNotifications } from "./hooks/useNotifications";
+import { useMoodyChat } from "./hooks/useMoodyChat";
+import { useLearningSignals } from "./hooks/useLearningSignals";
 import { PullRefreshIndicator } from "./components/PullRefreshIndicator";
 import { toggle } from "./lib/toggle";
 import { deriveDailySuggestions } from "./lib/dailySuggestions";
@@ -153,7 +154,6 @@ export default function App() {
   const activeSearchId = useRef(0);
   const activeSearchAbort = useRef<AbortController | null>(null);
   const [moodyOpen, setMoodyOpen] = useState(false);
-  const [moodyTurns, setMoodyTurns] = useState<ChatTurn[]>([]);
   const [detailReturnMoody, setDetailReturnMoody] = useState(false);
   const [pendingShare, setPendingShare] = useState<string | undefined>(undefined);
   const [saved, setSaved] = useStoredState<string[]>("moodfood-saved", []);
@@ -164,27 +164,7 @@ export default function App() {
   const [diners, setDiners] = useStoredState<Diner[]>("moodfood-diners", defaultDiners);
   const [selectedDiners, setSelectedDiners] = useState<string[]>(["self"]);
   const [eaterCount, setEaterCount] = useStoredState<number>("moodfood-eater-count", 1);
-  // Slice 1 (roadmap v3): AI curation is opt-in, default OFF. Normal search and the
-  // mood feed rank real provider recipes deterministically; turning this on lets
-  // Moody (OpenAI) re-rank the personalized mood feed — a clearly labeled extra.
-  const [aiCuration, setAiCuration] = useStoredState<boolean>("moodfood-ai-curation", false);
-  // Slice 2 (roadmap v3): learned-signal ranking is opt-in AND consent-gated. The
-  // flag lets a user turn the learned cuisine nudge on/off; `behavioralConsent`
-  // mirrors the server consent so we never record or apply learning without it.
-  const [learnedSignals, setLearnedSignals] = useStoredState<boolean>("moodfood-learned-signals", false);
-  const [behavioralConsent, setBehavioralConsent] = useState(false);
-  const [cuisineSignal, setCuisineSignal] = useState<CuisineSignal | null>(null);
-  const [moodSignal, setMoodSignal] = useState<MoodCuisineSignal | null>(null);
-  // The learned boost is applied to ranking ONLY when the toggle is on; the signal
-  // stays visible (Taste memory) either way. Declared here so the ranking memos below
-  // can read it without a temporal-dead-zone hazard.
-  const appliedSignals: LearnedSignals | undefined =
-    learnedSignals && (cuisineSignal || moodSignal)
-      ? { cuisine: cuisineSignal ?? undefined, moodCuisine: moodSignal ?? undefined }
-      : undefined;
-  // Slice 3 (roadmap v3): per-signal "forget". Cuisines the user has told us to stop
-  // using are excluded from the learned signal — an explicit correction always wins.
-  const [suppressedCuisines, setSuppressedCuisines] = useStoredState<string[]>("moodfood-suppressed-cuisines", []);
+  const { aiCuration, setAiCuration, learnedSignals, setLearnedSignals, behavioralConsent, cuisineSignal, moodSignal, suppressedCuisines, setSuppressedCuisines, appliedSignals } = useLearningSignals(entry, page, diary);
   const sharedProfile = useMemo(() => profileForDiners(profile, diners.filter(d => selectedDiners.includes(d.id) && d.id !== "self")), [profile, diners, selectedDiners]);
 
   // Browser automation cannot use javascript: URLs to mutate localStorage.
@@ -283,23 +263,7 @@ export default function App() {
     () => buildFoodHistory(diary, profile.photoLogs, catalog.filter(r => saved.includes(r.id))),
     [diary, profile.photoLogs, saved, catalog],
   );
-  const loadMoodyCatalog = useCallback(async (query = "") => {
-    // Strip conversational words so Spoonacular gets a clean food term (e.g. "Yaki Udon" not "show me a Yaki Udon recipe").
-    const foodQuery = query.replace(/\b(show|find|open|get|search|look|for|me|a|an|the|some|recipe|recipes|please|can|you|i|want|need|make|cook|like)\b/gi, " ").replace(/\s+/g, " ").trim().slice(0, 80);
-    const [moodLive, queryLive] = await Promise.all([
-      fetchCuratedRecipes(sharedProfile, mood, 20, 180, "", {}, foodHistory, 0, true, false),
-      foodQuery ? fetchCuratedRecipes(sharedProfile, mood, 10, 180, foodQuery, {}, foodHistory, 0, true, false) : Promise.resolve(null),
-    ]);
-    const combined = [
-      ...(queryLive ?? []),
-      ...(moodLive ?? []).filter(r => !queryLive?.some(q => q.id === r.id)),
-    ];
-    const merged = combined.length
-      ? [...combined, ...catalog.filter(existing => !combined.some(recipe => recipe.id === existing.id))]
-      : catalog;
-    if (combined.length) setCatalog(merged);
-    return applySafety(merged, sharedProfile);
-  }, [catalog, foodHistory, mood, sharedProfile]);
+  const { moodyTurns, setMoodyTurns, loadMoodyCatalog } = useMoodyChat(catalog, setCatalog, foodHistory, mood, sharedProfile);
 
   const runSearch = async (request: SearchRequest, nextPage = false) => {
     activeSearchAbort.current?.abort();
@@ -376,34 +340,6 @@ export default function App() {
     }
   };
 
-  // Slice 2: mirror the server consent so we never record or apply learning without
-  // it, and (when learning is on + consented) derive the cuisine signal from the
-  // user's own validated ratings.
-  useEffect(() => {
-    if (entry !== "app") return;
-    let cancelled = false;
-    void getConsents().then(c => { if (!cancelled) setBehavioralConsent(c.behavioral_learning); });
-    return () => { cancelled = true; };
-  }, [entry, page]);
-  // Derive the signal whenever the user has consented — so they can SEE what we've
-  // learned (Slice 3) independently of whether the ranking boost is switched on.
-  // Suppressed cuisines (an explicit "forget") are removed from the signal.
-  useEffect(() => {
-    if (entry !== "app" || !behavioralConsent) { setCuisineSignal(null); setMoodSignal(null); return; }
-    let cancelled = false;
-    void fetchRatingHistory().then(h => {
-      if (cancelled) return;
-      setCuisineSignal(suppressSignal(deriveCuisineSignal(h), suppressedCuisines));
-      // Mood-pattern signal, with the same "forget" list applied to each mood's list.
-      const ms = deriveMoodCuisineSignal(h);
-      const drop = new Set(suppressedCuisines);
-      const byMood: Record<string, string[]> = {};
-      for (const [m, cs] of Object.entries(ms.byMood)) { const kept = cs.filter(c => !drop.has(c)); if (kept.length) byMood[m] = kept; }
-      setMoodSignal({ ...ms, byMood });
-    });
-    return () => { cancelled = true; };
-  }, [entry, behavioralConsent, suppressedCuisines, diary]);
-
   // When the user asks for recommendations, fetch real recipes (deterministic by
   // default; AI-curated only when opted in).
   useEffect(() => {
@@ -476,11 +412,8 @@ export default function App() {
     }
   };
 
-  const [notifOpen, setNotifOpen] = useState(false);
+  const { notifOpen, setNotifOpen, openNotifs, refreshNotifs } = useNotifications(setProfile);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [, setNotifTick] = useState(0);
-  const refreshNotifs = () => setNotifTick(t => t + 1);
-  useEffect(() => { const { charged } = runDue(); if (charged) setProfile(p => ({ ...p, subscriptionStatus: "active" })); refreshNotifs(); }, []);
   // One-time repair: older builds stored full-resolution photos (up to ~5.3 MB of
   // base64 each) in photoLogs, which can exhaust the ~5 MB localStorage quota
   // (writeStored swallows the failure). Recompress oversized entries in place and
@@ -665,7 +598,6 @@ export default function App() {
     setPendingShare(recipe.id);
     go("community");
   };
-  const openNotifs = () => { markAllRead(); setNotifOpen(true); refreshNotifs(); };
 
   // Cancel (permanently delete) the account. With a backend, delete server-side
   // first and bail on failure. Then sign out, wipe every local key, and reload
