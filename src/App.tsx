@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState, useCallback, Fragment } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   ArrowLeft, ArrowRight, Check, ChefHat, ChevronRight,
-  Clock3, Heart, Home, Play, RotateCcw, Search,
-  Settings2, ShoppingCart, Sparkles, Star, Timer, X, ShieldCheck, UserRound,
+  Clock3, Play, RotateCcw, Search,
+  Settings2, Sparkles, X, ShieldCheck, UserRound,
   Plus, Camera, Users,
   Lock, Globe2, Activity, Wheat, Droplets, Mail,
-  Info, FlameKindling, Dna, BookMarked, Share2,
+  FlameKindling,
   Eye, EyeOff,
 } from "lucide-react";
 import { moods, cookingMoods, skillLevels, type Recipe } from "./data";
@@ -19,7 +19,7 @@ import { SPOON_CUISINES, MEAL_TYPES, SEARCH_DIETS, SORT_OPTIONS, type RecipeFilt
 import { sendConfirmationEmail, sendWelcomeEmail, scheduleTrial, runDue, unreadCount, markAllRead, cancelScheduled } from "./notifications";
 import { sumNutrition, type FoodPhoto } from "./foodAnalysis";
 import { persistFoodPhoto } from "./photoStorage";
-import { aiChat, MoodyError, type ChatTurn } from "./ai";
+import { type ChatTurn } from "./ai";
 import { fetchCuratedRecipes, buildFoodHistory } from "./recipes";
 import {
   signUp as authSignUp,
@@ -32,14 +32,13 @@ import {
   isSupabaseConfigured,
 } from "./auth";
 import { supabase } from "./supabase";
-import { displayStepDetail, displayStepTitle, formatTimer, stepImageSources } from "./cooking";
+import { stepImageSources } from "./cooking";
 import { RecipeImage } from "./RecipeImage";
 import { finalizeSearchResults } from "./searchResults";
 import { nextSavedRecipeIds } from "./savedRecipes";
 import { trackSearch } from "./telemetry";
 import { getConsents } from "./governance";
 import { Landing } from "./Landing";
-import { searchFoods, type NutritionFood } from "./nutrition";
 import { readDevTestState } from "./devTestState";
 import {
   activationFitReason,
@@ -49,7 +48,6 @@ import {
   type RejectionReason,
 } from "./activation";
 import { appendUniqueRecipes, RESULT_BATCH_SIZE, takeUniqueBatch } from "./resultBatches";
-import { moodyCandidates, resolveMoodyRecipe } from "./moodyRecipes";
 import { moodSearchTags, type Mood } from "@/data/moodTags";
 import { buildMoodSearchQuery, getMoodByValue } from "@/lib/moodSearch";
 import gsap from "gsap";
@@ -70,9 +68,7 @@ import { Choice, EditableCues, PlanPicker, ProfileEditor, SetupStep } from "./co
 import { DailySuggestionCarousel } from "./components/DailySuggestionCarousel";
 import { NotificationsPanel } from "./components/NotificationsPanel";
 import { FoodCamera } from "./components/FoodCamera";
-import { VoiceFab } from "./components/moody/VoiceFab";
 import { MoodyFab } from "./components/moody/MoodyFab";
-import { FoodPhotoImg } from "./components/FoodPhotoImg";
 import { GroceryScreen } from "./screens/GroceryScreen";
 import { PantryScreen } from "./screens/PantryScreen";
 import { PlannerScreen } from "./screens/PlannerScreen";
@@ -89,6 +85,13 @@ import { DataPrivacyScreen } from "./screens/DataPrivacyScreen";
 import { BillingScreen } from "./screens/BillingScreen";
 import { AccountScreen } from "./screens/AccountScreen";
 import { CommunityScreen } from "./screens/CommunityScreen";
+import { SearchResultsScreen, EmptyResultsScreen } from "./screens/SearchResultsScreen";
+import { DetailScreen } from "./screens/DetailScreen";
+import { CookScreen } from "./screens/CookScreen";
+import { DiaryScreen } from "./screens/DiaryScreen";
+import { FoodLogScreen } from "./screens/FoodLogScreen";
+import { HelpScreen } from "./screens/HelpScreen";
+import { MoodyPanel } from "./components/moody/MoodyPanel";
 
 // photoLogs carry base64 image data (megabytes). They must never travel in
 // preferences_json: they bloat the profiles row, the debounced upsert, and the
@@ -1831,144 +1834,6 @@ function SearchScreen({
   </div>;
 }
 
-function describeFilters(filters: RecipeFilters): string {
-  const parts: string[] = [];
-  if (filters.cuisines?.length) parts.push(filters.cuisines.join(" or "));
-  if (filters.type) parts.push(filters.type);
-  const diet = filters.diet;
-  if (diet && !["any", "anything", "everything"].includes(diet.toLowerCase())) parts.push(diet.toLowerCase());
-  return parts.join(" + ");
-}
-
-function SearchResultsScreen({ results, loading, request, relaxed, more, home, search, open, saved, toggleSave }: { results: Recipe[]; loading: boolean; request: SearchRequest; relaxed?: boolean; more: () => void; home: () => void; search: () => void; open: (recipe: Recipe) => void; saved: string[]; toggleSave: (recipe: Recipe) => void }) {
-  const filterDesc = describeFilters(request.filters);
-  return <div className="screen">
-    <TopBar title="Results" />
-    <div className="results-summary"><span>{request.filters.type ? `${request.filters.type.toUpperCase()} ONLY` : "FILTERED SEARCH"}</span><h1>{request.query || "Recipes matching your filters"}</h1><p>{results.length} unique options shown · up to {request.filters.maxReadyTime ?? 60} min</p></div>
-    {relaxed && filterDesc && <div className="search-relaxed-notice"><p>No {filterDesc} recipes found — showing your closest diet-safe options instead. <button onClick={search}>Adjust filters</button></p></div>}
-    {loading && !results.length
-      ? <div className="thinking-state"><div className="thinking-orbit"><Sparkles /><i /><i /><i /></div><span>SEARCHING</span><h1>Checking every hard rule.</h1><p>Diet, course, time, ingredients, and duplicates are being verified.</p></div>
-      : results.length
-        ? <div className="search-grid">{results.map(r => {
-            const isSaved = saved.includes(r.id);
-            return <article key={r.id}><RecipeImage sources={stepImageSources(undefined, r.image)} alt={r.title} /><button className={`search-save${isSaved ? " saved" : ""}`} aria-pressed={isSaved} aria-label={isSaved ? `Saved ${r.title}` : `Save ${r.title}`} onClick={() => toggleSave(r)}><Heart fill={isSaved ? "currentColor" : "none"} /></button><div><h2>{r.title}</h2><p>{r.reason}</p><span><Clock3 size={13} /> {r.time} min · {r.difficulty}</span><button className="primary" onClick={() => open(r)}>View recipe</button></div></article>;
-          })}</div>
-        : <div className="empty-state"><Search /><h2>{filterDesc ? `No ${filterDesc} recipes found` : "No exact matches"}</h2><p>{filterDesc ? "Nothing matches that combination. Remove one filter and try again — your diet and allergy rules are always kept." : "Adjust one filter and search again. Your saved diet and allergies remain protected."}</p></div>}
-    <div className="results-actions"><button className="primary" onClick={more} disabled={loading}>{loading ? "Finding 5 more…" : "Show 5 more options"}</button><button className="secondary" onClick={search}>Change search</button><button className="secondary" onClick={home}><Home size={17} />Return home</button></div>
-  </div>;
-}
-
-function EmptyResultsScreen({ home, search }: { home: () => void; search: () => void }) {
-  return <div className="screen">
-    <TopBar title="Results" />
-    <div className="empty-state"><Search /><h2>No results yet</h2><p>Start a search or find tonight's dinner to see recommendations here.</p></div>
-    <div className="results-actions"><button className="primary" onClick={search}><Search size={17} />Search recipes</button><button className="secondary" onClick={home}><Home size={17} />Return home</button></div>
-  </div>;
-}
-
-function DetailScreen({ recipe, servings, back, cook, saved, toggleSave, addGroceries, addPhoto, shareToCommunity, allergies }: { recipe: Recipe; servings: number; back: () => void; cook: () => void; saved: boolean; toggleSave: () => void; addGroceries: () => void; addPhoto: (p: FoodPhoto) => void; shareToCommunity: () => void; allergies: string[] }) {
-  const [checked, setChecked] = useState<string[]>([]);
-  const [showVideo, setShowVideo] = useState(false);
-  const [nutriQuery, setNutriQuery] = useState<string | null>(null);
-  const [nutriFoods, setNutriFoods] = useState<NutritionFood[] | null>(null);
-  const [nutriLoading, setNutriLoading] = useState(false);
-
-  const lookupIngredient = (ingredient: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setNutriFoods(null);
-    setNutriQuery(ingredient);
-    setNutriLoading(true);
-    searchFoods(ingredient)
-      .then(foods => { setNutriFoods(foods); setNutriLoading(false); })
-      .catch(() => setNutriLoading(false));
-  };
-
-  // Native share when the browser supports it (mobile), else share into the
-  // in-app community feed.
-  const share = async () => {
-    const url = recipe.sourceUrl || (typeof location !== "undefined" ? location.href : "");
-    if (typeof navigator !== "undefined" && navigator.share) {
-      try { await navigator.share({ title: recipe.title, text: recipe.reason, url: url || undefined }); return; } catch { /* cancelled → fall through */ }
-    }
-    shareToCommunity();
-  };
-  return <div className="detail"><div className="detail-image">{showVideo && recipe.video ? <div className="detail-video-hero"><iframe src={`${recipe.video}?autoplay=1`} title={`${recipe.title} video`} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" /></div> : <RecipeImage sources={stepImageSources(undefined, recipe.image)} alt={recipe.title} />}<button onClick={back}><ArrowLeft /></button><div><button onClick={share} aria-label="Share recipe"><Share2 /></button><button onClick={toggleSave} aria-label={saved ? "Saved" : "Save recipe"}><Heart fill={saved ? "currentColor" : "none"} /></button></div>{recipe.video && !showVideo && <button className="detail-video-bar" onClick={() => setShowVideo(true)}><Play size={15} fill="currentColor" />Watch video</button>}{recipe.video && showVideo && <button className="detail-video-bar" onClick={() => setShowVideo(false)}><X size={15} />Close video</button>}</div><section className="detail-sheet"><h1>{recipe.title}</h1><div className="facts"><span><Clock3 />{recipe.time} min</span><span><Users />Serves {servings}</span><span><Star />{recipe.calories} cal each</span></div><div className="moody-note"><Moody /><p>{recipe.reason}</p></div><div className="section-line"><h2>Ingredients</h2><span>{recipe.ingredients.length} items</span></div><div className="ingredients">{recipe.ingredients.map(i => <div className={`ing-row${checked.includes(i) ? " checked" : ""}`} role="button" tabIndex={0} onClick={() => setChecked(toggle(checked, i))} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") setChecked(toggle(checked, i)); }} key={i}><span><Check size={14} /></span><p>{i}</p><em>{checked.includes(i) ? "Ready" : "I have it"}</em><button className="ing-info-btn" onClick={e => lookupIngredient(i, e)} aria-label={`Nutrition info for ${i}`}><Info size={14} /></button></div>)}</div><div className="section-line"><h2>Full cooking method</h2><span>{recipe.steps.length} steps</span></div><div className="recipe-method">{recipe.steps.map((step, index) => <article key={`${index}-${step.text}`}><b>{index + 1}</b><div><p>{displayStepDetail(step)}</p>{step.cue && <small><strong>Look for:</strong> {step.cue}</small>}</div></article>)}</div><div className="detail-actions"><button className="secondary" onClick={addGroceries}><ShoppingCart size={18} />Add to grocery</button><button className="secondary" onClick={share}><Share2 size={18} />Share recipe</button></div><FoodCamera label="📸 Log your version with a photo" onSave={p => addPhoto({ ...p, recipeId: recipe.id })} hint={{ recipeCalories: recipe.calories, recipeName: recipe.title }} allergies={allergies} style={{ marginTop: 10 }} /><button className="primary sticky-cta" onClick={cook}><ChefHat size={18} />Open guided cooking</button></section>{nutriQuery !== null && <div className="nutri-overlay" onClick={() => setNutriQuery(null)}><div className="nutri-sheet" onClick={e => e.stopPropagation()}><div className="nutri-handle" /><div className="nutri-header"><b>{nutriQuery}</b><button onClick={() => setNutriQuery(null)} aria-label="Close"><X size={18} /></button></div>{nutriLoading && <div className="nutri-loading"><div className="nutri-spinner" /><span>Looking up nutrition…</span></div>}{!nutriLoading && nutriFoods !== null && nutriFoods.length === 0 && <p className="nutri-empty">No nutrition data found for this ingredient.</p>}{!nutriLoading && nutriFoods && nutriFoods.slice(0, 3).map(food => { const s = food.servings[0]; if (!s) return null; return <div className="nutri-item" key={food.food_id}><div className="nutri-item-head"><b>{food.name}</b>{food.type === "Brand" && <span className="nutri-tag">Brand</span>}</div><span className="nutri-serving-desc">{s.description}</span><div className="nutri-macros"><div className="nutri-mac"><strong>{s.calories}</strong><small>kcal</small></div><div className="nutri-mac"><strong>{s.protein}g</strong><small>protein</small></div><div className="nutri-mac"><strong>{s.carbs}g</strong><small>carbs</small></div><div className="nutri-mac"><strong>{s.fat}g</strong><small>fat</small></div>{s.fiber > 0 && <div className="nutri-mac"><strong>{s.fiber}g</strong><small>fibre</small></div>}</div></div>; })}<p className="nutri-disclaimer">FatSecret data · per serving · not medical advice</p></div></div>}</div>;
-}
-
-function CookScreen({ recipe, exit, finish, allergies }: { recipe: Recipe; exit: () => void; finish: (rating: number, photo?: FoodPhoto) => void; allergies: string[] }) {
-  const [done, setDone] = useState(false);
-  const [rating, setRating] = useState(5);
-  const [mealPhoto, setMealPhoto] = useState<FoodPhoto | null>(null);
-  if (!recipe.steps.length) return <div className="cook cook-unavailable"><section className="cook-instruction-card"><h1>Instructions unavailable.</h1><p>This recipe did not include cooking steps.</p><button className="cook-next" onClick={exit}>Back to recipe</button></section></div>;
-  return <div className="cook">
-    <header className="cook-header">
-      <button className="cook-circle" onClick={exit} aria-label="Close cook mode"><ArrowLeft /></button>
-      <b>{recipe.title}</b>
-      <span />
-    </header>
-    <RecipeImage className="cook-image" sources={stepImageSources(undefined, recipe.image)} alt={recipe.title} />
-    <div className="cook-method-head"><span>FULL METHOD</span><h1>Cook from top to bottom.</h1><p>Every instruction stays visible. Scroll naturally as you work.</p></div>
-    <div className="cook-method">{recipe.steps.map((current, index) => <section className="cook-instruction-card" key={`${index}-${current.text}`}>
-      <small>STEP {index + 1} OF {recipe.steps.length}</small>
-      <p className="cook-step-text">{displayStepDetail(current)}</p>
-      {current.cue && <div className="cook-cue"><b>Look for:</b> {current.cue}</div>}
-      {(current.active?.length || current.equipment?.length) && <div className="cook-chips">{current.active?.map(item => <span key={`ingredient-${item}`}>{item}</span>)}{current.equipment?.map(item => <span className="equipment" key={`equipment-${item}`}>{item}</span>)}</div>}
-      {current.timer && <div className="cook-timer"><span><Timer size={17} /></span><div><b>{formatTimer(current.timer)}</b><small>Verified cooking time</small></div><i><Clock3 size={16} /></i></div>}
-    </section>)}</div>
-    <button className="cook-finish" onClick={() => setDone(true)}><Check size={18} />I’m finished cooking</button>
-    {done && <div className="finish-overlay"><section><div className="done-mark"><Check /></div><h2>Dinner is ready.</h2><p>How did it land tonight?</p><div className="stars">{[1,2,3,4,5].map(n => <button onClick={() => setRating(n)} key={n}><Star fill={n <= rating ? "currentColor" : "none"} /></button>)}</div>{mealPhoto ? <div className="photo-preview-mini"><img src={mealPhoto.image} alt="Your meal" /><span><b>{mealPhoto.calories} kcal</b> estimated · {mealPhoto.dish}</span></div> : <FoodCamera label="📸 Add a photo of your cook" onSave={p => setMealPhoto({ ...p, recipeId: recipe.id })} allergies={allergies} compact />}<button className="primary" onClick={() => finish(rating, mealPhoto ?? undefined)}>Log meal &amp; finish</button><button className="text" onClick={() => setDone(false)}>Back to cooking</button></section></div>}
-  </div>;
-}
-
-
-function DiaryScreen({ diary, open, photoLogs, addPhoto, goFoodLog, allergies }: {
-  diary: { recipe: Recipe; rating: number; when: string }[];
-  open: (r: Recipe) => void;
-  photoLogs: FoodPhoto[];
-  addPhoto: (p: FoodPhoto) => void;
-  goFoodLog: () => void;
-  allergies: string[];
-}) {
-  const recentPhotos = photoLogs.slice(0, 3);
-  return (
-    <div className="screen">
-      <TopBar title="Your diary" />
-      <div className="reflection"><Sparkles /><div><b>Your weekly reflection</b><p>You cooked across three different cuisines. That’s lovely variety.</p></div></div>
-
-      {/* Food photo log strip */}
-      <div className="diary-photo-strip">
-        <div className="dps-header">
-          <b>Meal photo log</b>
-          <button className="dps-all" onClick={goFoodLog}>{photoLogs.length > 0 ? `See all ${photoLogs.length}` : "Start logging"} →</button>
-        </div>
-        {recentPhotos.length > 0 ? (
-          <div className="dps-row">
-            {recentPhotos.map(p => (
-              <div className="dps-thumb" key={p.id}>
-                <FoodPhotoImg photo={p} placeholder="dps-thumb-empty" />
-                <span>{p.calories} kcal</span>
-              </div>
-            ))}
-            <FoodCamera label="+" onSave={addPhoto} allergies={allergies} compact tile />
-          </div>
-        ) : (
-          <FoodCamera label="📸 Photograph your next meal" onSave={addPhoto} allergies={allergies} />
-        )}
-      </div>
-
-      <div className="diary-list">
-        {diary.map((e, n) => (
-          <button onClick={() => open(e.recipe)} key={n}>
-            <span>{e.when}</span>
-            <img src={e.recipe.image} alt="" />
-            <div><h2>{e.recipe.title}</h2><p><Star size={13} fill="currentColor" /> {e.rating}.0 · {e.recipe.time} min</p></div>
-            <ChevronRight />
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
 function SubscriptionScreen({ profile, save, proceed, onStarted }: { profile: Profile; save: (p: Profile) => void; proceed: () => void; onStarted?: () => void }) {
   const [plan, setPlan] = useState(profile.plan || "annual");
   const [mode, setMode] = useState<"trial" | "invite">("trial");
@@ -2123,249 +1988,3 @@ function FoodProfileScreen({ profile, save, back }: { profile: Profile; save: (p
   </div>;
 }
 
-function MoodyPanel({ profile, catalog, loadCatalog, turns, setTurns, close, openRecipe }: { profile: Profile; catalog: Recipe[]; loadCatalog: (query?: string) => Promise<Recipe[]>; turns: ChatTurn[]; setTurns: React.Dispatch<React.SetStateAction<ChatTurn[]>>; close: () => void; openRecipe: (recipe: Recipe) => void }) {
-  const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [listening, setListening] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const recognitionRef = useRef<any>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const latestRecipe = [...turns].reverse().map(turn => resolveMoodyRecipe(turn.recipeId, catalog, profile)).find(Boolean);
-
-  const startVoice = () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const w = window as any;
-    const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
-    if (!SR) return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rec: any = new SR();
-    recognitionRef.current = rec;
-    rec.continuous = false;
-    rec.interimResults = false;
-    rec.onresult = (e: { results: { [n: number]: { [n: number]: { transcript: string } } } }) => { setListening(false); void send(e.results[0][0].transcript); };
-    rec.onerror = () => setListening(false);
-    rec.onend = () => setListening(false);
-    rec.start();
-    setListening(true);
-  };
-
-  const stopVoice = () => { recognitionRef.current?.abort(); setListening(false); };
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [turns, busy]);
-
-  const send = async (text: string) => {
-    const message = text.trim();
-    if (!message || busy) return;
-    const history = turns;
-    setTurns([...turns, { role: "user", content: message }]);
-    setInput("");
-    setBusy(true);
-    try {
-      const searchableCatalog = await loadCatalog(message);
-      const context = {
-        profile: { allergies: profile.allergies, diet: profile.diet, dislikedIngredients: profile.dislikedIngredients },
-        candidates: moodyCandidates(searchableCatalog),
-      };
-      const reply = await aiChat(message, context, history);
-      // Gateway may return the full recipe object when it found it via server-side search.
-      const gatewayRecipe = reply.recipe as Recipe | undefined;
-      const selected = gatewayRecipe ?? resolveMoodyRecipe(reply.recipeId, searchableCatalog, profile);
-      setTurns(prev => [...prev, { role: "assistant", content: reply.message, recipeId: selected?.id, recipe: gatewayRecipe }]);
-    } catch (error) {
-      const content = error instanceof MoodyError && error.code === "not-signed-in"
-        ? "Please sign in to chat with Moody. Recipe search and your safety filters still work without chat."
-        : error instanceof MoodyError && error.code === "not-configured"
-          ? "Moody chat is not configured in this app environment yet. Recipe search remains available without AI."
-          : "Moody chat is temporarily unavailable. Recipe search and your safety filters are still working.";
-      setTurns(prev => [...prev, { role: "assistant", content }]);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return <div className="panel-bg" onClick={close}><VoiceFab listening={listening} onPress={listening ? stopVoice : startVoice} /><aside className="moody-panel" onClick={e => e.stopPropagation()}><header><Moody /><div><b>Moody</b><span>Your dinner co-pilot</span></div><button onClick={close}><X /></button></header><div className="chat"><p>I can choose dinner, explain a recommendation, or help rescue the step you’re on.</p>{turns.map((t, i) => {
-    const linkedRecipe = (t.recipe as Recipe | undefined) ?? resolveMoodyRecipe(t.recipeId, catalog, profile);
-    return <Fragment key={i}><p className={t.role === "user" ? "user-message" : "moody-message"}>{t.content}</p>{linkedRecipe && <button className="moody-pick" onClick={() => openRecipe(linkedRecipe)}><img src={linkedRecipe.image} alt="" /><span><small>MOODY’S RECOMMENDATION</small><b>{linkedRecipe.title}</b><em>{linkedRecipe.time} min · {linkedRecipe.reason}</em><strong>View recipe <ChevronRight size={14} /></strong></span></button>}</Fragment>;
-  })}{busy && <p className="moody-message">…</p>}<div ref={bottomRef} /></div><div className="prompt-row"><button onClick={() => send("Pick the easiest safe dinner.")}>Pick the easiest</button><button onClick={() => send("I only have 15 minutes.")}>Only 15 minutes</button>{latestRecipe && <button onClick={() => send(`Why are you recommending ${latestRecipe.title}?`)}>Explain this pick</button>}</div><form onSubmit={e => { e.preventDefault(); void send(input); }}><input value={input} onChange={e => setInput(e.target.value)} placeholder="Tell Moody what you need..." /><button disabled={busy}><ArrowRight /></button></form></aside></div>;
-}
-
-
-
-function FoodLogScreen({ logs, addPhoto, back, allergies }: { logs: FoodPhoto[]; addPhoto: (p: FoodPhoto) => void; back: () => void; allergies: string[] }) {
-  const grouped = logs.reduce<Record<string, FoodPhoto[]>>((acc, l) => {
-    const day = l.when.split(",")[0] || l.when.slice(0, 6);
-    return { ...acc, [day]: [...(acc[day] || []), l] };
-  }, {});
-
-  return (
-    <div className="screen">
-      <TopBar title="Food photo log" back={back} />
-      <FoodCamera label="📸 Log a meal with photo" onSave={addPhoto} allergies={allergies} />
-      {Object.keys(grouped).length === 0 && (
-        <div className="empty-state" style={{ marginTop: 24 }}>
-          <Camera size={36} style={{ color: "var(--blue-deep)" }} />
-          <h2>No meals logged yet</h2>
-          <p>Photograph a meal above, Moody estimates the calories and macros so you can track without counting.</p>
-        </div>
-      )}
-      {Object.entries(grouped).map(([day, items]) => {
-        const totals = sumNutrition(items);
-        return (
-          <div key={day} className="flog-day">
-            <div className="flog-day-header">
-              <b>{day}</b>
-              <span><FlameKindling size={13} /> {totals.calories} kcal total</span>
-            </div>
-            <div className="flog-grid">
-              {items.map(p => (
-                <div key={p.id} className="flog-card">
-                  <FoodPhotoImg photo={p} placeholder="flog-noimg" />
-                  <div className="flog-info">
-                    <b>{p.dish}</b>
-                    <span><FlameKindling size={12} /> {p.calories} kcal</span>
-                    <span className="flog-macros">P {p.protein}g · C {p.carbs}g · F {p.fat}g</span>
-                    <span className="flog-conf">{p.confidence}% confidence</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })}
-      <p className="quiet" style={{ padding: "0 4px" }}>Calorie estimates are calculated from visual analysis. They are informational only and not a substitute for professional nutritional advice.</p>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// HELP / TUTORIAL / FAQ SCREEN
-// ─────────────────────────────────────────────────────────────────────────────
-
-const FAQ_DATA = [
-  {
-    section: "Getting started",
-    items: [
-      { q: "What is MoodFood?", a: "MoodFood is a personal dinner companion that matches you with one safe, perfectly suited meal based on how you feel, your energy, time available, and your food profile. It removes the 'what's for dinner?' decision entirely." },
-      { q: "What is the onboarding for?", a: `The in-depth onboarding (${onboardingQuestions.length} questions across ${onboardingSections.length} chapters) builds your food psychology profile, covering your cooking moods, taste phenotype (flavours and textures you love or avoid), emotional eating patterns, comfort food, kitchen setup, habits, values, and nutrition goals. Every answer shapes your recommendations.` },
-      { q: "Can I change my profile later?", a: "Yes. Go to Settings → Psychological food profile to edit every answer. Changes take effect immediately on your next recommendation." },
-      { q: "How do I reset and start fresh?", a: "Tap Settings → Sign out and replay first launch. This clears all stored data and takes you back to the welcome screen." },
-    ],
-  },
-  {
-    section: "Getting a recommendation",
-    items: [
-      { q: "How does the mood check-in work?", a: "Select your mood, how long you have, and your energy level on the home screen, then tap 'Find tonight's dinner'. Moody scores every recipe against your profile and surfaces the best match." },
-      { q: "What does the energy slider do?", a: "Low energy nudges Moody toward one-pot, minimal-prep, easy recipes. High energy opens up more adventurous, multi-step dishes." },
-      { q: "Are my allergies always enforced?", a: "Yes, always. Allergens and dietary restrictions set during onboarding are hard filters that are never relaxed, regardless of mood or any other setting." },
-      { q: "What does 'Not tonight' do on a pick card?", a: "It hides that recipe for the current session only. It comes back next time." },
-    ],
-  },
-  {
-    section: "Food photo & calorie log",
-    items: [
-      { q: "How do I log a meal with a photo?", a: "Tap the camera button on the Home screen, in the Diary, on a Recipe detail page, or after finishing Cook mode. Choose a photo from your camera roll, and Moody will estimate the dish, calories, and macros in about 2 seconds." },
-      { q: "How accurate are the calorie estimates?", a: "Estimates are derived from visual analysis of your photo matched against a food database. Accuracy is typically within 15–25% for single-dish meals. Results are shown with a confidence score. They are informational only, not medical or nutritional advice." },
-      { q: "Can I edit the calorie count?", a: "You can discard the result and retake the photo from a different angle or better lighting for a more accurate reading." },
-      { q: "Where are my logged meals stored?", a: "Photo logs are saved on your device in localStorage. They appear in the Food photo log screen (Settings → Food photo log) and feed the 'Today's calories' stat on your home screen." },
-    ],
-  },
-  {
-    section: "Cook mode",
-    items: [
-      { q: "What is cook mode?", a: "A distraction-free step-by-step cooking guide. The screen stays awake, each step shows the active ingredients, and timers can be started inline. Your progress is saved if you leave and come back." },
-      { q: "How does cook mode work?", a: "The full method stays on one scrolling page, so you can move naturally between steps without opening tabs." },
-    ],
-  },
-  {
-    section: "Household & safety",
-    items: [
-      { q: "How do household diners work?", a: "Add family members or frequent diners under Settings → Household diners. On the home screen, select who is eating tonight. MoodFood combines every selected person's allergens and dietary requirements, so if anyone in the group has a peanut allergy, no recipe containing peanuts will appear." },
-      { q: "What does 'Shared safety is active' mean?", a: "It means you have selected one or more household diners in addition to yourself, and their safety constraints are merged with yours for tonight's recommendations." },
-    ],
-  },
-  {
-    section: "Account & subscription",
-    items: [
-      { q: "What is included in the free trial?", a: "Full access to all features for 7 days: personalised recommendations, cook mode, the food photo log, mood check-ins, health trends, and the community. No payment information is required to start the pilot." },
-      { q: "How do I cancel before the trial ends?", a: "Open the notifications panel (bell icon, top right) and tap 'Cancel before trial ends'. For the full production version, cancellation is also available in Settings → Subscription." },
-      { q: "What happens to my data if I cancel?", a: "Your recipes, diary, and food photo log remain readable for 7 days after cancellation, then are deleted from our servers. Your local device data remains until you clear it." },
-    ],
-  },
-  {
-    section: "Privacy",
-    items: [
-      { q: "Where is my mood and psychological data stored?", a: "During the local pilot, all data is stored in your browser's localStorage, it never leaves your device. The psychological food profile, raw mood entries, and private diary are never shown to other users." },
-      { q: "What can other users see?", a: "Only what you share publicly: your display name, bio, profile photo, and any meal posts you explicitly choose to share in the Community tab. Your mood selections, food psychology profile, and diary are always private." },
-    ],
-  },
-];
-
-function HelpScreen({ back }: { back: () => void }) {
-  const [open, setOpen] = useState<string | null>(null);
-
-  return (
-    <div className="screen">
-      <TopBar title="Help & FAQ" back={back} />
-
-      {/* Quick-start tutorial */}
-      <div className="help-tutorial">
-        <div className="help-tutorial-header">
-          <BookMarked size={20} />
-          <div>
-            <b>Quick start, 5 steps</b>
-            <span>Get your first recommendation in under 2 minutes</span>
-          </div>
-        </div>
-        {[
-          { n: 1, title: "Complete onboarding", desc: `${onboardingQuestions.length} questions build your taste + psychology profile. More detail = better matches.` },
-          { n: 2, title: "Create your account", desc: "Save your profile so it travels with you. Confirm your email to unlock everything." },
-          { n: 3, title: "Check in on the home screen", desc: "Pick a mood, set your time and energy, then tap 'Find tonight's dinner'." },
-          { n: 4, title: "Cook with Moody", desc: "Open a pick → 'Start cook mode' for step-by-step guidance with timers. Screen stays awake." },
-          { n: 5, title: "Log your meal with a photo", desc: "After cooking, tap the camera button. Moody reads the plate and estimates calories + macros." },
-        ].map(s => (
-          <div className="help-step" key={s.n}>
-            <div className="hs-num">{s.n}</div>
-            <div><b>{s.title}</b><p>{s.desc}</p></div>
-          </div>
-        ))}
-      </div>
-
-      {/* Feature cards */}
-      <div className="help-features">
-        {[
-          { icon: <Sparkles size={20} />, title: "Moody AI", desc: "Your dinner co-pilot. Tap the floating sparkle button anytime to ask Moody anything, get a pick, rescue a step, or find the easiest safe option." },
-          { icon: <Camera size={20} />, title: "Food photo log", desc: "Photograph any meal for an instant calorie + macro estimate. Logged photos feed your health trends and today's calorie total on the home screen." },
-          { icon: <ShieldCheck size={20} />, title: "Safety first, always", desc: "Allergen and diet filters are hard constraints. They apply to every recommendation, every household diner, and are never softened by any setting." },
-          { icon: <Users size={20} />, title: "Household diners", desc: "Add family members with their own profiles. Select them at check-in and safety constraints merge automatically, no meal reaches the table that's unsafe for anyone at it." },
-          { icon: <Activity size={20} />, title: "Health trends", desc: "Tracks your logged diary entries and photo logs across nutrition, dietary variety, eating patterns, and family meal balance. Informational only, never medical advice." },
-          { icon: <Dna size={20} />, title: "Food psychology profile", desc: "Powered by the Food Choice Questionnaire (FCQ) and Three-Factor Eating Questionnaire (TFEQ). Your flavour phenotype, emotional triggers, and comfort cues all shape what Moody suggests." },
-        ].map(f => (
-          <div className="help-feature-card" key={f.title}>
-            <div className="hfc-icon">{f.icon}</div>
-            <div><b>{f.title}</b><p>{f.desc}</p></div>
-          </div>
-        ))}
-      </div>
-
-      {/* FAQ accordion */}
-      <h2 className="help-faq-title">Frequently asked questions</h2>
-      {FAQ_DATA.map(section => (
-        <div key={section.section} className="faq-section">
-          <p className="faq-section-label">{section.section.toUpperCase()}</p>
-          {section.items.map(item => (
-            <div key={item.q} className={"faq-item" + (open === item.q ? " open" : "")}>
-              <button className="faq-q" onClick={() => setOpen(open === item.q ? null : item.q)}>
-                <span>{item.q}</span>
-                <ChevronRight size={16} className={open === item.q ? "rot90" : ""} />
-              </button>
-              {open === item.q && <p className="faq-a">{item.a}</p>}
-            </div>
-          ))}
-        </div>
-      ))}
-      <p className="quiet" style={{ marginTop: 16, paddingBottom: 24 }}>MoodFood is a focused pilot. Features described may not yet be fully implemented in the production version.</p>
-    </div>
-  );
-}
