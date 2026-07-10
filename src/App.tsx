@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useCallback, lazy } from "react";
 import { type Recipe } from "./data";
 import { bundledRecipes } from "./bundledRecipes";
-import { clearStored, defaultDiners, defaultProfile, useStoredState, type Diner, type Profile, type SocialPost } from "./store";
+import { clearStored, defaultDiners, defaultProfile, reportStorageEstimate, useStoredState, type Diner, type Profile, type SocialPost } from "./store";
 import { profileForDiners, safeRecipes as applySafety } from "./recommendation";
 import { recordRating } from "./behavioral";
 import { compactPhotoLogs } from "./security";
@@ -192,6 +192,7 @@ export default function App() {
   // so this is a cheap length-scan no-op on healthy profiles.
   useEffect(() => {
     let cancelled = false;
+    reportStorageEstimate("startup"); // one-time: log if localStorage is near full
     void (async () => {
       const compacted = await compactPhotoLogs(profile.photoLogs);
       if (!cancelled && compacted) setProfile(p => ({ ...p, photoLogs: compacted }));

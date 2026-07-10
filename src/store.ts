@@ -1,4 +1,4 @@
-import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 
 export type Profile = {
   name: string; email: string; onboarded: boolean; path: "quick" | "standard";
@@ -162,7 +162,30 @@ export function readStored<T>(key: string, initial: T): T {
 
 export function writeStored(key: string, value: unknown) {
   try { localStorage.setItem(key, JSON.stringify(value)); }
-  catch { console.warn(`MoodFood could not persist ${key}. Browser storage may be unavailable or full.`); }
+  catch {
+    console.warn(`MoodFood could not persist ${key}. Browser storage may be unavailable or full.`);
+    // Surface how close to the quota we are, so an exhaustion is diagnosable
+    // (once per session) rather than silently swallowed.
+    reportStorageEstimate("quota-exceeded");
+  }
+}
+
+// One-time (per session) storage-usage probe. Logs the usage/quota ratio so a
+// near-full localStorage is visible before writes start failing. `reason` marks
+// whether it ran proactively at startup or after a failed write.
+let storageEstimateReported = false;
+export function reportStorageEstimate(reason: "startup" | "quota-exceeded" = "startup") {
+  if (storageEstimateReported && reason === "startup") return;
+  storageEstimateReported = true;
+  try {
+    void navigator.storage?.estimate?.().then(({ usage, quota }) => {
+      if (usage == null || !quota) return;
+      const pct = Math.round((usage / quota) * 100);
+      if (reason === "quota-exceeded" || pct >= 80) {
+        console.warn(`MoodFood storage at ~${pct}% (${Math.round(usage / 1024)}KB of ~${Math.round(quota / 1024)}KB, ${reason}).`);
+      }
+    });
+  } catch { /* storage.estimate unsupported — nothing to report */ }
 }
 
 export function clearStored(key: string) {
@@ -172,6 +195,21 @@ export function clearStored(key: string) {
 
 export function useStoredState<T>(key: string, initial: T) {
   const [value, setValue] = useState<T>(() => readStored(key, initial));
-  useEffect(() => writeStored(key, value), [key, value]);
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  // Debounce persistence: coalesce bursts of changes (e.g. every keystroke into a
+  // token input) into a single write ~300 ms later, instead of stringifying +
+  // writing on each change.
+  useEffect(() => {
+    const t = setTimeout(() => writeStored(key, value), 300);
+    return () => clearTimeout(t);
+  }, [key, value]);
+  // Never lose a pending debounced write: flush the latest value synchronously on
+  // unmount and on tab close / refresh.
+  useEffect(() => {
+    const flush = () => writeStored(key, valueRef.current);
+    window.addEventListener("beforeunload", flush);
+    return () => { window.removeEventListener("beforeunload", flush); flush(); };
+  }, [key]);
   return [value, setValue] as readonly [T, Dispatch<SetStateAction<T>>];
 }
