@@ -14,7 +14,7 @@ import { profileForDiners, recommend, safeRecipes as applySafety, RANKING_CONFIG
 import { recordRating, recordRun } from "./behavioral";
 import { compactPhotoLogs } from "./security";
 import { SPOON_CUISINES, MEAL_TYPES, SEARCH_DIETS, SORT_OPTIONS, type RecipeFilters } from "./searchFilters";
-import { sendConfirmationEmail, sendWelcomeEmail, unreadCount, cancelScheduled } from "./notifications";
+import { sendConfirmationEmail, sendWelcomeEmail, unreadCount } from "./notifications";
 import { sumNutrition, type FoodPhoto } from "./foodAnalysis";
 import { persistFoodPhoto } from "./photoStorage";
 import { fetchCuratedRecipes, buildFoodHistory } from "./recipes";
@@ -33,13 +33,14 @@ import { buildQuickStartProfilePatch } from "./activation";
 import { appendUniqueRecipes, RESULT_BATCH_SIZE, takeUniqueBatch } from "./resultBatches";
 import { moodSearchTags, type Mood } from "@/data/moodTags";
 import { buildMoodSearchQuery, getMoodByValue } from "@/lib/moodSearch";
-import { deleteAccount, MOODFOOD_KEYS, syncSubscriptionFromDB } from "./api/backend";
+import { syncSubscriptionFromDB } from "./api/backend";
 import { type DiaryEntry, type Entry, type Page, type SearchRequest } from "./appTypes";
 import { MenuCtx } from "./components/MenuCtx";
 import { usePullToRefresh } from "./hooks/usePullToRefresh";
 import { useNotifications } from "./hooks/useNotifications";
 import { useMoodyChat } from "./hooks/useMoodyChat";
 import { useLearningSignals } from "./hooks/useLearningSignals";
+import { useProfileSync, prefsForUpsert } from "./hooks/useProfileSync";
 import { PullRefreshIndicator } from "./components/PullRefreshIndicator";
 import { toggle } from "./lib/toggle";
 import { deriveDailySuggestions } from "./lib/dailySuggestions";
@@ -86,14 +87,6 @@ import { VerifiedScreen } from "./screens/entry/VerifiedScreen";
 import { SubscriptionScreen } from "./screens/entry/SubscriptionScreen";
 import { Onboarding } from "./screens/onboarding/Onboarding";
 
-// photoLogs carry base64 image data (megabytes). They must never travel in
-// preferences_json: they bloat the profiles row, the debounced upsert, and the
-// sign-in restore payload. Photos stay on-device (a later step moves them to Storage).
-function prefsForUpsert(p: Profile): Omit<Profile, "photoLogs"> {
-  const { photoLogs: _photoLogs, ...prefs } = p;
-  return prefs;
-}
-
 // The subscriptions table can hold statuses the client union doesn't model —
 // stripe-webhook's mapStatus() also writes "past_due" (and future Stripe
 // statuses may map to new values). Validate instead of casting.
@@ -119,7 +112,7 @@ export default function App() {
   const [splash, setSplash] = useState(true);
   const [entry, setEntry] = useStoredState<Entry>("moodfood-entry", "welcome");
   const [passwordRecovery, setPasswordRecovery] = useState(false);
-  const [storedProfile, setProfile] = useStoredState<Profile>("moodfood-profile", defaultProfile);
+  const { storedProfile, setProfile, profile, cancelAccount } = useProfileSync();
   useEffect(() => { window.scrollTo(0, 0); }, [entry]);
   useEffect(() => onAuthChange((event) => {
     if (event !== "PASSWORD_RECOVERY") return;
@@ -127,11 +120,6 @@ export default function App() {
     setPasswordRecovery(true);
     setEntry("login");
   }), [setEntry]);
-  // Memoized so its reference is stable across renders. Without this, every
-  // render produced a new `profile` object, which cascaded into `sharedProfile`
-  // and re-fired the recipe-fetch effect on a loop, hammering the edge function
-  // into 502s and silently falling back to local recipes.
-  const profile = useMemo(() => ({ ...defaultProfile, ...storedProfile }), [storedProfile]);
   const [page, setPage] = useState<Page>("home");
   const [selected, setSelected] = useState<Recipe | null>(null);
   const [detailReturnPage, setDetailReturnPage] = useState<Page>("results");
@@ -504,25 +492,6 @@ export default function App() {
     }
   }), [storedProfile.onboarded, storedProfile.accountCreated, storedProfile, testState]);
 
-  // Debounced upsert: save the full profile to Supabase 1.5 s after any change.
-  // This keeps preferences_json current so the user's profile is restored when
-  // they sign in on a new device.
-  useEffect(() => {
-    if (!isSupabaseConfigured || !supabase || !profile.accountCreated) return;
-    const t = setTimeout(async () => {
-      const { data: { user } } = await supabase!.auth.getUser();
-      if (!user) return;
-      await supabase!.from("profiles").upsert({
-        id: user.id,
-        display_name: profile.name,
-        onboarded: profile.onboarded,
-        preferences_json: prefsForUpsert(profile),
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "id" });
-    }, 1500);
-    return () => clearTimeout(t);
-  }, [profile]);
-
   // Handle Stripe redirect back after Checkout (?checkout=success|canceled).
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -597,21 +566,6 @@ export default function App() {
     setCatalog(prev => prev.some(r => r.id === recipe.id) ? prev : [recipe, ...prev]);
     setPendingShare(recipe.id);
     go("community");
-  };
-
-  // Cancel (permanently delete) the account. With a backend, delete server-side
-  // first and bail on failure. Then sign out, wipe every local key, and reload
-  // to a guaranteed-clean first-launch state.
-  const cancelAccount = async (): Promise<{ ok: boolean; error?: string }> => {
-    if (isSupabaseConfigured) {
-      const res = await deleteAccount();
-      if (!res.ok) return res;
-    }
-    try { await authSignOut(); } catch { /* already signed out */ }
-    cancelScheduled();
-    MOODFOOD_KEYS.forEach(clearStored);
-    window.location.reload();
-    return { ok: true };
   };
 
   // The landing doubles as the splash: brand-new visitors (entry === "welcome")
