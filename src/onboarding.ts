@@ -458,3 +458,7 @@ export const onboardingSections: string[] = onboardingQuestions.reduce<string[]>
 export { cookingMoodLabels, skillLabels };
 
 export type ProfileValue = Profile[keyof Profile];
+
+// Pull the option list for an onboarding question so the profile editor and the
+// onboarding flow always offer the same suggestions.
+export function optionsFor(id: string) { const q = onboardingQuestions.find(q => q.id === id); return q?.options || q?.groups?.flatMap(g => g.items) || []; }

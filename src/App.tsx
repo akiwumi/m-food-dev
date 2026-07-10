@@ -2,13 +2,13 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   ArrowLeft, ArrowRight, Check, ChefHat, ChevronRight,
   Clock3, Play, RotateCcw, Search,
-  Settings2, Sparkles, X, ShieldCheck, UserRound,
-  Plus, Camera, Users,
+  Settings2, Sparkles, ShieldCheck, UserRound,
+  Camera, Users,
   Lock, Globe2, Activity, Wheat, Droplets, Mail,
   FlameKindling,
   Eye, EyeOff,
 } from "lucide-react";
-import { moods, cookingMoods, skillLevels, type Recipe } from "./data";
+import { moods, type Recipe } from "./data";
 import { bundledRecipes } from "./bundledRecipes";
 import { clearStored, defaultDiners, defaultProfile, useStoredState, type Diner, type Profile, type SocialPost } from "./store";
 import { profileForDiners, recommend, safeRecipes as applySafety, RANKING_CONFIG_VERSION, type CuisineSignal, type MoodCuisineSignal, type LearnedSignals } from "./recommendation";
@@ -64,7 +64,7 @@ import { Moody } from "./components/Moody";
 import { MainMenu } from "./components/MainMenu";
 import { PickCard } from "./components/PickCard";
 import { TokenInput } from "./components/TokenInput";
-import { Choice, EditableCues, PlanPicker, ProfileEditor, SetupStep } from "./components/misc";
+import { PlanPicker, SetupStep } from "./components/misc";
 import { DailySuggestionCarousel } from "./components/DailySuggestionCarousel";
 import { NotificationsPanel } from "./components/NotificationsPanel";
 import { FoodCamera } from "./components/FoodCamera";
@@ -92,6 +92,9 @@ import { DiaryScreen } from "./screens/DiaryScreen";
 import { FoodLogScreen } from "./screens/FoodLogScreen";
 import { HelpScreen } from "./screens/HelpScreen";
 import { MoodyPanel } from "./components/moody/MoodyPanel";
+import { QuestionField } from "./screens/onboarding/QuestionField";
+import { PsychProfileScreen } from "./screens/profile/PsychProfileScreen";
+import { FoodProfileScreen } from "./screens/profile/FoodProfileScreen";
 
 // photoLogs carry base64 image data (megabytes). They must never travel in
 // preferences_json: they bloat the profiles row, the debounced upsert, and the
@@ -1371,91 +1374,6 @@ function DesktopOnboardingFooter({ back, next, nextLabel, backDisabled = false }
   </footer>;
 }
 
-function QuestionField({ q, profile, update }: { q: OnboardingQuestion; profile: Profile; update: (k: OnboardingKey, v: ProfileValue) => void }) {
-  const value = profile[q.key];
-  if (q.type === "single")
-    return <Choice values={q.options!} active={value as string} pick={v => update(q.key, v)} />;
-  if (q.type === "multi")
-    return <MultiField q={q} values={(value as string[]) || []} update={update} />;
-  if (q.type === "scale")
-    return <div className="scale-field"><input type="range" min={q.min ?? 0} max={q.max ?? 100} value={value as number} onChange={e => update(q.key, +e.target.value)} /><div className="range-label"><span>{q.lowLabel}</span><b>{value as number}%</b><span>{q.highLabel}</span></div></div>;
-  if (q.type === "stepper") {
-    const n = value as number;
-    return <div className="stepper"><button onClick={() => update(q.key, Math.max(q.min ?? 1, n - 1))}>−</button><b>{n}</b><button onClick={() => update(q.key, Math.min(q.max ?? 99, n + 1))}>+</button></div>;
-  }
-  if (q.type === "textgrid") {
-    const rec = (value as Record<string, string>) || {};
-    const rows = q.rowsKey ? ((profile[q.rowsKey] as string[]) || []) : (q.rows || []);
-    if (!rows.length) return <p className="multi-hint">Pick some moods earlier and they'll show up here.</p>;
-    return <div className="mood-defs">{rows.map(row => <label key={row}><b>{row}</b><input value={rec[row] || ""} onChange={e => update(q.key, { ...rec, [row]: e.target.value })} placeholder={q.placeholder} /></label>)}</div>;
-  }
-  if (q.type === "record-single") {
-    const rec = (value as Record<string, string>) || {};
-    const active = rec[q.subKey!] || "";
-    return <Choice values={q.options!} active={active} pick={v => update(q.key, { ...rec, [q.subKey!]: active === v ? "" : v })} />;
-  }
-  if (q.type === "grouped-multi")
-    return <GroupedMultiField q={q} values={(value as string[]) || []} update={update} />;
-  if (q.type === "moodcards")
-    return <MoodCardsField values={(value as string[]) || []} update={v => update(q.key, v)} />;
-  if (q.type === "skillcards")
-    return <SkillCardsField active={value as string} pick={v => update(q.key, v)} />;
-  return null;
-}
-function GroupedMultiField({ q, values, update }: { q: OnboardingQuestion; values: string[]; update: (k: OnboardingKey, v: ProfileValue) => void }) {
-  const [custom, setCustom] = useState("");
-  const grouped = q.groups!.flatMap(g => g.items);
-  const extras = values.filter(v => !grouped.includes(v));
-  return <>
-    {q.groups!.map(g => <div className="ob-group" key={g.group}>
-      <div className="ob-group-label">{g.group}{g.note && <em>{g.note}</em>}</div>
-      <div className="choice">{g.items.map(v => <button className={values.includes(v) ? "active" : ""} onClick={() => update(q.key, toggle(values, v))} key={v}>{v}</button>)}</div>
-    </div>)}
-    {q.allowCustom && <form className="add-cue" onSubmit={e => { e.preventDefault(); const c = cleanText(custom, 40); if (c) { update(q.key, [...new Set([...values, c])]); setCustom(""); } }}><input value={custom} onChange={e => setCustom(e.target.value)} placeholder="Add your own" /><button><Plus /></button></form>}
-    {!!extras.length && <div className="choice" style={{ marginTop: 8 }}>{extras.map(v => <button className="custom-cue" onClick={() => update(q.key, values.filter(x => x !== v))} key={v}>{v}<X size={13} /></button>)}</div>}
-    <p className="multi-hint">{values.length ? `${values.length} selected, pick as many as you like` : "Select all that apply"}</p>
-  </>;
-}
-function MoodCardsField({ values, update }: { values: string[]; update: (v: string[]) => void }) {
-  const [open, setOpen] = useState<string | null>(null);
-  return <>
-    <div className="mood-cards">{cookingMoods.map(m => {
-      const sel = values.includes(m.label);
-      const expanded = open === m.id;
-      return <div className={"mood-pick-card" + (sel ? " selected" : "")} key={m.id}>
-        <button className="mpc-top" onClick={() => update(toggle(values, m.label))}>
-          <span className="mpc-emoji">{m.emoji}</span>
-          <span className="mpc-head"><b>{m.label}</b><em>{m.tagline}</em></span>
-          {sel && <Check size={17} className="mpc-check" />}
-        </button>
-        <button className="mpc-more" onClick={() => setOpen(expanded ? null : m.id)}>{expanded ? "Less" : "What this means"}</button>
-        {expanded && <div className="mpc-body">
-          <p>{m.what}</p>
-          <ul>{m.descriptors.map(d => <li key={d}>{d}</li>)}</ul>
-          <div className="mpc-vibes">{m.vibes.map(v => <span key={v}>{v}</span>)}<small>{m.timeHint}</small></div>
-        </div>}
-      </div>;
-    })}</div>
-    <p className="multi-hint">{values.length ? `${values.length} selected, pick as many as you like` : "Pick at least one"}</p>
-  </>;
-}
-function SkillCardsField({ active, pick }: { active: string; pick: (v: string) => void }) {
-  return <div className="skill-cards">{skillLevels.map(s => <button className={"skill-pick-card" + (active === s.label ? " selected" : "")} onClick={() => pick(s.label)} key={s.id}>
-    <span className="spc-emoji">{s.emoji}</span>
-    <span className="spc-text"><b>{s.label}</b><em>{s.desc}</em><small>{s.detail}</small></span>
-    {active === s.label && <Check size={17} className="spc-check" />}
-  </button>)}</div>;
-}
-function MultiField({ q, values, update }: { q: OnboardingQuestion; values: string[]; update: (k: OnboardingKey, v: ProfileValue) => void }) {
-  const [custom, setCustom] = useState("");
-  const extras = values.filter(v => !q.options!.includes(v));
-  return <>
-    <div className="choice">{q.options!.map(v => <button className={values.includes(v) ? "active" : ""} onClick={() => update(q.key, toggle(values, v))} key={v}>{v}</button>)}</div>
-    {q.allowCustom && <form className="add-cue" onSubmit={e => { e.preventDefault(); const c = cleanText(custom, 40); if (c) { update(q.key, [...new Set([...values, c])]); setCustom(""); } }}><input value={custom} onChange={e => setCustom(e.target.value)} placeholder="Add your own" /><button><Plus /></button></form>}
-    {extras.map(v => <button className="custom-cue" onClick={() => update(q.key, values.filter(x => x !== v))} key={v}>{v}<X size={13} /></button>)}
-    <p className="multi-hint">{values.length ? `${values.length} selected, pick as many as you like` : "Select all that apply"}</p>
-  </>;
-}
 function HomeScreen({ profile, diary, saved, catalog, mood, setMood, energy, setEnergy, time, setTime, mealCategory, setMealCategory, cuisine, setCuisine, diet, setDiet, results, setResults, beginResults, ranked, curating, hasFetched, loadMore, live, curated, retry, open, go, diners, selectedDiners, setSelectedDiners, eaterCount, setEaterCount, openNotifs, unread, addPhoto, onPickSuggestion, toggleSave }: {
   profile: Profile; diary: DiaryEntry[]; saved: string[]; catalog: Recipe[];
   mood: string; setMood: (v: string) => void; energy: number; setEnergy: (v: number) => void; time: number; setTime: (v: number) => void;
@@ -1924,67 +1842,3 @@ function SubscriptionScreen({ profile, save, proceed, onStarted }: { profile: Pr
     </div>
   );
 }
-// Pull the option list for an onboarding question so the profile editor and the
-// onboarding flow always offer the same suggestions.
-function optionsFor(id: string) { const q = onboardingQuestions.find(q => q.id === id); return q?.options || q?.groups?.flatMap(g => g.items) || []; }
-
-function PsychProfileScreen({ profile, save, back }: { profile: Profile; save: (p: Profile) => void; back: () => void }) {
-  const update = (patch: Partial<Profile>) => save({ ...profile, ...patch });
-  return <div className="screen psych-profile"><TopBar title="Your food psychology" back={back} /><section className="psych-summary"><Moody /><div><span>LIVING PROFILE</span><h1>What food means to you.</h1><p>Moody uses this alongside your mood, energy, history, and safety preferences. You own it, and you can change it anytime. Everything you set during onboarding lives here.</p></div></section>
-
-    <ProfileEditor title="Your relationship with food" text="The broad intention Moody should protect."><textarea value={profile.foodRelationship} onChange={e => update({ foodRelationship: e.target.value })} /></ProfileEditor>
-
-    <h2 className="psych-divider">Your palate</h2>
-    <ProfileEditor title="Flavors you love" text="The tastes that reliably sound good."><EditableCues values={profile.flavorLikes} suggestions={optionsFor("flavor-likes")} save={flavorLikes => update({ flavorLikes })} /></ProfileEditor>
-    <ProfileEditor title="Flavors you avoid" text="Tastes Moody should dial down."><EditableCues values={profile.flavorAvoids} suggestions={optionsFor("flavor-avoids")} save={flavorAvoids => update({ flavorAvoids })} /></ProfileEditor>
-    <ProfileEditor title="Textures you reach for" text="Mouthfeels that make a meal feel right."><EditableCues values={profile.textureLikes} suggestions={optionsFor("texture-likes")} save={textureLikes => update({ textureLikes })} /></ProfileEditor>
-    <ProfileEditor title="Textures that put you off" text="Aversions Moody will quietly route around."><EditableCues values={profile.textureAvoids} suggestions={optionsFor("texture-avoids")} save={textureAvoids => update({ textureAvoids })} /></ProfileEditor>
-    <ProfileEditor title="Spice tolerance" text="How much heat you actually enjoy."><input type="range" value={profile.spiceTolerance} onChange={e => update({ spiceTolerance: +e.target.value })} /><div className="range-label"><span>Avoid heat</span><b>{profile.spiceTolerance}%</b><span>Bring the fire</span></div></ProfileEditor>
-    <ProfileEditor title="Proteins you enjoy" text="What you happily build a plate around."><EditableCues values={profile.proteins} suggestions={optionsFor("proteins")} save={proteins => update({ proteins })} /></ProfileEditor>
-    <ProfileEditor title="Cuisines you love" text="Gentle boosts toward the kitchens you enjoy."><EditableCues values={profile.cuisines} suggestions={optionsFor("cuisines")} save={cuisines => update({ cuisines })} /></ProfileEditor>
-    <ProfileEditor title="Won't eat" text="Strong dislikes (not allergies). Moody steers recipes around these."><EditableCues values={profile.dislikedIngredients} suggestions={optionsFor("dislikes")} save={dislikedIngredients => update({ dislikedIngredients })} /></ProfileEditor>
-
-    <h2 className="psych-divider">How you relate to food</h2>
-    <ProfileEditor title="What drives your food choices" text="The motives that pull you, often several at once."><EditableCues values={profile.foodValues} suggestions={optionsFor("food-values")} save={foodValues => update({ foodValues })} /></ProfileEditor>
-    <ProfileEditor title="How you tend to eat" text="Patterns, not rules. They help Moody match your rhythm."><EditableCues values={profile.eatingHabits} suggestions={optionsFor("eating-habits")} save={eatingHabits => update({ eatingHabits })} /></ProfileEditor>
-    <ProfileEditor title="What shifts your eating" text="Emotions that change your cravings."><EditableCues values={profile.emotionalTriggers} suggestions={optionsFor("emotional-triggers")} save={emotionalTriggers => update({ emotionalTriggers })} /></ProfileEditor>
-    <ProfileEditor title="Why you cook" text="The role cooking plays for you."><EditableCues values={profile.cookingMotivations} suggestions={optionsFor("cooking-motivations")} save={cookingMotivations => update({ cookingMotivations })} /></ProfileEditor>
-
-    <h2 className="psych-divider">Comfort & goals</h2>
-    <ProfileEditor title="Your comfort foods" text="What you turn to when a meal needs to feel like a hug."><EditableCues values={profile.comfortFoods} suggestions={optionsFor("comfort-foods")} save={comfortFoods => update({ comfortFoods })} /></ProfileEditor>
-    <ProfileEditor title="What comfort feels like" text="Qualities, beyond any one dish, that signal comfort."><EditableCues values={profile.comfortCues} suggestions={optionsFor("comfort-cues")} save={comfortCues => update({ comfortCues })} /></ProfileEditor>
-    <ProfileEditor title="What drains you" text="Moody will gently penalize these on low-energy nights."><EditableCues values={profile.avoidCues} suggestions={optionsFor("energy-drainers")} save={avoidCues => update({ avoidCues })} /></ProfileEditor>
-    <ProfileEditor title="Working toward" text="Gentle nudges, never pressure. Informational only."><EditableCues values={profile.nutritionGoals} suggestions={optionsFor("nutrition-goals")} save={nutritionGoals => update({ nutritionGoals })} /></ProfileEditor>
-    <ProfileEditor title="Novelty appetite" text="How far Moody should gently stretch your usual choices."><input type="range" value={profile.novelty} onChange={e => update({ novelty: +e.target.value })} /><div className="range-label"><span>Keep it familiar</span><b>{profile.novelty}%</b><span>Surprise me</span></div></ProfileEditor>
-
-    <ProfileEditor title="Your personal mood meanings" text="These notes are used the moment you check in feeling that way."><div className="mood-defs">{moods.map(m => <label key={m}><b>{m}</b><input value={profile.moodNeeds[m] || ""} onChange={e => update({ moodNeeds: { ...profile.moodNeeds, [m]: e.target.value } })} placeholder="Add what usually helps..." /></label>)}</div></ProfileEditor>
-  </div>;
-}
-// Editable view of every onboarding answer, grouped by section. This is the same
-// set of questions the user saw at first launch, they can refine anything here
-// any time, which is why returning users never have to repeat onboarding.
-function FoodProfileScreen({ profile, save, back }: { profile: Profile; save: (p: Profile) => void; back: () => void }) {
-  const update = (key: OnboardingKey, value: ProfileValue) => save({ ...profile, [key]: value });
-  const visible = onboardingQuestions.filter(q => !q.showIf || q.showIf(profile));
-  return <div className="screen food-profile">
-    <TopBar title="Food profile" back={back} />
-    <section className="fp-intro">
-      <span>YOUR FOOD PROFILE</span>
-      <h1>Fine-tune what MoodFood knows.</h1>
-      <p>These are the same questions from onboarding, change anything, any time, and your recommendations update to match. Everything saves automatically.</p>
-    </section>
-    {onboardingSections.map(section => {
-      const qs = visible.filter(q => q.section === section);
-      if (!qs.length) return null;
-      return <section className="fp-section" key={section}>
-        <h2 className="fp-section-title">{section}</h2>
-        {qs.map(q => <div className="fp-q" key={q.id}>
-          <SetupStep eyebrow={q.eyebrow} title={q.title} text={q.text}>
-            <QuestionField q={q} profile={profile} update={update} />
-          </SetupStep>
-        </div>)}
-      </section>;
-    })}
-  </div>;
-}
-
