@@ -1,70 +1,54 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
-  ArrowLeft, ArrowRight, Check, ChefHat, ChevronRight,
+  ArrowRight, Check, ChefHat,
   Clock3, Play, RotateCcw, Search,
   Settings2, Sparkles, ShieldCheck, UserRound,
   Camera, Users,
-  Lock, Globe2, Activity, Wheat, Droplets, Mail,
+  Globe2, Activity, Wheat, Droplets,
   FlameKindling,
-  Eye, EyeOff,
 } from "lucide-react";
 import { moods, type Recipe } from "./data";
 import { bundledRecipes } from "./bundledRecipes";
 import { clearStored, defaultDiners, defaultProfile, useStoredState, type Diner, type Profile, type SocialPost } from "./store";
 import { profileForDiners, recommend, safeRecipes as applySafety, RANKING_CONFIG_VERSION, type CuisineSignal, type MoodCuisineSignal, type LearnedSignals } from "./recommendation";
 import { recordRating, recordRun, fetchRatingHistory, deriveCuisineSignal, deriveMoodCuisineSignal, suppressSignal } from "./behavioral";
-import { cleanText, compactPhotoLogs, readSafeImage, validateEmail } from "./security";
+import { compactPhotoLogs } from "./security";
 import { onboardingQuestions, onboardingSections, type OnboardingKey, type OnboardingQuestion, type ProfileValue } from "./onboarding";
 import { SPOON_CUISINES, MEAL_TYPES, SEARCH_DIETS, SORT_OPTIONS, type RecipeFilters } from "./searchFilters";
-import { sendConfirmationEmail, sendWelcomeEmail, scheduleTrial, runDue, unreadCount, markAllRead, cancelScheduled } from "./notifications";
+import { sendConfirmationEmail, sendWelcomeEmail, runDue, unreadCount, markAllRead, cancelScheduled } from "./notifications";
 import { sumNutrition, type FoodPhoto } from "./foodAnalysis";
 import { persistFoodPhoto } from "./photoStorage";
 import { type ChatTurn } from "./ai";
 import { fetchCuratedRecipes, buildFoodHistory } from "./recipes";
 import {
-  signUp as authSignUp,
-  signIn as authSignIn,
   signOut as authSignOut,
-  requestPasswordReset as authRequestPasswordReset,
-  updatePassword as authUpdatePassword,
-  isEmailConfirmed,
   onAuthChange,
   isSupabaseConfigured,
 } from "./auth";
 import { supabase } from "./supabase";
-import { stepImageSources } from "./cooking";
-import { RecipeImage } from "./RecipeImage";
 import { finalizeSearchResults } from "./searchResults";
 import { nextSavedRecipeIds } from "./savedRecipes";
 import { trackSearch } from "./telemetry";
 import { getConsents } from "./governance";
 import { Landing } from "./Landing";
 import { readDevTestState } from "./devTestState";
-import {
-  activationFitReason,
-  adjustQuickStartAfterRejection,
-  buildQuickStartProfilePatch,
-  selectActivationPicks,
-  type RejectionReason,
-} from "./activation";
+import { buildQuickStartProfilePatch } from "./activation";
 import { appendUniqueRecipes, RESULT_BATCH_SIZE, takeUniqueBatch } from "./resultBatches";
 import { moodSearchTags, type Mood } from "@/data/moodTags";
 import { buildMoodSearchQuery, getMoodByValue } from "@/lib/moodSearch";
-import gsap from "gsap";
-import { deleteAccount, MOODFOOD_KEYS, redeemInviteCode, startCheckout, syncSubscriptionFromDB } from "./api/backend";
-import { PLANS, type DiaryEntry, type Entry, type Page, type SearchRequest } from "./appTypes";
+import { deleteAccount, MOODFOOD_KEYS, syncSubscriptionFromDB } from "./api/backend";
+import { type DiaryEntry, type Entry, type Page, type SearchRequest } from "./appTypes";
 import { MenuCtx } from "./components/MenuCtx";
 import { usePullToRefresh } from "./hooks/usePullToRefresh";
 import { PullRefreshIndicator } from "./components/PullRefreshIndicator";
 import { toggle } from "./lib/toggle";
 import { deriveDailySuggestions } from "./lib/dailySuggestions";
-import { FALLBACK_FOOD, LOGIN_PHOTO, SECTION_PHOTOS } from "./components/photos";
+import { FALLBACK_FOOD, SECTION_PHOTOS } from "./components/photos";
 import { AppHeader, BottomNav, DesktopNav, TopBar } from "./components/AppChrome";
-import { Moody } from "./components/Moody";
 import { MainMenu } from "./components/MainMenu";
 import { PickCard } from "./components/PickCard";
 import { TokenInput } from "./components/TokenInput";
-import { PlanPicker, SetupStep } from "./components/misc";
+import { SetupStep } from "./components/misc";
 import { DailySuggestionCarousel } from "./components/DailySuggestionCarousel";
 import { NotificationsPanel } from "./components/NotificationsPanel";
 import { FoodCamera } from "./components/FoodCamera";
@@ -95,6 +79,13 @@ import { MoodyPanel } from "./components/moody/MoodyPanel";
 import { QuestionField } from "./screens/onboarding/QuestionField";
 import { PsychProfileScreen } from "./screens/profile/PsychProfileScreen";
 import { FoodProfileScreen } from "./screens/profile/FoodProfileScreen";
+import { QuickTasteStartScreen } from "./screens/entry/QuickTasteStartScreen";
+import { FirstPickScreen } from "./screens/entry/FirstPickScreen";
+import { AccountSetupScreen } from "./screens/entry/AccountSetupScreen";
+import { VerifyEmailScreen } from "./screens/entry/VerifyEmailScreen";
+import { LoginScreen } from "./screens/entry/LoginScreen";
+import { VerifiedScreen } from "./screens/entry/VerifiedScreen";
+import { SubscriptionScreen } from "./screens/entry/SubscriptionScreen";
 
 // photoLogs carry base64 image data (megabytes). They must never travel in
 // preferences_json: they bloat the profiles row, the debounced upsert, and the
@@ -799,368 +790,6 @@ export default function App() {
   </div></MenuCtx.Provider>;
 }
 
-function QuickTasteStartScreen({
-  mood, setMood, energy, setEnergy, time, setTime, profile, save, signin,
-}: {
-  mood: string;
-  setMood: (value: string) => void;
-  energy: number;
-  setEnergy: (value: number) => void;
-  time: number;
-  setTime: (value: number) => void;
-  profile: Profile;
-  save: (patch: { diet: string; allergies: string[] }) => void;
-  signin: () => void;
-}) {
-  const [diet, setDiet] = useState(profile.diet === "Everything" ? "Any" : profile.diet);
-  const [allergyText, setAllergyText] = useState(profile.allergies.join(", "));
-  const allergies = allergyText.split(",").map(item => cleanText(item, 40)).filter(Boolean);
-
-  return (
-    <div className="quick-start">
-      <header className="quick-top">
-        <div className="ih-logo dark"><img src="/images/logo-1.png" alt="" /><span>MoodFood</span></div>
-        <button className="ih-signin dark" onClick={signin}>Sign in</button>
-      </header>
-      <main className="quick-card">
-        <span>TONIGHT, FAST</span>
-        <h1>Tell me how dinner feels.</h1>
-        <p>Four quick answers. Then I'll pick one safe meal and explain why it fits.</p>
-
-        <label className="quick-field">
-          <b>Mood</b>
-          <div className="mood-pills">
-            {["Tired", "Stressed", "Cozy", "Happy"].map(value => (
-              <button key={value} className={mood === value ? "active" : ""} onClick={() => setMood(value)}>{value}</button>
-            ))}
-          </div>
-        </label>
-
-        <label className="quick-field">
-          <b>Energy: {energy}%</b>
-          <input type="range" min={0} max={100} value={energy} onChange={event => setEnergy(+event.target.value)} />
-          <div className="range-label"><span>Keep it easy</span><span>I'm up for more</span></div>
-        </label>
-
-        <label className="quick-field">
-          <b>Time</b>
-          <div className="time-pills">
-            {[15, 30, 45, 60].map(value => (
-              <button key={value} className={time === value ? "active" : ""} onClick={() => setTime(value)}>{value}</button>
-            ))}
-          </div>
-        </label>
-
-        <label className="quick-field">
-          <b>Diet</b>
-          <select className="cuisine-select" value={diet} onChange={event => setDiet(event.target.value)}>
-            {["Any", "Vegetarian", "Vegan", "Pescatarian", "Gluten-free", "Dairy-free"].map(value => (
-              <option key={value} value={value}>{value}</option>
-            ))}
-          </select>
-        </label>
-
-        <label className="quick-field">
-          <b>Allergies</b>
-          <input value={allergyText} onChange={event => setAllergyText(event.target.value)} placeholder="e.g. peanuts, dairy" />
-        </label>
-
-        <button className="primary quick-submit" onClick={() => save({ diet: diet === "Any" ? "Everything" : diet, allergies })}>
-          Choose <ArrowRight size={18} />
-        </button>
-      </main>
-    </div>
-  );
-}
-
-const REJECTION_OPTIONS: { id: RejectionReason; label: string }[] = [
-  { id: "too-much-effort", label: "Too much effort" },
-  { id: "not-in-the-mood", label: "Not in the mood" },
-  { id: "too-expensive", label: "Too expensive" },
-  { id: "missing-ingredients", label: "Missing ingredients" },
-  { id: "too-heavy", label: "Too heavy" },
-  { id: "repeated-recently", label: "Had this recently" },
-];
-
-function FirstPickScreen({
-  profile, recipes, mood, energy, time, setContext, openRecipe, continueToTrial,
-}: {
-  profile: Profile;
-  recipes: Recipe[];
-  mood: string;
-  energy: number;
-  time: number;
-  setContext: (context: { mood: string; energy: number; time: number }) => void;
-  openRecipe: (recipe: Recipe) => void;
-  continueToTrial: () => void;
-}) {
-  const [dismissed, setDismissed] = useState<string[]>([]);
-  const available = recipes.filter(recipe => !dismissed.includes(recipe.id));
-  const picks = selectActivationPicks({ recipes: available, profile, mood, energy, time });
-  const fit = picks.hero ? activationFitReason({ recipe: picks.hero, profile, mood, energy, time }) : "";
-
-  const reject = (reason: RejectionReason) => {
-    if (picks.hero) setDismissed([...dismissed, picks.hero.id]);
-    setContext(adjustQuickStartAfterRejection({ mood, energy, time }, reason));
-  };
-
-  return (
-    <div className="first-pick">
-      <header className="quick-top">
-        <div className="ih-logo dark"><img src="/images/logo-1.png" alt="" /><span>MoodFood</span></div>
-      </header>
-      {picks.hero ? (
-        <main className="first-pick-main">
-          <span>DINNER IS HANDLED</span>
-          <h1>{picks.hero.title}</h1>
-          <RecipeImage className="first-pick-image" sources={stepImageSources(undefined, picks.hero.image)} alt={picks.hero.title} />
-          <div className="first-pick-facts">
-            <span><Clock3 size={14} /> {picks.hero.time} min</span>
-            <span><ShieldCheck size={14} /> Safety checked</span>
-            <span><Sparkles size={14} /> {mood}</span>
-          </div>
-          <div className="moody-note first-pick-note"><Moody /><p>{fit}</p></div>
-          <div className="first-pick-actions">
-            <button className="primary" onClick={() => openRecipe(picks.hero!)}>View recipe <ArrowRight size={17} /></button>
-            <button className="secondary" onClick={continueToTrial}>Save this profile</button>
-          </div>
-          <section className="reject-box">
-            <b>Not tonight?</b>
-            <div>
-              {REJECTION_OPTIONS.map(option => (
-                <button key={option.id} onClick={() => reject(option.id)}>{option.label}</button>
-              ))}
-            </div>
-          </section>
-          {!!picks.backups.length && (
-            <section className="backup-picks">
-              <h2>Backups</h2>
-              {picks.backups.map(recipe => (
-                <button key={recipe.id} onClick={() => openRecipe(recipe)}>
-                  <RecipeImage sources={stepImageSources(undefined, recipe.image)} alt={recipe.title} />
-                  <span><b>{recipe.title}</b><small>{recipe.time} min · {recipe.reason}</small></span>
-                  <ChevronRight size={16} />
-                </button>
-              ))}
-            </section>
-          )}
-        </main>
-      ) : (
-        <main className="first-pick-main">
-          <span>TRY AGAIN</span>
-          <h1>I couldn't find a safe match yet.</h1>
-          <p>Change your time, diet, or allergies and I'll try again.</p>
-          <button className="primary" onClick={continueToTrial}>Continue</button>
-        </main>
-      )}
-    </div>
-  );
-}
-
-function AccountSetupScreen({ profile, back, submit, simulate = false }: { profile: Profile; back: () => void; submit: (patch: Partial<Profile>, opts?: { hasSession: boolean }) => void; simulate?: boolean }) {
-  const [name, setName] = useState(profile.name);
-  const [email, setEmail] = useState(profile.email);
-  const [password, setPassword] = useState("");
-  const [avatar, setAvatar] = useState(profile.avatar);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const upload = async (file?: File) => { if (!file) return; try { setAvatar(await readSafeImage(file)); setError(""); } catch (err) { setError((err as Error).message); } };
-  // Validate the email locally before signup so we never ask the backend to send
-  // a confirmation to a malformed/undeliverable/typo'd address (which would bounce).
-  const emailCheck = validateEmail(email);
-  const showEmailHint = email.includes("@") && email.includes(".") && !emailCheck.ok;
-  const valid = Boolean(cleanText(name, 80) && emailCheck.ok && password.length >= 6);
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!cleanText(name, 80)) { setError("Add your name to continue."); return; }
-    if (!emailCheck.ok) { setError(emailCheck.reason ?? "Enter a valid email address."); return; }
-    if (password.length < 6) { setError("Use a password of at least 6 characters."); return; }
-    const patch = { name: cleanText(name, 80), email: email.trim(), avatar };
-    if (simulate) { submit(patch, { hasSession: true }); return; } // explicit QA route, no network side effects
-    if (!isSupabaseConfigured) { submit(patch); return; } // pilot mode, simulated
-    setBusy(true);
-    const res = await authSignUp(email.trim(), password, patch.name);
-    setBusy(false);
-    if (!res.ok) { setError(res.error || "Could not create your account. Try again."); return; }
-    submit(patch, { hasSession: res.hasSession });
-  };
-  return <div className="auth-modern">
-    <button className="back" onClick={back} aria-label="Back" style={{ marginBottom: 8 }}><ArrowLeft /></button>
-    <div className="auth-logo"><img src="/images/logo-1.png" alt="" /><span>MoodFood</span></div>
-    <span className="eyebrow">CREATE YOUR ACCOUNT</span>
-    <h1>Save your profile.</h1>
-    <p className="lede">Your food profile is ready. Create an account so it's yours on every device, we'll send a confirmation email to finish.</p>
-    <div className="avatar-pick"><label>{avatar ? <span className="ring"><img src={avatar} alt="" /></span> : <span className="ring"><span>{(name || "You").slice(0, 1).toUpperCase()}</span></span>}<span className="cam"><Camera size={16} /></span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => upload(e.target.files?.[0])} /></label><em>Add a profile photo</em></div>
-    <form onSubmit={onSubmit}>
-      <label>Name<input value={name} maxLength={80} onChange={e => setName(e.target.value)} placeholder="Jessica" /></label>
-      <label>Email address<input type="email" value={email} onChange={e => { setEmail(e.target.value); setError(""); }} placeholder="you@example.com" /></label>
-      {showEmailHint && <span className="err">{emailCheck.reason}{emailCheck.suggestion && <> <button type="button" onClick={() => { setEmail(emailCheck.suggestion!); setError(""); }} style={{ background: "none", border: 0, padding: 0, color: "var(--olive)", fontWeight: 700, textDecoration: "underline", cursor: "pointer" }}>Use {emailCheck.suggestion}</button></>}</span>}
-      <label>Password<input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 6 characters" /></label>
-      {error && <span className="err">{error}</span>}
-      <button className="primary" type="submit" disabled={busy || !valid}>{busy ? "Creating account…" : <>Create account <ArrowRight size={18} /></>}</button>
-    </form>
-    <small><Lock size={11} /> We never share your mood data.{simulate || !isSupabaseConfigured ? " In this local test flow, your password isn't stored." : ""}</small>
-  </div>;
-}
-
-function VerifyEmailScreen({ email, realAuth, onVerified, resend, back }: { email: string; realAuth?: boolean; onVerified: () => void; resend: () => void; back: () => void }) {
-  const [sent, setSent] = useState(false);
-  const [checking, setChecking] = useState(false);
-  const [notYet, setNotYet] = useState(false);
-
-  // Real auth: the user confirms in the email link's tab; listen for the session
-  // appearing (or being confirmed) and advance automatically.
-  useEffect(() => {
-    if (!realAuth) return;
-    return onAuthChange((_event, session) => { if (session) onVerified(); });
-  }, [realAuth]);
-
-  const handleClick = async () => {
-    if (!realAuth) { onVerified(); return; } // pilot, simulate confirmation
-    setChecking(true);
-    const ok = await isEmailConfirmed();
-    setChecking(false);
-    if (ok) onVerified(); else setNotYet(true);
-  };
-
-  return <div className="auth-modern center">
-    <button className="back" onClick={back} aria-label="Back"><ArrowLeft /></button>
-    <div className="verify-icon"><Mail size={34} /></div>
-    <span className="eyebrow">CHECK YOUR INBOX</span>
-    <h1>Confirm your email.</h1>
-    <p className="lede">We sent a confirmation link to <span className="maskmail">{email}</span>. Open it to verify your account and continue.</p>
-    <button className="primary" onClick={handleClick} disabled={checking}>{checking ? "Checking…" : <>I've opened the link <ArrowRight size={18} /></>}</button>
-    <button className="ghost" onClick={() => { resend(); setSent(true); }}>{sent ? "Sent again ✓" : "Resend confirmation email"}</button>
-    {notYet && <span className="err">We can't see a confirmation yet, open the link in the email, then tap again.</span>}
-    <small>{realAuth ? "Tap the link in the email we just sent, then come back here." : "In a production build this button is the link inside the email. Here, tapping it simulates the confirmation."}</small>
-  </div>;
-}
-
-function LoginScreen({ back, onSignedIn, recovery, doneRecovery }: { back: () => void; onSignedIn: (email: string) => void; recovery?: boolean; doneRecovery?: () => void }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [mode, setMode] = useState<"signin" | "forgot" | "reset">(recovery ? "reset" : "signin");
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-  const [busy, setBusy] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (recovery) {
-      setMode("reset");
-      setError("");
-      setNotice("Choose a new password for your MoodFood account.");
-    }
-  }, [recovery]);
-  useEffect(() => {
-    const mm = gsap.matchMedia();
-    mm.add("(prefers-reduced-motion: no-preference)", () => {
-      const ctx = gsap.context(() => {
-        gsap.from(".ap-sheet", { y: 30, opacity: 0, duration: 0.8, ease: "power3.out" });
-        gsap.from("[data-auth]", { y: 20, opacity: 0, duration: 0.7, ease: "power3.out", stagger: 0.08, delay: 0.15 });
-      }, rootRef);
-      return () => ctx.revert();
-    });
-    return () => mm.revert();
-  }, []);
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setNotice("");
-    if (!/.+@.+\..+/.test(email) || !password) { setError("Enter your email and password."); return; }
-    if (!isSupabaseConfigured) { setError("Sign-in needs the backend configured (see BACKEND_SETUP.md)."); return; }
-    setBusy(true);
-    const res = await authSignIn(email.trim(), password);
-    setBusy(false);
-    if (!res.ok) { setError(res.error || "Could not sign in. Check your details."); return; }
-    onSignedIn(email.trim());
-  };
-  const sendReset = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setNotice("");
-    if (!/.+@.+\..+/.test(email)) { setError("Enter the email address for your account."); return; }
-    if (!isSupabaseConfigured) { setError("Password reset needs the backend configured (see BACKEND_SETUP.md)."); return; }
-    setBusy(true);
-    const res = await authRequestPasswordReset(email.trim());
-    setBusy(false);
-    if (!res.ok) { setError(res.error || "Could not send a reset link. Try again."); return; }
-    setNotice("If that email has a MoodFood account, a password reset link is on its way.");
-  };
-  const saveNewPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setNotice("");
-    if (newPassword.length < 6) { setError("Use a password of at least 6 characters."); return; }
-    if (!isSupabaseConfigured) { setError("Password reset needs the backend configured (see BACKEND_SETUP.md)."); return; }
-    setBusy(true);
-    const res = await authUpdatePassword(newPassword);
-    setBusy(false);
-    if (!res.ok) { setError(res.error || "Could not update your password. Open the reset link again and retry."); return; }
-    setNewPassword("");
-    doneRecovery?.();
-    setMode("signin");
-    setNotice("Password updated. Sign in with your new password.");
-  };
-  const title = mode === "reset" ? "Set a new password." : mode === "forgot" ? "Reset your password." : "Sign in.";
-  const lede = mode === "reset"
-    ? "Enter a fresh password for your MoodFood account."
-    : mode === "forgot"
-      ? "Enter your email and we'll send a secure link to reset your password."
-      : "Pick up where you left off, your food profile and recommendations are waiting.";
-  return <div className="auth-photo" ref={rootRef}>
-    <div className="ap-hero">
-      <img src={LOGIN_PHOTO} alt="A bowl of fresh food" />
-      <div className="ap-veil" />
-      <button className="ap-back" onClick={back} aria-label="Back"><ArrowLeft size={19} /></button>
-      <div className="ap-logo"><img src="/images/logo-1.png" alt="" /><span>MoodFood</span></div>
-    </div>
-    <div className="ap-sheet">
-      <span className="ap-eyebrow" data-auth>{mode === "signin" ? "WELCOME BACK" : "ACCOUNT RECOVERY"}</span>
-      <h1 data-auth>{title}</h1>
-      <p className="ap-lede" data-auth>{lede}</p>
-      {mode === "signin" && <form onSubmit={onSubmit} data-auth>
-        <label>Email address<input type="email" autoComplete="email" value={email} onChange={e => { setEmail(e.target.value); setError(""); }} placeholder="you@example.com" /></label>
-        <label>Password<span className="password-field"><input type={showPassword ? "text" : "password"} autoComplete="current-password" value={password} onChange={e => { setPassword(e.target.value); setError(""); }} placeholder="Your password" /><button type="button" onClick={() => setShowPassword(v => !v)} aria-label={showPassword ? "Hide password" : "Show password"}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></span></label>
-        {error && <span className="err" role="alert">{error}</span>}
-        {notice && <span className="auth-notice" role="status">{notice}</span>}
-        <button className="primary" type="submit" disabled={busy}>{busy ? "Signing in…" : <>Sign in <ArrowRight size={18} /></>}</button>
-      </form>}
-      {mode === "forgot" && <form onSubmit={sendReset} data-auth>
-        <label>Email address<input type="email" autoComplete="email" value={email} onChange={e => { setEmail(e.target.value); setError(""); }} placeholder="you@example.com" /></label>
-        {error && <span className="err" role="alert">{error}</span>}
-        {notice && <span className="auth-notice" role="status">{notice}</span>}
-        <button className="primary" type="submit" disabled={busy}>{busy ? "Sending…" : <>Send reset link <Mail size={18} /></>}</button>
-      </form>}
-      {mode === "reset" && <form onSubmit={saveNewPassword} data-auth>
-        <label>New password<span className="password-field"><input type={showNewPassword ? "text" : "password"} autoComplete="new-password" value={newPassword} onChange={e => { setNewPassword(e.target.value); setError(""); }} placeholder="At least 6 characters" /><button type="button" onClick={() => setShowNewPassword(v => !v)} aria-label={showNewPassword ? "Hide password" : "Show password"}>{showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></span></label>
-        {error && <span className="err" role="alert">{error}</span>}
-        {notice && <span className="auth-notice" role="status">{notice}</span>}
-        <button className="primary" type="submit" disabled={busy}>{busy ? "Saving…" : <>Save new password <Check size={18} /></>}</button>
-      </form>}
-      <p className="ap-alt" data-auth>
-        {mode === "signin" ? <>
-          <button type="button" onClick={() => { setMode("forgot"); setError(""); setNotice(""); }}>Forgot password?</button>
-          <span> · New here? </span><button type="button" onClick={back}>Build your food profile</button>
-        </> : <>
-          Remembered it? <button type="button" onClick={() => { doneRecovery?.(); setMode("signin"); setError(""); setNotice(""); }}>Back to sign in</button>
-        </>}
-      </p>
-    </div>
-  </div>;
-}
-
-function VerifiedScreen({ name, proceed }: { name: string; proceed: () => void }) {
-  return <div className="auth-modern center">
-    <div className="verify-icon verified-icon"><Check size={36} /></div>
-    <span className="eyebrow">YOU'RE ALL SET</span>
-    <h1>Welcome aboard{name ? `, ${name}` : ""}.</h1>
-    <p className="lede">Your email is confirmed and your food profile is saved. One last step before we start cooking.</p>
-    <button className="primary" onClick={proceed}>Continue <ArrowRight size={18} /></button>
-  </div>;
-}
 
 function useDesktopOnboarding() {
   const [desktop, setDesktop] = useState(() => typeof window !== "undefined" && window.matchMedia("(min-width: 1040px)").matches);
@@ -1752,93 +1381,3 @@ function SearchScreen({
   </div>;
 }
 
-function SubscriptionScreen({ profile, save, proceed, onStarted }: { profile: Profile; save: (p: Profile) => void; proceed: () => void; onStarted?: () => void }) {
-  const [plan, setPlan] = useState(profile.plan || "annual");
-  const [mode, setMode] = useState<"trial" | "invite">("trial");
-  const [inviteInput, setInviteInput] = useState("");
-  const [inviteError, setInviteError] = useState("");
-  const [inviteLoading, setInviteLoading] = useState(false);
-  const [checkoutLoading, setCheckoutLoading] = useState(false);
-  const [checkoutError, setCheckoutError] = useState("");
-  const chosen = PLANS.find(p => p.id === plan);
-
-  const start = async () => {
-    setCheckoutLoading(true);
-    setCheckoutError("");
-    if (isSupabaseConfigured) {
-      // Real Stripe Checkout, redirects user to Stripe's hosted page.
-      const result = await startCheckout(plan);
-      if (result.url) {
-        window.location.href = result.url;
-        return; // page will navigate away
-      }
-      setCheckoutError(result.error ?? "Could not start checkout. Please try again.");
-      setCheckoutLoading(false);
-    } else {
-      // No backend, local pilot simulation.
-      const now = new Date();
-      const endsAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
-      save({ ...profile, plan, trialStartedAt: now.toISOString(), trialEndsAt: endsAt, subscriptionStatus: "trialing" });
-      scheduleTrial(profile.email, chosen?.name || plan, chosen?.price || "", endsAt);
-      onStarted?.();
-      proceed();
-    }
-  };
-
-  const redeem = async () => {
-    const code = inviteInput.trim().toUpperCase();
-    if (!code) { setInviteError("Please enter your invite code."); return; }
-    setInviteLoading(true);
-    setInviteError("");
-    const result = await redeemInviteCode(code);
-    setInviteLoading(false);
-    if (!result.ok) { setInviteError(result.error ?? "Invalid code."); return; }
-    save({ ...profile, subscriptionStatus: "active", inviteCode: code, inviteSubEnd: result.subscriptionEnd ?? "" });
-    onStarted?.();
-    proceed();
-  };
-
-  return (
-    <div className="subscription">
-      <div className="sub-logo"><img src="/images/logo-1.png" alt="MoodFood" /><span>MoodFood</span></div>
-      <section className="billing">
-        <span>DINNER DECISIONS, LIGHTER</span>
-        <h1>{mode === "invite" ? "Redeem your invite." : "Keep MoodFood deciding with you."}</h1>
-        <div className="sub-mode-toggle">
-          <button className={mode === "trial" ? "active" : ""} onClick={() => setMode("trial")}>Free trial</button>
-          <button className={mode === "invite" ? "active" : ""} onClick={() => setMode("invite")}>Invite code</button>
-        </div>
-        {mode === "trial" ? (
-          <>
-            <p>Save your quick profile, unlock guided cooking, and let Moody get sharper every time you cook, reject, or rate a meal.</p>
-            <PlanPicker plan={plan} setPlan={setPlan} />
-            {checkoutError && <p className="invite-error">{checkoutError}</p>}
-            <button className="primary" onClick={start} disabled={checkoutLoading}>
-              {checkoutLoading ? "Opening checkout…" : <>Start 7-day free trial <ArrowRight /></>}
-            </button>
-            <small>7 days free, then {chosen?.price}. Cancel before the trial ends if MoodFood does not make dinner feel easier.</small>
-          </>
-        ) : (
-          <>
-            <p>If you received an invite code, enter it below to unlock a full year of MoodFood, no payment required.</p>
-            <input
-              className="invite-code-input"
-              value={inviteInput}
-              onChange={e => { setInviteInput(e.target.value.toUpperCase()); setInviteError(""); }}
-              placeholder="e.g. LAUNCH2026"
-              maxLength={40}
-              autoCapitalize="characters"
-              spellCheck={false}
-            />
-            {inviteError && <p className="invite-error">{inviteError}</p>}
-            <button className="primary" onClick={redeem} disabled={inviteLoading}>
-              {inviteLoading ? "Checking…" : <>Redeem code <ArrowRight /></>}
-            </button>
-            <small>Valid codes grant 1 year of full access, tracked in Stripe.</small>
-          </>
-        )}
-        <button className="skip" onClick={proceed}>Continue without saving trial</button>
-      </section>
-    </div>
-  );
-}
