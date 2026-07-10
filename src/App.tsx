@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState, useCallback, Fragment } from "react";
 import {
-  ArrowLeft, ArrowRight, Bell, Check, ChefHat, ChevronRight,
-  Clock3, Heart, Home, Mic, MoreVertical, Play, RotateCcw, Search,
+  ArrowLeft, ArrowRight, Check, ChefHat, ChevronRight,
+  Clock3, Heart, Home, MoreVertical, Play, RotateCcw, Search,
   Settings2, ShoppingCart, Sparkles, Star, Timer, X, ShieldCheck, UserRound, BarChart3,
   Upload, LogOut, Plus, ClipboardCheck, LayoutDashboard, Camera, Users, MessageCircle,
-  Send, UserPlus, Lock, Globe2, Activity, Salad, Wheat, Droplets, TrendingUp, Mail, CreditCard,
+  Send, UserPlus, Lock, Globe2, Activity, Salad, Wheat, Droplets, TrendingUp, Mail,
   HelpCircle, Info, FlameKindling, Dna, BookMarked, Share2, Trash2,
   Eye, EyeOff,
 } from "lucide-react";
@@ -16,8 +16,8 @@ import { recordRating, recordRun, fetchRatingHistory, deriveCuisineSignal, deriv
 import { cleanText, compactPhotoLogs, readSafeImage, validateEmail } from "./security";
 import { onboardingQuestions, onboardingSections, PANTRY_GROUPS, type OnboardingKey, type OnboardingQuestion, type ProfileValue } from "./onboarding";
 import { SPOON_CUISINES, MEAL_TYPES, SEARCH_DIETS, SORT_OPTIONS, type RecipeFilters } from "./searchFilters";
-import { sendConfirmationEmail, sendWelcomeEmail, scheduleTrial, runDue, readInbox, unreadCount, markAllRead, cancelScheduled, simulateTrialEnd, type InboxItem } from "./notifications";
-import { analyzeFood, sumNutrition, flaggedAllergens, type FoodPhoto } from "./foodAnalysis";
+import { sendConfirmationEmail, sendWelcomeEmail, scheduleTrial, runDue, unreadCount, markAllRead, cancelScheduled } from "./notifications";
+import { sumNutrition, type FoodPhoto } from "./foodAnalysis";
 import { foodPhotoUrl, persistFoodPhoto } from "./photoStorage";
 import { aiChat, MoodyError, type ChatTurn } from "./ai";
 import { fetchCuratedRecipes, buildFoodHistory } from "./recipes";
@@ -68,6 +68,11 @@ import { MainMenu } from "./components/MainMenu";
 import { PickCard } from "./components/PickCard";
 import { TokenInput } from "./components/TokenInput";
 import { Avatar, Choice, EditableCues, PlanPicker, ProfileEditor, SettingsGroup, SetupStep, Trend } from "./components/misc";
+import { DailySuggestionCarousel } from "./components/DailySuggestionCarousel";
+import { NotificationsPanel } from "./components/NotificationsPanel";
+import { FoodCamera } from "./components/FoodCamera";
+import { VoiceFab } from "./components/moody/VoiceFab";
+import { MoodyFab } from "./components/moody/MoodyFab";
 
 // photoLogs carry base64 image data (megabytes). They must never travel in
 // preferences_json: they bloat the profiles row, the debounced upsert, and the
@@ -1677,86 +1682,6 @@ function HomeScreen({ profile, diary, saved, catalog, mood, setMood, energy, set
   );
 }
 
-function DailySuggestionCarousel({ suggestions, onPick, showHero = true }: { suggestions: Recipe[]; onPick: (r: Recipe) => void; showHero?: boolean }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const pausedRef = useRef(false);
-  const indexRef = useRef(0);
-
-  const [hero, ...rest] = suggestions.length ? suggestions : [null as unknown as Recipe];
-  const carouselItems = showHero ? rest : suggestions;
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el || carouselItems.length <= 1) return;
-
-    const pause = () => { pausedRef.current = true; };
-    // Resume after a short delay so a quick swipe doesn't immediately advance
-    const resume = () => { setTimeout(() => { pausedRef.current = false; }, 1200); };
-
-    el.addEventListener("touchstart", pause, { passive: true });
-    el.addEventListener("touchend", resume, { passive: true });
-    el.addEventListener("mouseenter", pause);
-    el.addEventListener("mouseleave", resume);
-
-    const id = setInterval(() => {
-      if (pausedRef.current || !el) return;
-      const cardWidth = el.scrollWidth / carouselItems.length;
-      indexRef.current = (indexRef.current + 1) % carouselItems.length;
-      // Snap back to start without animation so the loop feels infinite
-      if (indexRef.current === 0) {
-        el.scrollTo({ left: 0, behavior: "instant" as ScrollBehavior });
-      } else {
-        el.scrollTo({ left: indexRef.current * cardWidth, behavior: "smooth" });
-      }
-    }, 3000);
-
-    return () => {
-      clearInterval(id);
-      el.removeEventListener("touchstart", pause);
-      el.removeEventListener("touchend", resume);
-      el.removeEventListener("mouseenter", pause);
-      el.removeEventListener("mouseleave", resume);
-    };
-  }, [carouselItems.length]);
-
-  if (!suggestions.length) return null;
-
-  return (
-    <div className="suggestion-section">
-      {/* Hero — largest pick (optional) */}
-      {showHero && (
-        <button className="suggestion-hero" onClick={() => onPick(hero)}>
-          <RecipeImage sources={stepImageSources(undefined, hero.image)} alt={hero.title} />
-          <div className="suggestion-hero-veil" />
-          <div className="suggestion-hero-info">
-            <span className="suggestion-cuisine">{hero.cuisine}</span>
-            <b className="suggestion-hero-title">{hero.title}</b>
-            <span className="suggestion-hero-time"><Clock3 size={12} /> {hero.time} min</span>
-          </div>
-        </button>
-      )}
-
-      {/* Carousel */}
-      {carouselItems.length > 0 && <>
-        <span className="filter-label" style={{ display: "block", marginTop: showHero ? 14 : 0 }}>
-          {showHero ? "More for today" : "Today's picks for you"}
-        </span>
-        <div className="suggestion-carousel" ref={scrollRef}>
-          {carouselItems.map(r => (
-            <button key={r.id} className="suggestion-card" onClick={() => onPick(r)}>
-              <RecipeImage sources={stepImageSources(undefined, r.image)} alt={r.title} />
-              <div className="suggestion-card-veil" />
-              <div className="suggestion-card-info">
-                <b className="suggestion-title">{r.title}</b>
-                <span className="suggestion-card-time"><Clock3 size={10} /> {r.time} min</span>
-              </div>
-            </button>
-          ))}
-        </div>
-      </>}
-    </div>
-  );
-}
 
 function SearchScreen({
   profile, diary, saved, catalog, onSearch,
@@ -2528,119 +2453,6 @@ function FoodProfileScreen({ profile, save, back }: { profile: Profile; save: (p
     })}
   </div>;
 }
-// Floating draggable mic button shown while the Moody panel is open.
-// A short drag repositions it; a tap toggles voice input.
-function VoiceFab({ listening, onPress }: { listening: boolean; onPress: () => void }) {
-  const SIZE = 64, MARGIN = 16, THRESHOLD = 6;
-  const clamp = (x: number, y: number) => ({
-    x: Math.max(MARGIN, Math.min(x, window.innerWidth - SIZE - MARGIN)),
-    y: Math.max(MARGIN, Math.min(y, window.innerHeight - SIZE - MARGIN)),
-  });
-  const [pos, setPos] = useState(() => {
-    try { const s = localStorage.getItem("voiceFabPos"); if (s) return clamp(JSON.parse(s).x, JSON.parse(s).y); } catch { /* ignore */ }
-    return { x: MARGIN, y: window.innerHeight - SIZE - 260 };
-  });
-  const ref = useRef<HTMLButtonElement>(null);
-  const drag = useRef<{ sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null);
-  const suppressClick = useRef(false);
-
-  useEffect(() => {
-    const onResize = () => setPos(p => ({ x: Math.max(MARGIN, Math.min(p.x, window.innerWidth - SIZE - MARGIN)), y: Math.max(MARGIN, Math.min(p.y, window.innerHeight - SIZE - MARGIN)) }));
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-
-  const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
-    suppressClick.current = false;
-    drag.current = { sx: e.clientX, sy: e.clientY, ox: pos.x, oy: pos.y, moved: false };
-    try { ref.current?.setPointerCapture(e.pointerId); } catch { /* not capturable */ }
-  };
-  const onPointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
-    const d = drag.current; if (!d) return;
-    const dx = e.clientX - d.sx, dy = e.clientY - d.sy;
-    if (!d.moved && (Math.abs(dx) > THRESHOLD || Math.abs(dy) > THRESHOLD)) d.moved = true;
-    if (d.moved) setPos(clamp(d.ox + dx, d.oy + dy));
-  };
-  const onPointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
-    const d = drag.current; drag.current = null;
-    try { ref.current?.releasePointerCapture?.(e.pointerId); } catch { /* already released */ }
-    if (!d) return;
-    if (d.moved) {
-      setPos(p => { try { localStorage.setItem("voiceFabPos", JSON.stringify(p)); } catch { /* ignore */ } return p; });
-    } else {
-      onPress();
-    }
-    suppressClick.current = true;
-  };
-  const onClick = () => { if (suppressClick.current) { suppressClick.current = false; return; } onPress(); };
-
-  return <button ref={ref} className={`voice-fab${listening ? " listening" : ""}`} style={{ left: pos.x, top: pos.y, touchAction: "none", cursor: "grab" }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onClick={onClick} aria-label={listening ? "Stop listening" : "Speak to Moody (drag to move)"}><Mic size={28} /></button>;
-}
-
-// Floating "Ask Moody" button the user can drag anywhere on screen. A short drag
-// repositions it (and the position persists); a tap opens Moody. Position is
-// clamped to the viewport and re-clamped on resize/orientation change.
-function MoodyFab({ onOpen }: { onOpen: () => void }) {
-  const SIZE = 52, MARGIN = 16, NAV = 92, THRESHOLD = 6;
-  const clamp = (x: number, y: number) => ({
-    x: Math.max(MARGIN, Math.min(x, window.innerWidth - SIZE - MARGIN)),
-    y: Math.max(MARGIN, Math.min(y, window.innerHeight - SIZE - MARGIN)),
-  });
-  const defaultPos = () => ({ x: window.innerWidth - SIZE - MARGIN, y: window.innerHeight - SIZE - NAV });
-  const [pos, setPos] = useState(() => {
-    try { const s = localStorage.getItem("moodyFabPos"); if (s) return clamp(JSON.parse(s).x, JSON.parse(s).y); } catch { /* ignore */ }
-    return defaultPos();
-  });
-  const ref = useRef<HTMLButtonElement>(null);
-  const drag = useRef<{ sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null);
-  const suppressClick = useRef(false);
-
-  // Keep it on-screen if the viewport changes (rotation, resize, keyboard).
-  useEffect(() => {
-    const onResize = () => setPos(p => clamp(p.x, p.y));
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-
-  const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
-    suppressClick.current = false; // start fresh so a stale flag never eats a tap
-    drag.current = { sx: e.clientX, sy: e.clientY, ox: pos.x, oy: pos.y, moved: false };
-    try { ref.current?.setPointerCapture(e.pointerId); } catch { /* not capturable */ }
-  };
-  const onPointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
-    const d = drag.current; if (!d) return;
-    const dx = e.clientX - d.sx, dy = e.clientY - d.sy;
-    if (!d.moved && (Math.abs(dx) > THRESHOLD || Math.abs(dy) > THRESHOLD)) d.moved = true;
-    if (d.moved) setPos(clamp(d.ox + dx, d.oy + dy));
-  };
-  const onPointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
-    const d = drag.current; drag.current = null;
-    try { ref.current?.releasePointerCapture?.(e.pointerId); } catch { /* already released */ }
-    if (!d) return;
-    if (d.moved) {
-      setPos(p => { try { localStorage.setItem("moodyFabPos", JSON.stringify(p)); } catch { /* ignore */ } return p; });
-    } else {
-      onOpen(); // a tap opens Moody
-    }
-    suppressClick.current = true; // swallow the synthesized click the browser fires next
-  };
-  // Keyboard activation (Enter/Space) fires click with no preceding pointer events.
-  const onClick = () => {
-    if (suppressClick.current) { suppressClick.current = false; return; }
-    onOpen();
-  };
-
-  return <button
-    ref={ref}
-    className="moody-fab"
-    style={{ left: pos.x, top: pos.y, right: "auto", bottom: "auto", touchAction: "none", cursor: "grab" }}
-    onPointerDown={onPointerDown}
-    onPointerMove={onPointerMove}
-    onPointerUp={onPointerUp}
-    onClick={onClick}
-    aria-label="Ask Moody (drag to move)"
-  ><Sparkles /></button>;
-}
 
 function MoodyPanel({ profile, catalog, loadCatalog, turns, setTurns, close, openRecipe }: { profile: Profile; catalog: Recipe[]; loadCatalog: (query?: string) => Promise<Recipe[]>; turns: ChatTurn[]; setTurns: React.Dispatch<React.SetStateAction<ChatTurn[]>>; close: () => void; openRecipe: (recipe: Recipe) => void }) {
   const [input, setInput] = useState("");
@@ -2710,167 +2522,7 @@ function MoodyPanel({ profile, catalog, loadCatalog, turns, setTurns, close, ope
   })}{busy && <p className="moody-message">…</p>}<div ref={bottomRef} /></div><div className="prompt-row"><button onClick={() => send("Pick the easiest safe dinner.")}>Pick the easiest</button><button onClick={() => send("I only have 15 minutes.")}>Only 15 minutes</button>{latestRecipe && <button onClick={() => send(`Why are you recommending ${latestRecipe.title}?`)}>Explain this pick</button>}</div><form onSubmit={e => { e.preventDefault(); void send(input); }}><input value={input} onChange={e => setInput(e.target.value)} placeholder="Tell Moody what you need..." /><button disabled={busy}><ArrowRight /></button></form></aside></div>;
 }
 
-function NotificationsPanel({ close, profile, save, refresh }: { close: () => void; profile: Profile; save: (p: Profile) => void; refresh: () => void }) {
-  const [, force] = useState(0);
-  const items = readInbox();
-  const sent = items.filter(i => i.status === "sent").sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
-  const scheduled = items.filter(i => i.status === "scheduled").sort((a, b) => +new Date(a.scheduledFor!) - +new Date(b.scheduledFor!));
-  const hasPending = scheduled.some(i => i.tag === "receipt");
-  const fmt = (iso?: string) => iso ? new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
-  const simulate = () => { const { charged } = simulateTrialEnd(); if (charged) save({ ...profile, subscriptionStatus: "active" }); refresh(); force(n => n + 1); };
-  const cancel = () => { cancelScheduled(); save({ ...profile, subscriptionStatus: "canceled" }); refresh(); force(n => n + 1); };
-  const Row = (i: InboxItem) => <div className={"notif-card" + (i.read ? "" : " unread")} key={i.id}><span className={"ic " + i.tag}>{i.tag === "receipt" ? <CreditCard size={18} /> : i.tag === "reminder" ? <Bell size={18} /> : i.tag === "welcome" ? <Sparkles size={18} /> : <Mail size={18} />}</span><div><b>{i.subject}</b><p>{i.body}</p><div className="meta"><span className="chip">{i.kind === "email" ? "Email" : "Push"}</span>{i.to && i.kind === "email" && <span>{i.to}</span>}{i.status === "scheduled" ? <span className="chip scheduled">Scheduled {fmt(i.scheduledFor)}</span> : <span>{fmt(i.createdAt)}</span>}</div></div></div>;
-  return <div className="panel-bg" onClick={close}><aside className="moody-panel" onClick={e => e.stopPropagation()}>
-    <header><div className="moody"><Bell size={22} /></div><div><b>Notifications</b><span>Emails &amp; reminders</span></div><button onClick={close}><X /></button></header>
-    <div className="notif-list" style={{ overflowY: "auto", flex: 1 }}>
-      {scheduled.map(Row)}
-      {sent.map(Row)}
-      {!items.length && <div className="notif-empty"><Mail /><p>No notifications yet. Create an account and start a trial to see confirmations, reminders, and receipts here.</p></div>}
-    </div>
-    {hasPending && profile.subscriptionStatus === "trialing" && <><button className="sim-trial" onClick={simulate}>Simulate trial ending now</button><button className="link-coral" onClick={cancel} style={{ width: "100%" }}>Cancel before trial ends</button></>}
-  </aside></div>;
-}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// FOOD PHOTO CAMERA + ANALYSIS
-// ─────────────────────────────────────────────────────────────────────────────
-
-function FoodCamera({
-  label = "Log a meal with photo",
-  onSave,
-  hint,
-  allergies = [],
-  compact = false,
-  tile = false,
-  style,
-}: {
-  label?: string;
-  onSave: (p: FoodPhoto) => void;
-  hint?: { recipeCalories?: number; recipeName?: string };
-  allergies?: string[];
-  compact?: boolean;
-  tile?: boolean;
-  style?: React.CSSProperties;
-}) {
-  const [state, setState] = useState<"idle" | "analyzing" | "done">("idle");
-  const [result, setResult] = useState<FoodPhoto | null>(null);
-
-  const handle = async (file?: File) => {
-    if (!file) return;
-    try {
-      const image = await readSafeImage(file);
-      setState("analyzing");
-      const analysis = await analyzeFood(image, { ...hint, allergies });
-      setResult(analysis);
-      setState("done");
-    } catch {
-      setState("idle");
-    }
-  };
-
-  const flagged = result ? flaggedAllergens(result.allergens, allergies) : [];
-
-  if (state === "analyzing") {
-    return (
-      <div className="food-camera-analyzing" style={style}>
-        <div className="fca-spinner" />
-        <span>Moody is reading your plate…</span>
-      </div>
-    );
-  }
-
-  if (state === "done" && result) {
-    return (
-      <div className="food-analysis-card" style={style}>
-        <img src={result.image} alt="Your meal" className="fac-photo" />
-        <div className="fac-body">
-          <div className="fac-dish">
-            <b>{result.dish}</b>
-            <span className="fac-conf">{result.confidence}% confidence</span>
-          </div>
-          <div className="fac-calories">
-            <FlameKindling size={18} /><span className="fac-kcal">{result.calories}</span><span className="fac-unit">kcal</span>
-          </div>
-          <div className="fac-macros">
-            <MacroBar label="Protein" value={result.protein} color="#57aecb" max={60} />
-            <MacroBar label="Carbs"   value={result.carbs}   color="#f0c050" max={100} />
-            <MacroBar label="Fat"     value={result.fat}     color="#ef9a6a" max={50} />
-            <MacroBar label="Fibre"   value={result.fiber}   color="#6acd8c" max={20} />
-          </div>
-          {/* Allergen warning, flag anything matching the user's profile first. */}
-          {!!flagged.length && (
-            <div className="fac-allergen-alert">
-              <ShieldCheck size={15} />
-              <span>Heads up, may contain <b>{flagged.join(", ")}</b>, which you flagged as an allergy. Always double-check.</span>
-            </div>
-          )}
-          {!!result.allergens.length && (
-            <div className="fac-allergens">
-              <span className="fac-section-label">Allergens detected</span>
-              <div className="fac-allergen-chips">
-                {result.allergens.map(a => <span key={a} className={flagged.includes(a) ? "allergen-chip danger" : "allergen-chip"}>{a}</span>)}
-              </div>
-            </div>
-          )}
-          {!!result.vitamins.length && (
-            <div className="fac-vitamins">
-              <span className="fac-section-label">Key vitamins &amp; minerals</span>
-              {result.vitamins.map(v => (
-                <div className="vitamin-row" key={v.name}>
-                  <span className="vitamin-name">{v.name}</span>
-                  <div className="vitamin-track"><div className="vitamin-fill" style={{ width: `${Math.min(100, v.percentDV)}%` }} /></div>
-                  <span className="vitamin-val">{v.amount}{v.unit}{v.percentDV ? ` · ${v.percentDV}% DV` : ""}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          <div className="fac-actions">
-            <button className="primary" style={{ flex: 1 }} onClick={() => { onSave(result); setState("idle"); setResult(null); }}>
-              Save to diary <Check size={16} />
-            </button>
-            <button className="secondary" onClick={() => { setState("idle"); setResult(null); }}>Discard</button>
-          </div>
-          <small className="fac-disclaimer">Estimates only, not medical or nutritional advice.</small>
-        </div>
-      </div>
-    );
-  }
-
-  if (tile) {
-    return (
-      <label className="dps-add-tile" style={style}>
-        <Camera size={20} />
-        <input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => handle(e.target.files?.[0])} />
-      </label>
-    );
-  }
-
-  if (compact) {
-    return (
-      <label className="food-camera-compact" style={style}>
-        <Camera size={16} />{label}
-        <input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => handle(e.target.files?.[0])} />
-      </label>
-    );
-  }
-
-  return (
-    <label className="food-camera-btn" style={style}>
-      <Camera size={20} />{label}
-      <input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => handle(e.target.files?.[0])} />
-    </label>
-  );
-}
-
-function MacroBar({ label, value, color, max }: { label: string; value: number; color: string; max: number }) {
-  return (
-    <div className="macro-row">
-      <span className="macro-label">{label}</span>
-      <div className="macro-track"><div className="macro-fill" style={{ width: `${Math.min(100, (value / max) * 100)}%`, background: color }} /></div>
-      <span className="macro-val">{value}g</span>
-    </div>
-  );
-}
 
 function FoodLogScreen({ logs, addPhoto, back, allergies }: { logs: FoodPhoto[]; addPhoto: (p: FoodPhoto) => void; back: () => void; allergies: string[] }) {
   const grouped = logs.reduce<Record<string, FoodPhoto[]>>((acc, l) => {
