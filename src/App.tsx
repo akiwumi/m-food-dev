@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { type Recipe } from "./data";
 import { bundledRecipes } from "./bundledRecipes";
 import { clearStored, defaultDiners, defaultProfile, useStoredState, type Diner, type Profile, type SocialPost } from "./store";
@@ -21,13 +21,13 @@ import { trackSearch } from "./telemetry";
 import { Landing } from "./Landing";
 import { readDevTestState } from "./devTestState";
 import { buildQuickStartProfilePatch } from "./activation";
-import { appendUniqueRecipes, RESULT_BATCH_SIZE, takeUniqueBatch } from "./resultBatches";
 import { syncSubscriptionFromDB } from "./api/backend";
-import { type Entry, type Page, type SearchRequest } from "./appTypes";
+import { type Entry, type Page } from "./appTypes";
 import { MenuCtx } from "./components/MenuCtx";
 import { usePullToRefresh } from "./hooks/usePullToRefresh";
 import { useNotifications } from "./hooks/useNotifications";
 import { useMoodyChat } from "./hooks/useMoodyChat";
+import { useRecipeSearch } from "./hooks/useRecipeSearch";
 import { useLearningSignals } from "./hooks/useLearningSignals";
 import { useProfileSync, prefsForUpsert } from "./hooks/useProfileSync";
 import { PullRefreshIndicator } from "./components/PullRefreshIndicator";
@@ -117,14 +117,6 @@ export default function App() {
   const [cuisine, setCuisine] = useState("");
   const [homeDiet, setHomeDiet] = useState("Any");
   const [results, setResults] = useState(false);
-  const [searchRequest, setSearchRequest] = useState<SearchRequest | null>(null);
-  const [searchResults, setSearchResults] = useState<Recipe[]>([]);
-  const [searchCandidates, setSearchCandidates] = useState<Recipe[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [searchOffset, setSearchOffset] = useState(0);
-  const [searchRelaxed, setSearchRelaxed] = useState(false);
-  const activeSearchId = useRef(0);
-  const activeSearchAbort = useRef<AbortController | null>(null);
   const [moodyOpen, setMoodyOpen] = useState(false);
   const [detailReturnMoody, setDetailReturnMoody] = useState(false);
   const [pendingShare, setPendingShare] = useState<string | undefined>(undefined);
@@ -236,81 +228,8 @@ export default function App() {
     [diary, profile.photoLogs, saved, catalog],
   );
   const { moodyTurns, setMoodyTurns, loadMoodyCatalog } = useMoodyChat(catalog, setCatalog, foodHistory, mood, sharedProfile);
+  const { searchRequest, setSearchRequest, searchResults, searchLoading, searchRelaxed, runSearch, cancelSearch } = useRecipeSearch(sharedProfile, mood, foodHistory, setPage);
 
-  const runSearch = async (request: SearchRequest, nextPage = false) => {
-    activeSearchAbort.current?.abort();
-    const searchId = activeSearchId.current + 1;
-    activeSearchId.current = searchId;
-    const controller = new AbortController();
-    activeSearchAbort.current = controller;
-    const isActiveSearch = () => activeSearchId.current === searchId && !controller.signal.aborted;
-    const offset = nextPage ? searchOffset + 20 : 0;
-    setSearchRequest(request);
-    setSearchOffset(offset);
-    if (!nextPage) {
-      setSearchResults([]);
-      setSearchCandidates([]);
-      setSearchRelaxed(false);
-    }
-    setSearchLoading(true);
-    setPage("results");
-    window.scrollTo(0, 0);
-    const startedAt = performance.now();
-    try {
-      // Show bundled matches immediately so the user sees results while the live
-      // search is in flight. The spinner only appears when there are zero local
-      // matches (niche queries). Live results arrive later and are ranked first.
-      const offlineCandidates = finalizeSearchResults(bundledRecipes, sharedProfile, request.filters, Infinity);
-      if (!nextPage && offlineCandidates.length) {
-        setSearchCandidates(offlineCandidates);
-        setSearchResults(takeUniqueBatch(offlineCandidates));
-      }
-
-      // Explicit search honors the filters exactly — relax:false tells the backend
-      // not to silently drop cuisine/course/time to force a result.
-      const live = await fetchCuratedRecipes(sharedProfile, mood, 50, request.filters.maxReadyTime ?? 60, request.query, request.filters, foodHistory, offset, false, false, controller.signal);
-      if (!isActiveSearch()) return;
-      const liveCandidates = finalizeSearchResults(live ?? [], sharedProfile, request.filters, Infinity);
-      const strictCandidates = appendUniqueRecipes(
-        nextPage ? searchCandidates : [],
-        [...liveCandidates, ...offlineCandidates],
-        Infinity,
-      );
-      // When every strict filter combined yields nothing, fall back to a
-      // diet-only pass over the bundled catalog so the user always sees
-      // something (diet is the only safety-critical filter, so it's kept).
-      const relaxedFallback = !nextPage && !strictCandidates.length
-        ? finalizeSearchResults(bundledRecipes, sharedProfile, { diet: request.filters.diet }, Infinity)
-        : [];
-      const candidates = strictCandidates.length ? strictCandidates : relaxedFallback;
-      const isRelaxed = relaxedFallback.length > 0 && !strictCandidates.length;
-      const results = nextPage
-        ? appendUniqueRecipes(searchResults, candidates, RESULT_BATCH_SIZE)
-        : takeUniqueBatch(candidates);
-      const fallbackUsed = !liveCandidates.length && (offlineCandidates.length > 0 || relaxedFallback.length > 0);
-      setSearchRelaxed(isRelaxed);
-      setSearchCandidates(candidates);
-      setSearchResults(results);
-      // Slice 0 telemetry: operational only, fire-and-forget (never awaited).
-      trackSearch({
-        mode: nextPage ? "load_more" : "search",
-        durationMs: Math.round(performance.now() - startedAt),
-        resultCount: results.length,
-        source: live?.length ? "spoonacular" : fallbackUsed && results.length ? "local" : "none",
-        aiAttempted: false,
-        aiSucceeded: false,
-        fallbackUsed,
-        rankingConfigVersion: RANKING_CONFIG_VERSION,
-        hasQuery: !!request.query,
-        filterCount: Object.values(request.filters).filter(v => v !== undefined && v !== "" && !(Array.isArray(v) && v.length === 0)).length,
-      });
-    } finally {
-      if (activeSearchId.current === searchId) {
-        activeSearchAbort.current = null;
-        setSearchLoading(false);
-      }
-    }
-  };
 
   // When the user asks for recommendations, fetch real recipes (deterministic by
   // default; AI-curated only when opted in).
@@ -497,13 +416,6 @@ export default function App() {
       });
     }
     // canceled: do nothing, stay on subscription screen
-  }, []);
-
-  const cancelSearch = useCallback(() => {
-    activeSearchAbort.current?.abort();
-    activeSearchAbort.current = null;
-    activeSearchId.current += 1;
-    setSearchLoading(false);
   }, []);
 
   const go = (next: Page) => {
