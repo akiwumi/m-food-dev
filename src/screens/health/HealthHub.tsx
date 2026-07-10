@@ -1,0 +1,10 @@
+import { Users, ChevronRight, Salad, TrendingUp, Clock3 } from "lucide-react";
+import { TopBar } from "../../components/AppChrome";
+import { Trend } from "../../components/misc";
+import type { Page } from "../../appTypes";
+import type { Recipe } from "../../data";
+
+export function HealthHub({ diary, go }: { diary: { recipe: Recipe; rating: number; when: string }[]; go: (p: Page) => void }) {
+  const vegetarian = diary.filter(d => d.recipe.diets.includes("Vegetarian")).length;
+  return <div className="screen health"><TopBar title="Your health" /><section className="health-hero"><span>LAST 30 DAYS</span><h1>Your dietary trends.</h1><p>A calm breakdown based on meals you logged. Informational only, never medical advice.</p><div><b>{diary.length}</b><small>meals logged</small><b>{new Set(diary.map(d => d.recipe.cuisine)).size}</b><small>cuisines</small><b>{vegetarian}</b><small>plant-forward</small></div></section><button className="family-health-link" onClick={() => go("family-health")}><Users /><span><b>Family health profile</b><small>Overall analytics for family meals only</small></span><ChevronRight /></button><div className="health-links"><button onClick={() => go("health-nutrition")}><Salad /><span><b>Nutrition balance</b><small>Calories, protein, fiber, and meal balance</small></span><ChevronRight /></button><button onClick={() => go("health-variety")}><TrendingUp /><span><b>Dietary variety</b><small>Cuisines, proteins, vegetables, and repetition</small></span><ChevronRight /></button><button onClick={() => go("health-patterns")}><Clock3 /><span><b>Eating patterns</b><small>Cook frequency, timing, and completion habits</small></span><ChevronRight /></button></div><section className="trend-preview"><h2>This month at a glance</h2><Trend label="Plant-forward meals" value={Math.min(100, vegetarian * 25 + 25)} /><Trend label="Recipe variety" value={Math.min(100, new Set(diary.map(d => d.recipe.id)).size * 28)} /><Trend label="Home-cooked rhythm" value={Math.min(100, diary.length * 18)} /></section></div>;
+}

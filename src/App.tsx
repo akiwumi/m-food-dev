@@ -4,7 +4,7 @@ import {
   Clock3, Heart, Home, MoreVertical, Play, RotateCcw, Search,
   Settings2, ShoppingCart, Sparkles, Star, Timer, X, ShieldCheck, UserRound, BarChart3,
   Upload, LogOut, Plus, ClipboardCheck, LayoutDashboard, Camera, Users, MessageCircle,
-  Send, UserPlus, Lock, Globe2, Activity, Salad, Wheat, Droplets, TrendingUp, Mail,
+  Send, UserPlus, Lock, Globe2, Activity, Wheat, Droplets, Mail,
   HelpCircle, Info, FlameKindling, Dna, BookMarked, Share2, Trash2,
   Eye, EyeOff,
 } from "lucide-react";
@@ -14,11 +14,11 @@ import { clearStored, defaultDiners, defaultProfile, useStoredState, type Diner,
 import { profileForDiners, recommend, safeRecipes as applySafety, RANKING_CONFIG_VERSION, type CuisineSignal, type MoodCuisineSignal, type LearnedSignals } from "./recommendation";
 import { recordRating, recordRun, fetchRatingHistory, deriveCuisineSignal, deriveMoodCuisineSignal, suppressSignal } from "./behavioral";
 import { cleanText, compactPhotoLogs, readSafeImage, validateEmail } from "./security";
-import { onboardingQuestions, onboardingSections, PANTRY_GROUPS, type OnboardingKey, type OnboardingQuestion, type ProfileValue } from "./onboarding";
+import { onboardingQuestions, onboardingSections, type OnboardingKey, type OnboardingQuestion, type ProfileValue } from "./onboarding";
 import { SPOON_CUISINES, MEAL_TYPES, SEARCH_DIETS, SORT_OPTIONS, type RecipeFilters } from "./searchFilters";
 import { sendConfirmationEmail, sendWelcomeEmail, scheduleTrial, runDue, unreadCount, markAllRead, cancelScheduled } from "./notifications";
 import { sumNutrition, type FoodPhoto } from "./foodAnalysis";
-import { foodPhotoUrl, persistFoodPhoto } from "./photoStorage";
+import { persistFoodPhoto } from "./photoStorage";
 import { aiChat, MoodyError, type ChatTurn } from "./ai";
 import { fetchCuratedRecipes, buildFoodHistory } from "./recipes";
 import {
@@ -67,12 +67,24 @@ import { Moody } from "./components/Moody";
 import { MainMenu } from "./components/MainMenu";
 import { PickCard } from "./components/PickCard";
 import { TokenInput } from "./components/TokenInput";
-import { Avatar, Choice, EditableCues, PlanPicker, ProfileEditor, SettingsGroup, SetupStep, Trend } from "./components/misc";
+import { Avatar, Choice, EditableCues, PlanPicker, ProfileEditor, SettingsGroup, SetupStep } from "./components/misc";
 import { DailySuggestionCarousel } from "./components/DailySuggestionCarousel";
 import { NotificationsPanel } from "./components/NotificationsPanel";
 import { FoodCamera } from "./components/FoodCamera";
 import { VoiceFab } from "./components/moody/VoiceFab";
 import { MoodyFab } from "./components/moody/MoodyFab";
+import { FoodPhotoImg } from "./components/FoodPhotoImg";
+import { GroceryScreen } from "./screens/GroceryScreen";
+import { PantryScreen } from "./screens/PantryScreen";
+import { PlannerScreen } from "./screens/PlannerScreen";
+import { InsightsScreen } from "./screens/InsightsScreen";
+import { LibraryScreen } from "./screens/LibraryScreen";
+import { ImportScreen } from "./screens/ImportScreen";
+import { AdminScreen } from "./screens/AdminScreen";
+import { DinersScreen } from "./screens/DinersScreen";
+import { HealthHub } from "./screens/health/HealthHub";
+import { HealthDetail } from "./screens/health/HealthDetail";
+import { FamilyHealth } from "./screens/health/FamilyHealth";
 
 // photoLogs carry base64 image data (megabytes). They must never travel in
 // preferences_json: they bloat the profiles row, the debounced upsert, and the
@@ -1904,22 +1916,6 @@ function CookScreen({ recipe, exit, finish, allergies }: { recipe: Recipe; exit:
   </div>;
 }
 
-// Renders a persisted food-photo log. Uses the inline data URL when present
-// (pre-upload or offline fallback); otherwise resolves a signed URL from the
-// private food-photos bucket. Falls back to a placeholder when neither exists.
-function FoodPhotoImg({ photo, className, placeholder }: { photo: FoodPhoto; className?: string; placeholder?: string }) {
-  const [url, setUrl] = useState<string | null>(photo.image || null);
-  useEffect(() => {
-    if (photo.image) { setUrl(photo.image); return; }
-    if (!photo.imagePath) { setUrl(null); return; }
-    let on = true;
-    void foodPhotoUrl(photo.imagePath).then(u => { if (on) setUrl(u); });
-    return () => { on = false; };
-  }, [photo.image, photo.imagePath]);
-  return url
-    ? <img src={url} alt={photo.dish} className={className} />
-    : <span className={placeholder ?? "photo-placeholder"}><Camera size={16} /></span>;
-}
 
 function DiaryScreen({ diary, open, photoLogs, addPhoto, goFoodLog, allergies }: {
   diary: { recipe: Recipe; rating: number; when: string }[];
@@ -1968,50 +1964,6 @@ function DiaryScreen({ diary, open, photoLogs, addPhoto, goFoodLog, allergies }:
       </div>
     </div>
   );
-}
-function GroceryScreen({ items, setItems }: { items: string[]; setItems: (v: string[]) => void }) {
-  const [checked, setChecked] = useState<string[]>([]);
-  const [entry, setEntry] = useState("");
-  const add = (e: React.FormEvent) => { e.preventDefault(); const item = cleanText(entry, 80); if (item && !items.includes(item)) setItems([...items, item]); setEntry(""); };
-  return <div className="screen"><TopBar title="Grocery" /><div className="grocery-hero"><ShoppingCart /><div><b>{items.length - checked.length} items left</b><p>One calm lap around the store.</p></div></div>{items.length ? <div className="grocery-list"><small>YOUR LIST</small>{items.map(i => <button className={checked.includes(i) ? "checked" : ""} onClick={() => setChecked(toggle(checked, i))} key={i}><span><Check /></span><p>{i}</p></button>)}</div> : <div className="empty-state" style={{ margin: "18px 0" }}><ShoppingCart /><h2>Your list is empty</h2><p>Add ingredients here, or send them straight from any recipe.</p></div>}<form className="add-cue" onSubmit={add}><input value={entry} onChange={e => setEntry(e.target.value)} placeholder="Add an item" /><button aria-label="Add item"><Plus /></button></form></div>;
-}
-// Pantry, a maintainable inventory of what the user has at home. Backed by the
-// profile's pantryStaples so it both seeds from onboarding and feeds Moody's
-// recommendations ("suggest meals from what I already have").
-function PantryScreen({ items, setItems, addToGrocery }: { items: string[]; setItems: (v: string[]) => void; addToGrocery: (item: string) => void }) {
-  const [entry, setEntry] = useState("");
-  const have = new Set(items);
-  const addItem = (raw: string) => { const item = cleanText(raw, 80); if (item && !have.has(item)) setItems([...items, item]); };
-  const remove = (item: string) => setItems(items.filter(i => i !== item));
-  const submit = (e: React.FormEvent) => { e.preventDefault(); addItem(entry); setEntry(""); };
-  return <div className="screen pantry"><TopBar title="My pantry" />
-    <div className="grocery-hero"><Salad /><div><b>{items.length} item{items.length === 1 ? "" : "s"} stocked</b><p>Keep track of what you have, so Moody can cook from your kitchen.</p></div></div>
-    <form className="add-cue" onSubmit={submit}><input value={entry} onChange={e => setEntry(e.target.value)} placeholder="Add something you have" /><button aria-label="Add to pantry"><Plus /></button></form>
-    {items.length ? <div className="pantry-items"><small>IN YOUR KITCHEN</small><div className="pantry-chips">{items.map(i => <span className="pantry-chip" key={i}>{i}<button aria-label={`Remove ${i}`} onClick={() => remove(i)}><X size={13} /></button><button className="to-cart" aria-label={`Add ${i} to grocery list`} title="Running low? Add to grocery" onClick={() => addToGrocery(i)}><ShoppingCart size={13} /></button></span>)}</div></div>
-      : <div className="empty-state" style={{ margin: "18px 0" }}><Salad /><h2>Your pantry is empty</h2><p>Add staples and ingredients you keep at home. Tap a suggestion below to get started.</p></div>}
-    <div className="pantry-suggest"><small>QUICK ADD</small>{PANTRY_GROUPS.map(g => { const opts = g.items.filter(i => !have.has(i)); if (!opts.length) return null; return <div className="pantry-group" key={g.group}><b>{g.group}</b><div className="choice">{opts.map(i => <button onClick={() => addItem(i)} key={i}>{i}</button>)}</div></div>; })}</div>
-  </div>;
-}
-function PlannerScreen(_: { open: (r: Recipe) => void }) {
-  return <div className="screen"><TopBar title="This week" /><p className="quiet">Enough structure to help, enough room to change your mind.</p><div className="planner">{["Mon", "Tue", "Wed", "Thu", "Fri"].map((day, n) => <article key={day}><b>{day}<span>{n + 1}</span></b><button className="empty">+ Add dinner</button></article>)}</div></div>;
-}
-
-function InsightsScreen({ diary }: { diary: { recipe: Recipe; rating: number; when: string }[] }) {
-  const cuisines = new Set(diary.map(d => d.recipe.cuisine)).size;
-  const varietyScore = Math.min(96, diary.length * 12 + cuisines * 8);
-  const avgTime = diary.length ? Math.round(diary.reduce((a, d) => a + d.recipe.time, 0) / diary.length) : 0;
-  if (!diary.length) return (
-    <div className="screen"><TopBar title="Weekly reflection" />
-      <div className="empty-state" style={{ margin: "40px 16px" }}>
-        <BarChart3 /><h2>No cooks logged yet</h2>
-        <p>Once you log your first meal, Moody will show patterns, variety scores, and personalised reflections here.</p>
-      </div>
-    </div>
-  );
-  return <div className="screen"><TopBar title="Weekly reflection" /><section className="insight-lead"><span>VARIETY SCORE</span><b>{varietyScore}</b><em>Looking balanced</em><p>You cooked {diary.length} meal{diary.length !== 1 ? "s" : ""} across {cuisines} cuisine{cuisines !== 1 ? "s" : ""}. {avgTime ? `Average cook time: ${avgTime} min.` : ""}</p></section><div className="insight-cards"><article><Sparkles /><b>Your profile</b><h2>Personalised picks</h2><p>Every recommendation is ranked against your food-psychology profile. The more you cook, the sharper it gets.</p></article><article><Clock3 /><b>Your rhythm</b><h2>{avgTime ? `~${avgTime} min average` : "Build your rhythm"}</h2><p>{avgTime < 30 ? "Quick meals are your sweet spot. Moody will protect that on low-energy nights." : avgTime < 45 ? "You strike a good balance between speed and depth." : "You invest real time in cooking, Moody will keep surfacing recipes worth it."}</p></article><article><ShieldCheck /><b>Informational only</b><h2>Nutrition, without judgment</h2><p>These reflections use recipe snapshots and are not medical advice.</p></article></div></div>;
-}
-function LibraryScreen({ title, source, open, remove }: { title: string; source: Recipe[]; open: (r: Recipe) => void; remove?: (r: Recipe) => void }) {
-  return <div className="screen"><TopBar title={title} /><div className="search-grid">{source.length ? source.map(r => <article key={r.id}>{remove && <button className="remove-saved" aria-label={`Remove ${r.title} from saved`} onClick={() => remove(r)}><Trash2 size={17} /></button>}<img src={r.image} alt="" /><div><h2>{r.title}</h2><p>{r.reason}</p><button className="primary" onClick={() => open(r)}>View recipe</button></div></article>) : <div className="empty-state"><Heart /><h2>No saved recipes yet</h2><p>Save recipes that feel like good future answers.</p></div>}</div></div>;
 }
 function SettingsScreen({ profile, save, go, logout, aiCuration, setAiCuration, learnedSignals, setLearnedSignals, behavioralConsent }: { profile: Profile; save: (p: Profile) => void; go: (p: Page) => void; logout: () => void; aiCuration: boolean; setAiCuration: (v: boolean) => void; learnedSignals: boolean; setLearnedSignals: (v: boolean) => void; behavioralConsent: boolean }) {
   return <div className="screen"><TopBar title="Profile & settings" /><section className="profile-card">{profile.avatar ? <img src={profile.avatar} alt={profile.name} /> : <div>{profile.name.slice(0, 2).toUpperCase()}</div>}<h2>{profile.name}</h2><p>{profile.email || "Pilot preview profile"}</p><span>{profile.diet} · {profile.skill}</span></section><SettingsGroup title="ACCOUNT & COMMUNITY"><button onClick={() => go("account")}><UserRound />Account and public profile<ChevronRight /></button><button onClick={() => go("community")}><Users />Community and connections<ChevronRight /></button><button onClick={() => go("diners")}><UserPlus />Household diners<ChevronRight /></button></SettingsGroup><SettingsGroup title="HEALTH & FOOD PROFILE"><button onClick={() => go("food-profile")}><ClipboardCheck />Food profile &amp; preferences<ChevronRight /></button><button onClick={() => go("health")}><Activity />Health trends<ChevronRight /></button><button onClick={() => go("food-log")}><Camera />Food photo log<ChevronRight /></button><button onClick={() => go("psych-profile")}><Sparkles />Psychological food profile<ChevronRight /></button><button onClick={() => go("favorites")}><Heart />Saved recipes<ChevronRight /></button><button onClick={() => go("insights")}><BarChart3 />Weekly reflections<ChevronRight /></button><button><ShieldCheck />Safety filters<span>{profile.allergies.join(", ") || "None"}</span></button></SettingsGroup><SettingsGroup title="PREFERENCES"><label>Usual servings<input type="number" min="1" max="10" value={profile.servings} onChange={e => save({ ...profile, servings: +e.target.value })} /></label><label className="settings-toggle"><span><Sparkles size={15} />Let Moody personalize my mood feed<small>AI re-ranks your live picks. Off by default — your picks are mood-matched without it. Search always stays AI-free.</small></span><input type="checkbox" checked={aiCuration} onChange={e => setAiCuration(e.target.checked)} /></label><label className="settings-toggle"><span><BarChart3 size={15} />Learn from what I cook &amp; rate<small>{behavioralConsent ? "Nudges your picks toward cuisines you rate highly. Needs a few ratings first." : "Turn on “Learn from my recipe behaviour” in Data & privacy first."}</small></span><input type="checkbox" disabled={!behavioralConsent} checked={learnedSignals && behavioralConsent} onChange={e => setLearnedSignals(e.target.checked)} /></label><button onClick={() => go("privacy")}><ShieldCheck />Data &amp; privacy<ChevronRight /></button><button onClick={() => go("billing")}><Star />Subscription &amp; billing<ChevronRight /></button><button onClick={() => go("import")}><Upload />Import a recipe<ChevronRight /></button><button onClick={() => go("admin")}><LayoutDashboard />Editorial console<ChevronRight /></button><button onClick={() => go("help")}><HelpCircle />Help, tutorial &amp; FAQ<ChevronRight /></button></SettingsGroup><button className="danger" onClick={logout}><LogOut />Sign out and replay first launch</button></div>;
@@ -2099,14 +2051,6 @@ function DataPrivacyScreen({ signal, moodSignal, suppressed, learningOn, onForge
     </SettingsGroup>
     {note && <p className="source-note live"><Check size={13} /> {note}</p>}
   </div>;
-}
-function ImportScreen() {
-  const [url, setUrl] = useState(""); const [done, setDone] = useState(false);
-  return <div className="screen"><TopBar title="Import recipe" /><section className="import-card"><Upload /><span>WEB RECIPE IMPORT</span><h1>Bring a trusted recipe into your library.</h1><p>We’ll preserve the source, extract ingredients and steps, then ask you to review it before use.</p><input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://example.com/recipe" /><button className="primary" onClick={() => setDone(Boolean(url))}>Import & review</button>{done && <div className="import-success"><Check /><b>Draft created</b><span>Structure checked · source retained · waiting for review</span></div>}</section></div>;
-}
-function AdminScreen({ catalog }: { catalog: Recipe[] }) {
-  const [statuses, setStatuses] = useState<Record<string, string>>({});
-  return <div className="admin"><header><img src="/images/logo-1.png" alt="" /><div><span>EDITORIAL CONSOLE</span><h1>Recipe quality desk</h1></div></header><div className="admin-stats"><article><b>{catalog.length}</b><span>Total recipes</span></article><article><b>{catalog.filter(r => r.status === "published").length}</b><span>Published & verified</span></article><article><b>0</b><span>Safety flags</span></article></div><section><h2>Review queue</h2>{catalog.length ? catalog.map(r => <article className="review-row" key={r.id}><img src={r.image} alt="" /><div><h3>{r.title}</h3><p>{r.cuisine} · {r.ingredients.length} ingredients · {r.steps.length} steps</p><span>Rights checked · Timing checked · Safety tags present</span></div><select value={statuses[r.id] || r.status} onChange={e => setStatuses({ ...statuses, [r.id]: e.target.value })}><option>draft</option><option>review</option><option>published</option><option>retired</option></select></article>) : <p className="quiet">No recipes in catalog yet. Recipes are added when you run a check-in while signed in.</p>}</section></div>;
 }
 function SubscriptionScreen({ profile, save, proceed, onStarted }: { profile: Profile; save: (p: Profile) => void; proceed: () => void; onStarted?: () => void }) {
   const [plan, setPlan] = useState(profile.plan || "annual");
@@ -2326,69 +2270,6 @@ function CommunityScreen({ profile, posts, setPosts, connections, setConnections
   const publish = () => { const safeText = cleanText(text, 1000); if (!safeText && !image && !recipeId) return; setPosts([{ id: crypto.randomUUID(), author: cleanText(profile.name, 80), avatar: profile.avatar, text: safeText, image: image || findRecipe(recipeId)?.image || "", recipeId: recipeId || undefined, createdAt: "Just now", likes: [], comments: [] }, ...posts.slice(0, 99)]); setText(""); setImage(""); setRecipeId(""); setComposer(false); };
   const updatePost = (id: string, change: (p: SocialPost) => SocialPost) => setPosts(posts.map(p => p.id === id ? change(p) : p));
   return <div className="screen community"><TopBar title="Community" /><section className="community-intro"><div><b>Cook together, from wherever.</b><p>Share recipes, photos, and useful tips. Your private mood and psychological profile stay private.</p></div><button className="primary" onClick={() => setComposer(!composer)}><Plus />Post</button></section>{composer && <section className="composer"><div><Avatar name={profile.name} image={profile.avatar} /><textarea maxLength={1000} value={text} onChange={e => setText(e.target.value)} placeholder="Share a cook, recipe, or tip..." /></div>{image && <img src={image} alt="Post preview" />}{recipeId && findRecipe(recipeId) && <div className="composer-recipe"><ChefHat size={15} /><span>Linking <b>{findRecipe(recipeId)!.title}</b></span><button onClick={() => setRecipeId("")} aria-label="Remove linked recipe"><X size={14} /></button></div>}<select value={recipeId} onChange={e => setRecipeId(e.target.value)}><option value="">Link a recipe (optional)</option>{catalog.map(r => <option value={r.id} key={r.id}>{r.title}</option>)}</select>{uploadError && <p className="upload-error">{uploadError}</p>}<footer><label><Camera />Add photo<input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => upload(e.target.files?.[0])} /></label><button className="primary" onClick={publish}><Send />Share</button></footer></section>}<div className="feed">{posts.length === 0 && !composer && <div className="empty-state" style={{ margin: "24px 16px" }}><Users /><h2>Be the first to post</h2><p>Share a cook, tip, or recipe. Your psychological profile and diary stay completely private.</p></div>}{posts.map(post => <article className="social-post" key={post.id}><header><Avatar name={post.author} image={post.avatar} /><div><b>{post.author}</b><span>{post.createdAt}</span></div><MoreVertical /></header><p>{post.text}</p>{post.image && <img src={post.image} alt="Cooked meal" />}{post.recipeId && findRecipe(post.recipeId) && <button className="linked-recipe" onClick={() => { const r = findRecipe(post.recipeId); if (r) openRecipe(r); }}><ChefHat /><span><small>LINKED RECIPE</small><b>{findRecipe(post.recipeId)?.title}</b></span><ChevronRight /></button>}<div className="social-actions"><button onClick={() => updatePost(post.id, p => ({ ...p, likes: toggle(p.likes, profile.name) }))}><Heart fill={post.likes.includes(profile.name) ? "currentColor" : "none"} />{post.likes.length}</button><button><MessageCircle />{post.comments.length}</button></div>{post.comments.map((c, n) => <p className="comment" key={n}><b>{c.author}</b> {c.text}</p>)}<form className="comment-form" onSubmit={e => { e.preventDefault(); if (!comment[post.id]?.trim()) return; updatePost(post.id, p => ({ ...p, comments: [...p.comments, { author: profile.name, text: cleanText(comment[post.id], 500) }] })); setComment({ ...comment, [post.id]: "" }); }}><input maxLength={500} value={comment[post.id] || ""} onChange={e => setComment({ ...comment, [post.id]: cleanText(e.target.value, 500) })} placeholder="Add a helpful comment..." /><button><Send /></button></form></article>)}</div></div>;
-}
-function HealthHub({ diary, go }: { diary: { recipe: Recipe; rating: number; when: string }[]; go: (p: Page) => void }) {
-  const vegetarian = diary.filter(d => d.recipe.diets.includes("Vegetarian")).length;
-  return <div className="screen health"><TopBar title="Your health" /><section className="health-hero"><span>LAST 30 DAYS</span><h1>Your dietary trends.</h1><p>A calm breakdown based on meals you logged. Informational only, never medical advice.</p><div><b>{diary.length}</b><small>meals logged</small><b>{new Set(diary.map(d => d.recipe.cuisine)).size}</b><small>cuisines</small><b>{vegetarian}</b><small>plant-forward</small></div></section><button className="family-health-link" onClick={() => go("family-health")}><Users /><span><b>Family health profile</b><small>Overall analytics for family meals only</small></span><ChevronRight /></button><div className="health-links"><button onClick={() => go("health-nutrition")}><Salad /><span><b>Nutrition balance</b><small>Calories, protein, fiber, and meal balance</small></span><ChevronRight /></button><button onClick={() => go("health-variety")}><TrendingUp /><span><b>Dietary variety</b><small>Cuisines, proteins, vegetables, and repetition</small></span><ChevronRight /></button><button onClick={() => go("health-patterns")}><Clock3 /><span><b>Eating patterns</b><small>Cook frequency, timing, and completion habits</small></span><ChevronRight /></button></div><section className="trend-preview"><h2>This month at a glance</h2><Trend label="Plant-forward meals" value={Math.min(100, vegetarian * 25 + 25)} /><Trend label="Recipe variety" value={Math.min(100, new Set(diary.map(d => d.recipe.id)).size * 28)} /><Trend label="Home-cooked rhythm" value={Math.min(100, diary.length * 18)} /></section></div>;
-}
-function HealthDetail({ kind, diary, back }: { kind: "nutrition" | "variety" | "patterns"; diary: { recipe: Recipe; rating: number; when: string }[]; back: () => void }) {
-  const n = diary.length;
-  const avgCal   = n ? Math.round(diary.reduce((a, d) => a + d.recipe.calories, 0) / n) : 0;
-  const avgTime  = n ? Math.round(diary.reduce((a, d) => a + d.recipe.time, 0) / n) : 0;
-  const avgRating = n ? (diary.reduce((a, d) => a + d.rating, 0) / n).toFixed(1) : "-";
-  const cuisineCount = new Set(diary.map(d => d.recipe.cuisine)).size;
-  const uniqueRecipes = new Set(diary.map(d => d.recipe.id)).size;
-  const repeated = n - uniqueRecipes;
-  const fiberRich = diary.filter(d => ((d.recipe as any).fiber ?? 0) >= 5).length;
-  const plantForward = diary.filter(d => d.recipe.diets?.some(x => ["Vegetarian","Vegan"].includes(x))).length;
-  const varietyScore = n ? Math.min(100, Math.round((cuisineCount / Math.max(n, 1)) * 60 + (uniqueRecipes / Math.max(n, 1)) * 40)) : 0;
-
-  const content = kind === "nutrition"
-    ? { title: "Nutrition balance", intro: "A source-labeled view of your logged recipes.", cards: [
-        ["Average energy",   n ? `${avgCal} cal` : "No data yet"],
-        ["Fiber-rich meals",  n ? `${fiberRich} of ${n}` : "No data yet"],
-        ["Plant-forward",     n ? `${plantForward} of ${n}` : "No data yet"],
-        ["Meals logged",      `${n}`],
-      ]}
-    : kind === "variety"
-    ? { title: "Dietary variety", intro: "How broad your recent food rhythm has been.", cards: [
-        ["Variety score",   n ? `${varietyScore} / 100` : "No data yet"],
-        ["Cuisines",        n ? `${cuisineCount}` : "0"],
-        ["Unique recipes",  `${uniqueRecipes}`],
-        ["Repeated",        `${repeated}`],
-      ]}
-    : { title: "Eating patterns", intro: "Patterns from completed cooks, without judgment.", cards: [
-        ["Meals cooked",    `${n}`],
-        ["Avg cook time",   n ? `${avgTime} min` : "No data yet"],
-        ["Average rating",  n ? `${avgRating} / 5` : "No data yet"],
-        ["Cuisines tried",  `${cuisineCount}`],
-      ]};
-
-  if (!n) return (
-    <div className="screen"><TopBar title={content.title} back={back} />
-      <div className="empty-state" style={{ margin: "40px 16px" }}>
-        <BarChart3 /><h2>No meals logged yet</h2>
-        <p>Cook a recipe and log it to your diary, your real patterns will appear here.</p>
-      </div>
-    </div>
-  );
-  return <div className="screen"><TopBar title={content.title} back={back} /><p className="quiet">{content.intro}</p><div className="metric-grid">{content.cards.map(([a, b]) => <article key={a}><span>{a}</span><b>{b}</b></article>)}</div><section className="health-note"><ShieldCheck /><div><b>How this is calculated</b><p>From nutrition snapshots and metadata attached to recipes you completed. It does not diagnose conditions or replace professional advice.</p></div></section></div>;
-}
-function FamilyHealth({ diary, diners, back }: { diary: { recipe: Recipe; rating: number; when: string }[]; diners: Diner[]; back: () => void }) {
-  const familySize = Math.max(1, diners.length);
-  const safeCoverage = Math.round((diners.filter(d => d.allergies.length || d.diet !== "Anything").length / familySize) * 100);
-  // All metrics below are derived from real logged meals, no placeholder data.
-  const n = diary.length;
-  const uniqueRecipes = new Set(diary.map(d => d.recipe.id)).size;
-  const plantForward = n ? Math.round(diary.filter(d => d.recipe.diets?.some(x => ["Vegetarian", "Vegan"].includes(x))).length / n * 100) : 0;
-  const avgTime = n ? Math.round(diary.reduce((a, d) => a + d.recipe.time, 0) / n) : 0;
-  const avgRating = n ? diary.reduce((a, d) => a + d.rating, 0) / n : 0;
-  const varietyLabel = !n ? "-" : uniqueRecipes >= 8 ? "Excellent" : uniqueRecipes >= 4 ? "Good" : "Building";
-  return <div className="screen family-health"><TopBar title="Family health" back={back} /><section className="family-hero"><Users /><span>HOUSEHOLD PROFILE</span><h1>How family meals are trending.</h1><p>Aggregate analytics only. Individual moods, psychological profiles, and private diaries are not shown here.</p><div><b>{familySize}</b><small>registered diners</small><b>{diary.length}</b><small>family meals logged</small></div></section>{n ? <><div className="metric-grid"><article><span>Shared meal variety</span><b>{varietyLabel}</b></article><article><span>Plant-forward meals</span><b>{plantForward}%</b></article><article><span>Average family cook</span><b>{avgTime} min</b></article><article><span>Safety profiles complete</span><b>{safeCoverage}%</b></article></div><section className="trend-preview"><h2>Family meal balance</h2><Trend label="Plant-forward meals" value={plantForward} /><Trend label="Recipe variety" value={Math.min(100, uniqueRecipes * 12)} /><Trend label="Home-cooked rhythm" value={Math.min(100, n * 18)} /><Trend label="Shared appeal" value={Math.round(avgRating * 20)} /></section></> : <div className="empty-state" style={{ margin: "18px 0" }}><Users /><h2>No family meals logged yet</h2><p>Cook and log meals with household diners selected, and their trends will appear here.</p></div>}<section className="family-members"><h2>Household coverage</h2>{diners.map(d => <div key={d.id}><Avatar name={d.name} /><span><b>{d.name}</b><small>{d.relationship} · {d.diet}</small></span><em>{d.allergies.length ? `${d.allergies.length} safety rule${d.allergies.length > 1 ? "s" : ""}` : "Basic profile"}</em></div>)}</section></div>;
-}
-function DinersScreen({ diners, save, back }: { diners: Diner[]; save: (d: Diner[]) => void; back: () => void }) {
-  const [adding, setAdding] = useState(false); const [name, setName] = useState("");
-  return <div className="screen"><TopBar title="Household diners" back={back} /><p className="quiet">Select these people during mood check-in. MoodFood combines every selected diner’s hard safety constraints.</p><div className="diner-list">{diners.map(d => <article key={d.id}><Avatar name={d.name} /><div><b>{d.name}</b><span>{d.relationship} · {d.diet}</span><small>{d.allergies.length ? `Avoid: ${d.allergies.join(", ")}` : "No saved allergens"}</small></div>{d.id !== "self" && <button onClick={() => save(diners.filter(x => x.id !== d.id))}><X /></button>}</article>)}</div>{adding ? <form className="add-diner" onSubmit={e => { e.preventDefault(); if(cleanText(name, 80)) save([...diners,{id:crypto.randomUUID(),name:cleanText(name, 80),relationship:"Guest",diet:"Anything",allergies:[]}]); setName(""); setAdding(false); }}><input value={name} onChange={e=>setName(e.target.value)} placeholder="Diner name" /><button className="primary">Add diner</button></form> : <button className="secondary" onClick={() => setAdding(true)}><Plus />Add household diner</button>}</div>;
 }
 // Pull the option list for an onboarding question so the profile editor and the
 // onboarding flow always offer the same suggestions.
