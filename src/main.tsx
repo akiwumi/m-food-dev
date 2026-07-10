@@ -1,4 +1,4 @@
-import React from "react";
+import React, { Suspense } from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./styles.css";
@@ -14,7 +14,7 @@ class ErrorBoundary extends React.Component<React.PropsWithChildren, { failed: b
 }
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode><ErrorBoundary><App /></ErrorBoundary></React.StrictMode>,
+  <React.StrictMode><ErrorBoundary><Suspense fallback={<div style={{ minHeight: "100vh" }} />}><App /></Suspense></ErrorBoundary></React.StrictMode>,
 );
 
 if ("serviceWorker" in navigator && import.meta.env.PROD) {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, lazy } from "react";
 import { type Recipe } from "./data";
 import { bundledRecipes } from "./bundledRecipes";
 import { clearStored, defaultDiners, defaultProfile, useStoredState, type Diner, type Profile, type SocialPost } from "./store";
@@ -16,7 +16,9 @@ import {
 } from "./auth";
 import { supabase } from "./supabase";
 import { nextSavedRecipeIds } from "./savedRecipes";
-import { Landing } from "./Landing";
+// Entry-flow + onboarding screens are needed once per user lifetime — lazy-load
+// them (with gsap, which only they use) out of the returning-user's main chunk.
+const Landing = lazy(() => import("./Landing").then(m => ({ default: m.Landing })));
 import { readDevTestState } from "./devTestState";
 import { buildQuickStartProfilePatch } from "./activation";
 import { syncSubscriptionFromDB } from "./api/backend";
@@ -59,14 +61,14 @@ import { HelpScreen } from "./screens/HelpScreen";
 import { MoodyPanel } from "./components/moody/MoodyPanel";
 import { PsychProfileScreen } from "./screens/profile/PsychProfileScreen";
 import { FoodProfileScreen } from "./screens/profile/FoodProfileScreen";
-import { QuickTasteStartScreen } from "./screens/entry/QuickTasteStartScreen";
-import { FirstPickScreen } from "./screens/entry/FirstPickScreen";
-import { AccountSetupScreen } from "./screens/entry/AccountSetupScreen";
-import { VerifyEmailScreen } from "./screens/entry/VerifyEmailScreen";
-import { LoginScreen } from "./screens/entry/LoginScreen";
-import { VerifiedScreen } from "./screens/entry/VerifiedScreen";
-import { SubscriptionScreen } from "./screens/entry/SubscriptionScreen";
-import { Onboarding } from "./screens/onboarding/Onboarding";
+const QuickTasteStartScreen = lazy(() => import("./screens/entry/QuickTasteStartScreen").then(m => ({ default: m.QuickTasteStartScreen })));
+const FirstPickScreen = lazy(() => import("./screens/entry/FirstPickScreen").then(m => ({ default: m.FirstPickScreen })));
+const AccountSetupScreen = lazy(() => import("./screens/entry/AccountSetupScreen").then(m => ({ default: m.AccountSetupScreen })));
+const VerifyEmailScreen = lazy(() => import("./screens/entry/VerifyEmailScreen").then(m => ({ default: m.VerifyEmailScreen })));
+const LoginScreen = lazy(() => import("./screens/entry/LoginScreen").then(m => ({ default: m.LoginScreen })));
+const VerifiedScreen = lazy(() => import("./screens/entry/VerifiedScreen").then(m => ({ default: m.VerifiedScreen })));
+const SubscriptionScreen = lazy(() => import("./screens/entry/SubscriptionScreen").then(m => ({ default: m.SubscriptionScreen })));
+const Onboarding = lazy(() => import("./screens/onboarding/Onboarding").then(m => ({ default: m.Onboarding })));
 import { HomeScreen } from "./screens/HomeScreen";
 import { SearchScreen } from "./screens/SearchScreen";
 
