@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, lazy } from "react";
+import { useEffect, useState, useCallback, lazy, Suspense } from "react";
 import { type Recipe } from "./data";
 import { clearStored, defaultProfile, reportStorageEstimate, useStoredState, type Profile } from "./store";
 import { recordRating } from "./behavioral";
@@ -35,31 +35,36 @@ import { BottomNav, DesktopNav } from "./components/AppChrome";
 import { MainMenu } from "./components/MainMenu";
 import { NotificationsPanel } from "./components/NotificationsPanel";
 import { MoodyFab } from "./components/moody/MoodyFab";
-import { GroceryScreen } from "./screens/GroceryScreen";
-import { PantryScreen } from "./screens/PantryScreen";
-import { PlannerScreen } from "./screens/PlannerScreen";
-import { InsightsScreen } from "./screens/InsightsScreen";
-import { LibraryScreen } from "./screens/LibraryScreen";
-import { ImportScreen } from "./screens/ImportScreen";
-import { AdminScreen } from "./screens/AdminScreen";
-import { DinersScreen } from "./screens/DinersScreen";
-import { HealthHub } from "./screens/health/HealthHub";
-import { HealthDetail } from "./screens/health/HealthDetail";
-import { FamilyHealth } from "./screens/health/FamilyHealth";
-import { SettingsScreen } from "./screens/SettingsScreen";
-import { DataPrivacyScreen } from "./screens/DataPrivacyScreen";
-import { BillingScreen } from "./screens/BillingScreen";
-import { AccountScreen } from "./screens/AccountScreen";
-import { CommunityScreen } from "./screens/CommunityScreen";
-import { SearchResultsScreen, EmptyResultsScreen } from "./screens/SearchResultsScreen";
-import { DetailScreen } from "./screens/DetailScreen";
-import { CookScreen } from "./screens/CookScreen";
-import { DiaryScreen } from "./screens/DiaryScreen";
-import { FoodLogScreen } from "./screens/FoodLogScreen";
-import { HelpScreen } from "./screens/HelpScreen";
-import { MoodyPanel } from "./components/moody/MoodyPanel";
-import { PsychProfileScreen } from "./screens/profile/PsychProfileScreen";
-import { FoodProfileScreen } from "./screens/profile/FoodProfileScreen";
+// Authenticated app screens: none are needed until the user is signed in and on
+// that page, so lazy-load them out of the initial (Landing/onboarding) chunk.
+// They render behind the <Suspense> around <main>, so nav stays put while a
+// screen's chunk loads.
+const GroceryScreen = lazy(() => import("./screens/GroceryScreen").then(m => ({ default: m.GroceryScreen })));
+const PantryScreen = lazy(() => import("./screens/PantryScreen").then(m => ({ default: m.PantryScreen })));
+const PlannerScreen = lazy(() => import("./screens/PlannerScreen").then(m => ({ default: m.PlannerScreen })));
+const InsightsScreen = lazy(() => import("./screens/InsightsScreen").then(m => ({ default: m.InsightsScreen })));
+const LibraryScreen = lazy(() => import("./screens/LibraryScreen").then(m => ({ default: m.LibraryScreen })));
+const ImportScreen = lazy(() => import("./screens/ImportScreen").then(m => ({ default: m.ImportScreen })));
+const AdminScreen = lazy(() => import("./screens/AdminScreen").then(m => ({ default: m.AdminScreen })));
+const DinersScreen = lazy(() => import("./screens/DinersScreen").then(m => ({ default: m.DinersScreen })));
+const HealthHub = lazy(() => import("./screens/health/HealthHub").then(m => ({ default: m.HealthHub })));
+const HealthDetail = lazy(() => import("./screens/health/HealthDetail").then(m => ({ default: m.HealthDetail })));
+const FamilyHealth = lazy(() => import("./screens/health/FamilyHealth").then(m => ({ default: m.FamilyHealth })));
+const SettingsScreen = lazy(() => import("./screens/SettingsScreen").then(m => ({ default: m.SettingsScreen })));
+const DataPrivacyScreen = lazy(() => import("./screens/DataPrivacyScreen").then(m => ({ default: m.DataPrivacyScreen })));
+const BillingScreen = lazy(() => import("./screens/BillingScreen").then(m => ({ default: m.BillingScreen })));
+const AccountScreen = lazy(() => import("./screens/AccountScreen").then(m => ({ default: m.AccountScreen })));
+const CommunityScreen = lazy(() => import("./screens/CommunityScreen").then(m => ({ default: m.CommunityScreen })));
+const SearchResultsScreen = lazy(() => import("./screens/SearchResultsScreen").then(m => ({ default: m.SearchResultsScreen })));
+const EmptyResultsScreen = lazy(() => import("./screens/SearchResultsScreen").then(m => ({ default: m.EmptyResultsScreen })));
+const DetailScreen = lazy(() => import("./screens/DetailScreen").then(m => ({ default: m.DetailScreen })));
+const CookScreen = lazy(() => import("./screens/CookScreen").then(m => ({ default: m.CookScreen })));
+const DiaryScreen = lazy(() => import("./screens/DiaryScreen").then(m => ({ default: m.DiaryScreen })));
+const FoodLogScreen = lazy(() => import("./screens/FoodLogScreen").then(m => ({ default: m.FoodLogScreen })));
+const HelpScreen = lazy(() => import("./screens/HelpScreen").then(m => ({ default: m.HelpScreen })));
+const MoodyPanel = lazy(() => import("./components/moody/MoodyPanel").then(m => ({ default: m.MoodyPanel })));
+const PsychProfileScreen = lazy(() => import("./screens/profile/PsychProfileScreen").then(m => ({ default: m.PsychProfileScreen })));
+const FoodProfileScreen = lazy(() => import("./screens/profile/FoodProfileScreen").then(m => ({ default: m.FoodProfileScreen })));
 const QuickTasteStartScreen = lazy(() => import("./screens/entry/QuickTasteStartScreen").then(m => ({ default: m.QuickTasteStartScreen })));
 const FirstPickScreen = lazy(() => import("./screens/entry/FirstPickScreen").then(m => ({ default: m.FirstPickScreen })));
 const AccountSetupScreen = lazy(() => import("./screens/entry/AccountSetupScreen").then(m => ({ default: m.AccountSetupScreen })));
@@ -68,8 +73,8 @@ const LoginScreen = lazy(() => import("./screens/entry/LoginScreen").then(m => (
 const VerifiedScreen = lazy(() => import("./screens/entry/VerifiedScreen").then(m => ({ default: m.VerifiedScreen })));
 const SubscriptionScreen = lazy(() => import("./screens/entry/SubscriptionScreen").then(m => ({ default: m.SubscriptionScreen })));
 const Onboarding = lazy(() => import("./screens/onboarding/Onboarding").then(m => ({ default: m.Onboarding })));
-import { HomeScreen } from "./screens/HomeScreen";
-import { SearchScreen } from "./screens/SearchScreen";
+const HomeScreen = lazy(() => import("./screens/HomeScreen").then(m => ({ default: m.HomeScreen })));
+const SearchScreen = lazy(() => import("./screens/SearchScreen").then(m => ({ default: m.SearchScreen })));
 
 // The subscriptions table can hold statuses the client union doesn't model —
 // stripe-webhook's mapStatus() also writes "past_due" (and future Stripe
@@ -392,7 +397,7 @@ export default function App() {
   return <MenuCtx.Provider value={() => setMenuOpen(true)}><div className={page === "cook" ? "app cooking" : "app"}>
     <PullRefreshIndicator pullY={pullY} />
     {page !== "cook" && <DesktopNav page={page} go={go} openMoody={openMoody} />}
-    <main>
+    <Suspense fallback={<main className="screen-loading" aria-busy="true" />}><main>
       {page === "home" && <HomeScreen profile={profile} diary={diary} saved={saved} catalog={catalog} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results={false} setResults={setResults} beginResults={() => { setSearchRequest(null); beginCheckin(); go("results"); }} ranked={ranked} curating={curating} loadMore={loadMore} live={live} curated={curated} retry={retry} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={addPhoto} onPickSuggestion={r => runSearch({ query: r.title, filters: { query: r.title } })} toggleSave={toggleSavedRecipe} />}
       {page === "search" && <SearchScreen profile={sharedProfile} diary={diary} saved={saved} catalog={catalog} onSearch={request => runSearch(request)} />}
       {page === "results" && (searchRequest
@@ -425,10 +430,10 @@ export default function App() {
       {page === "diners" && <DinersScreen diners={diners} save={setDiners} back={() => go("settings")} />}
       {page === "food-log" && <FoodLogScreen logs={profile.photoLogs} addPhoto={addPhoto} back={() => go("diary")} allergies={profile.allergies} />}
       {page === "help" && <HelpScreen back={() => go("settings")} />}
-    </main>
+    </main></Suspense>
     {page !== "cook" && <BottomNav page={page} go={go} />}
     {page !== "cook" && <MoodyFab onOpen={openMoody} />}
-    {moodyOpen && <MoodyPanel profile={sharedProfile} catalog={safeRecipes} loadCatalog={loadMoodyCatalog} turns={moodyTurns} setTurns={setMoodyTurns} close={() => setMoodyOpen(false)} openRecipe={openFromMoody} />}
+    {moodyOpen && <Suspense fallback={null}><MoodyPanel profile={sharedProfile} catalog={safeRecipes} loadCatalog={loadMoodyCatalog} turns={moodyTurns} setTurns={setMoodyTurns} close={() => setMoodyOpen(false)} openRecipe={openFromMoody} /></Suspense>}
     {notifOpen && <NotificationsPanel close={() => setNotifOpen(false)} profile={profile} save={setProfile} refresh={refreshNotifs} />}
     {menuOpen && <MainMenu profile={profile} page={page} go={go} close={() => setMenuOpen(false)} openNotifs={openNotifs} unread={unreadCount()} logout={() => { void authSignOut(); setEntry("welcome"); }} />}
   </div></MenuCtx.Provider>;

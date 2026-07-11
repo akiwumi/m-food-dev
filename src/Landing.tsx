@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import gsap from "gsap";
+import type GsapType from "gsap";
 import { ArrowLeft, ArrowRight, BrainCircuit, Check, ChefHat, Heart, HeartPulse, Share2, ShieldCheck, Sparkles, X } from "lucide-react";
 import { useStoredState } from "./store";
 
@@ -57,7 +57,9 @@ function AddToHomeScreenHint() {
   );
 }
 
-const HERO_PHOTO = "https://images.unsplash.com/photo-1490645935967-10de6ba17061?auto=format&fit=crop&w=1400&q=85";
+// Sized + quality-tuned for a full-bleed mobile hero; auto=format serves AVIF/WebP.
+// Kept small because this is the LCP element (see fetchPriority on the <img>).
+const HERO_PHOTO = "https://images.unsplash.com/photo-1490645935967-10de6ba17061?auto=format&fit=crop&w=1080&q=55";
 const MOOD_WORDS = ["cozy", "drained", "celebratory", "adventurous", "nostalgic", "stressed", "curious"];
 
 const HOW_STEPS = [
@@ -98,10 +100,17 @@ export function Landing({ begin, signin }: { begin: () => void; signin: () => vo
   const [step, setStep] = useState<IntroStep>("hero");
   const rootRef = useRef<HTMLDivElement>(null);
   const cyclerRef = useRef<HTMLElement>(null);
+  // gsap is decorative and only runs after mount, so load it out of Landing's
+  // render-blocking path — the intro paints immediately, animations follow.
+  const [gsap, setGsap] = useState<typeof GsapType | null>(null);
+  useEffect(() => { let ok = true; void import("gsap").then(m => { if (ok) setGsap(m.default); }); return () => { ok = false; }; }, []);
+
+  // Keep the intro scrolled to top on every step change (independent of gsap).
+  useEffect(() => { window.scrollTo(0, 0); }, [step]);
 
   // Soft staggered entrance on every page of the intro.
   useEffect(() => {
-    window.scrollTo(0, 0);
+    if (!gsap) return;
     const mm = gsap.matchMedia();
     mm.add("(prefers-reduced-motion: no-preference)", () => {
       const ctx = gsap.context(() => {
@@ -110,11 +119,11 @@ export function Landing({ begin, signin }: { begin: () => void; signin: () => vo
       return () => ctx.revert();
     });
     return () => mm.revert();
-  }, [step]);
+  }, [step, gsap]);
 
   // Mood-word cycler in the hero sub-line; swaps text without re-rendering.
   useEffect(() => {
-    if (step !== "hero") return;
+    if (step !== "hero" || !gsap) return;
     const cycler = cyclerRef.current;
     if (!cycler || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     let i = 0;
@@ -123,12 +132,12 @@ export function Landing({ begin, signin }: { begin: () => void; signin: () => vo
       .add(() => { i = (i + 1) % MOOD_WORDS.length; cycler.textContent = MOOD_WORDS[i]; })
       .fromTo(cycler, { yPercent: 110, opacity: 0 }, { yPercent: 0, opacity: 1, duration: 0.4, ease: "power2.out" });
     return () => { tl.kill(); };
-  }, [step]);
+  }, [step, gsap]);
 
   if (step === "hero") {
     return (
       <div className="intro-hero" ref={rootRef} key="hero">
-        <img className="ih-photo" src={HERO_PHOTO} alt="A fresh, colourful meal" />
+        <img className="ih-photo" src={HERO_PHOTO} alt="A fresh, colourful meal" decoding="async" />
         <div className="ih-veil" />
         <AddToHomeScreenHint />
         <header className="ih-top">
