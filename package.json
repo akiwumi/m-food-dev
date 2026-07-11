@@ -9,6 +9,7 @@
     "csp:sync": "node scripts/sync-vercel-csp.mjs",
     "csp:check": "node scripts/sync-vercel-csp.mjs --check",
     "test": "vitest run",
+    "e2e": "playwright test",
     "lint": "eslint .",
     "security:audit": "npm audit --audit-level=high",
     "verify": "npm run security:audit && npm run lint && npm test && npm run build"
@@ -29,6 +30,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.61.1",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^25.9.1",
