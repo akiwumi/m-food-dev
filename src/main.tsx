@@ -1,11 +1,16 @@
 import React, { Suspense } from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { trackError } from "./telemetry";
 import "./styles.css";
 
 class ErrorBoundary extends React.Component<React.PropsWithChildren, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() { return { failed: true }; }
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    // Recover for the user, but make the crash visible in the field.
+    trackError(error, info.componentStack ?? undefined);
+  }
   render() {
     return this.state.failed
       ? <main style={{ padding: 24 }}><h1>MoodFood needs a fresh start.</h1><p>Your data has not been sent anywhere. Reload to continue.</p><button onClick={() => location.reload()}>Reload</button></main>

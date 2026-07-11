@@ -4,6 +4,7 @@ import { fetchCuratedRecipes, buildFoodHistory } from "../recipes";
 import type { ChatTurn } from "../ai";
 import type { Recipe } from "../data";
 import type { Profile } from "../store";
+import { foodQueryFromChat } from "../lib/moodyQuery";
 
 // Moody chat transcript + the catalog loader Moody uses to ground its answers.
 export function useMoodyChat(
@@ -15,8 +16,9 @@ export function useMoodyChat(
 ) {
   const [moodyTurns, setMoodyTurns] = useState<ChatTurn[]>([]);
   const loadMoodyCatalog = useCallback(async (query = "") => {
-    // Strip conversational words so Spoonacular gets a clean food term (e.g. "Yaki Udon" not "show me a Yaki Udon recipe").
-    const foodQuery = query.replace(/\b(show|find|open|get|search|look|for|me|a|an|the|some|recipe|recipes|please|can|you|i|want|need|make|cook|like)\b/gi, " ").replace(/\s+/g, " ").trim().slice(0, 80);
+    // Reduce the chat message to a clean food term (e.g. "Yaki Udon" not
+    // "show me a Yaki Udon recipe"), stripping only leading/trailing filler.
+    const foodQuery = foodQueryFromChat(query);
     const [moodLive, queryLive] = await Promise.all([
       fetchCuratedRecipes(sharedProfile, mood, 20, 180, "", {}, foodHistory, 0, true, false),
       foodQuery ? fetchCuratedRecipes(sharedProfile, mood, 10, 180, foodQuery, {}, foodHistory, 0, true, false) : Promise.resolve(null),

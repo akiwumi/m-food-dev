@@ -31,7 +31,7 @@ const SUPABASE_URL      = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 
 // Keep the operational vocabulary here in lockstep with the table CHECK in 012.
-const ALLOWED_EVENT_TYPES = new Set(["search_completed"]);
+const ALLOWED_EVENT_TYPES = new Set(["search_completed", "app_error"]);
 const MAX_BATCH = 50;                 // cap a single request
 const MAX_METADATA_BYTES = 2_000;     // keep events small; reject bloated metadata
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

@@ -1,5 +1,15 @@
 const CACHE = "moodfood-shell-v2";
 const SHELL = ["/", "/manifest.webmanifest", "/images/logo-1.png"];
+const MAX_ASSET_ENTRIES = 60; // cap cached hashed /assets/ bundles so long-lived installs don't accumulate stale ones
+
+// Evict the oldest overflow /assets/ entries. cache.keys() preserves insertion
+// order, so the earliest-cached (oldest) hashed bundles are trimmed first.
+async function trimAssetCache(cache) {
+  const keys = await cache.keys();
+  const assetKeys = keys.filter((req) => new URL(req.url).pathname.startsWith("/assets/"));
+  if (assetKeys.length <= MAX_ASSET_ENTRIES) return;
+  await Promise.all(assetKeys.slice(0, assetKeys.length - MAX_ASSET_ENTRIES).map((req) => cache.delete(req)));
+}
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)));
@@ -21,7 +31,11 @@ self.addEventListener("fetch", (event) => {
       .then((response) => {
         if (response.ok && response.type === "basic" && !response.headers.has("set-cookie")) {
           const copy = response.clone();
-          caches.open(CACHE).then((cache) => cache.put(event.request, copy));
+          caches.open(CACHE).then((cache) =>
+            cache.put(event.request, copy).then(() => {
+              if (url.pathname.startsWith("/assets/")) return trimAssetCache(cache);
+            }),
+          );
         }
         return response;
       })

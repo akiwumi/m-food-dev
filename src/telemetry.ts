@@ -16,7 +16,7 @@ import { supabase } from "./supabase";
 // uuid) so it can be unit-tested without a network or a real Supabase session,
 // matching the project's existing dependency-injection test style.
 
-export type EventType = "search_completed";
+export type EventType = "search_completed" | "app_error";
 
 // What a caller provides. id / event_time / category are added by the queue.
 export type TelemetryEvent = {
@@ -163,4 +163,31 @@ export function trackSearch(t: SearchTelemetry): void {
       ...(t.filterCount !== undefined ? { filter_count: t.filterCount } : {}),
     },
   });
+}
+
+// FNV-1a — small, dependency-free hash to group identical stacks without sending
+// the (potentially PII-bearing) stack text itself.
+function hashString(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0).toString(16);
+}
+
+// Report an uncaught render error (from the ErrorBoundary) as an operational
+// event, so field crashes are visible instead of silently recovered. Sends the
+// error name, a truncated message, and a stable hash of the stack — no raw stack.
+export function trackError(error: Error, componentStack?: string): void {
+  try {
+    telemetry.track({
+      event_type: "app_error",
+      source: (error.name || "Error").slice(0, 40),
+      metadata: {
+        message: (error.message || "").slice(0, 200),
+        stack_hash: hashString((error.stack || "") + (componentStack || "")),
+      },
+    });
+    void telemetry.flush(); // crashes are rare + high-value; don't wait for the batch
+  } catch {
+    // Telemetry must never throw into the ErrorBoundary's recovery path.
+  }
 }
