@@ -1,14 +1,11 @@
-import { useEffect, useMemo, useState, useCallback, lazy } from "react";
+import { useEffect, useState, useCallback, lazy } from "react";
 import { type Recipe } from "./data";
-import { bundledRecipes } from "./bundledRecipes";
-import { clearStored, defaultDiners, defaultProfile, reportStorageEstimate, useStoredState, type Diner, type Profile, type SocialPost } from "./store";
-import { profileForDiners, safeRecipes as applySafety } from "./recommendation";
+import { clearStored, defaultProfile, reportStorageEstimate, useStoredState, type Profile } from "./store";
 import { recordRating } from "./behavioral";
 import { compactPhotoLogs } from "./security";
 import { sendConfirmationEmail, sendWelcomeEmail, unreadCount } from "./notifications";
 import { type FoodPhoto } from "./foodAnalysis";
 import { persistFoodPhoto } from "./photoStorage";
-import { buildFoodHistory } from "./recipes";
 import {
   signOut as authSignOut,
   onAuthChange,
@@ -31,6 +28,8 @@ import { useRecipeSearch } from "./hooks/useRecipeSearch";
 import { useHomeFeed } from "./hooks/useHomeFeed";
 import { useLearningSignals } from "./hooks/useLearningSignals";
 import { useProfileSync, prefsForUpsert } from "./hooks/useProfileSync";
+import { useHouseholdCollections } from "./hooks/useHouseholdCollections";
+import { useRecipeCatalog } from "./hooks/useRecipeCatalog";
 import { PullRefreshIndicator } from "./components/PullRefreshIndicator";
 import { BottomNav, DesktopNav } from "./components/AppChrome";
 import { MainMenu } from "./components/MainMenu";
@@ -114,16 +113,8 @@ export default function App() {
   const [moodyOpen, setMoodyOpen] = useState(false);
   const [detailReturnMoody, setDetailReturnMoody] = useState(false);
   const [pendingShare, setPendingShare] = useState<string | undefined>(undefined);
-  const [saved, setSaved] = useStoredState<string[]>("moodfood-saved", []);
-  const [diary, setDiary] = useStoredState("moodfood-diary", [] as { recipe: Recipe; rating: number; when: string }[]);
-  const [groceries, setGroceries] = useStoredState("moodfood-groceries", [] as string[]);
-  const [posts, setPosts] = useStoredState<SocialPost[]>("moodfood-posts", []);
-  const [connections, setConnections] = useStoredState<string[]>("moodfood-connections", []);
-  const [diners, setDiners] = useStoredState<Diner[]>("moodfood-diners", defaultDiners);
-  const [selectedDiners, setSelectedDiners] = useState<string[]>(["self"]);
-  const [eaterCount, setEaterCount] = useStoredState<number>("moodfood-eater-count", 1);
+  const { saved, setSaved, diary, setDiary, groceries, setGroceries, posts, setPosts, connections, setConnections, diners, setDiners, selectedDiners, setSelectedDiners, eaterCount, setEaterCount, sharedProfile } = useHouseholdCollections(profile);
   const { aiCuration, setAiCuration, learnedSignals, setLearnedSignals, behavioralConsent, cuisineSignal, moodSignal, suppressedCuisines, setSuppressedCuisines, appliedSignals } = useLearningSignals(entry, page, diary);
-  const sharedProfile = useMemo(() => profileForDiners(profile, diners.filter(d => selectedDiners.includes(d.id) && d.id !== "self")), [profile, diners, selectedDiners]);
 
   // Browser automation cannot use javascript: URLs to mutate localStorage.
   // Development-only test states provide explicit, repeatable access instead.
@@ -160,19 +151,9 @@ export default function App() {
       setEntry("account");
     }
   }, [testState, setEntry, setProfile]);
-  // catalog = bundled recipes plus any fetched from the AI-curated recipes API.
-  // aiRanked = the API's curated order when available; null falls back to local ranking.
-  // Seeded with the offline catalog so the app always has real recipes to rank,
-  // even before (or without) a live fetch.
-  const [catalog, setCatalog] = useState<Recipe[]>(bundledRecipes);
-  const safeRecipes = useMemo(() => applySafety(catalog, sharedProfile), [catalog, sharedProfile]);
-
-  // What the user has actually cooked, logged, and saved, so the AI learns from
-  // behaviour, not just the stated profile. Recomputed as those change.
-  const foodHistory = useMemo(
-    () => buildFoodHistory(diary, profile.photoLogs, catalog.filter(r => saved.includes(r.id))),
-    [diary, profile.photoLogs, saved, catalog],
-  );
+  // catalog = bundled recipes plus any fetched from the AI-curated recipes API,
+  // its safety-filtered view, the derived food history, and the shared upsert.
+  const { catalog, setCatalog, addToCatalog, safeRecipes, foodHistory } = useRecipeCatalog(sharedProfile, diary, saved, profile);
   const {
     mood, setMood, energy, setEnergy, time, setTime,
     mealCategory, setMealCategory, cuisine, setCuisine, homeDiet, setHomeDiet,
@@ -304,7 +285,7 @@ export default function App() {
     window.scrollTo(0, 0);
   };
   const open = (recipe: Recipe) => {
-    setCatalog(prev => prev.some(r => r.id === recipe.id) ? prev : [recipe, ...prev]);
+    addToCatalog(recipe);
     setDetailReturnMoody(false); setSelected(recipe); setDetailReturnPage(page); go("detail");
   };
   // Log a food photo: show it instantly (optimistic, inline data URL), then push
@@ -318,7 +299,7 @@ export default function App() {
     });
   };
   const openFromMoody = (recipe: Recipe) => {
-    setCatalog(prev => prev.some(r => r.id === recipe.id) ? prev : [recipe, ...prev]);
+    addToCatalog(recipe);
     setSelected(recipe);
     setDetailReturnPage(page);
     setDetailReturnMoody(true);
@@ -326,9 +307,9 @@ export default function App() {
     go("detail");
   };
   const toggleSavedRecipe = useCallback((recipe: Recipe) => {
-    setCatalog(prev => prev.some(r => r.id === recipe.id) ? prev : [recipe, ...prev]);
+    addToCatalog(recipe);
     setSaved(current => nextSavedRecipeIds(current, recipe.id));
-  }, [setSaved]);
+  }, [addToCatalog, setSaved]);
   const backFromDetail = () => {
     go(detailReturnPage);
     if (detailReturnMoody) {
@@ -339,7 +320,7 @@ export default function App() {
   // Share a recipe into the community feed: make sure it's in the catalog so the
   // post can link it, preselect it in the composer, and jump to Community.
   const shareRecipe = (recipe: Recipe) => {
-    setCatalog(prev => prev.some(r => r.id === recipe.id) ? prev : [recipe, ...prev]);
+    addToCatalog(recipe);
     setPendingShare(recipe.id);
     go("community");
   };
