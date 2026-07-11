@@ -279,11 +279,14 @@ export default function App() {
     // canceled: do nothing, stay on subscription screen
   }, []);
 
-  const go = (next: Page) => {
+  // Memoized so React.memo'd chrome (navs, FABs, menu) that receives `go` skips
+  // re-rendering when unrelated App state changes (e.g. a keystroke elsewhere).
+  const go = useCallback((next: Page) => {
     if (next !== "results") cancelSearch();
     setPage(next);
     window.scrollTo(0, 0);
-  };
+  }, [cancelSearch]);
+  const openMoody = useCallback(() => setMoodyOpen(true), []);
   const open = (recipe: Recipe) => {
     addToCatalog(recipe);
     setDetailReturnMoody(false); setSelected(recipe); setDetailReturnPage(page); go("detail");
@@ -291,13 +294,13 @@ export default function App() {
   // Log a food photo: show it instantly (optimistic, inline data URL), then push
   // the binary to private Storage in the background and swap image→imagePath so it
   // stops riding in localStorage. Upload skipped/failed → the inline copy stays.
-  const addPhoto = (p: FoodPhoto) => {
+  const addPhoto = useCallback((p: FoodPhoto) => {
     setProfile(prev => ({ ...prev, photoLogs: [p, ...prev.photoLogs] }));
     void persistFoodPhoto(p).then(stored => {
       if (stored === p) return;
       setProfile(prev => ({ ...prev, photoLogs: prev.photoLogs.map(l => (l.id === stored.id ? stored : l)) }));
     });
-  };
+  }, [setProfile]);
   const openFromMoody = (recipe: Recipe) => {
     addToCatalog(recipe);
     setSelected(recipe);
@@ -388,7 +391,7 @@ export default function App() {
   if (entry === "subscription") return <SubscriptionScreen profile={profile} save={setProfile} onStarted={refreshNotifs} proceed={() => { setProfile({ ...profile, activationPaywallSeen: true }); setEntry("app"); }} />;
   return <MenuCtx.Provider value={() => setMenuOpen(true)}><div className={page === "cook" ? "app cooking" : "app"}>
     <PullRefreshIndicator pullY={pullY} />
-    {page !== "cook" && <DesktopNav page={page} go={go} openMoody={() => setMoodyOpen(true)} />}
+    {page !== "cook" && <DesktopNav page={page} go={go} openMoody={openMoody} />}
     <main>
       {page === "home" && <HomeScreen profile={profile} diary={diary} saved={saved} catalog={catalog} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results={false} setResults={setResults} beginResults={() => { setSearchRequest(null); beginCheckin(); go("results"); }} ranked={ranked} curating={curating} loadMore={loadMore} live={live} curated={curated} retry={retry} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={addPhoto} onPickSuggestion={r => runSearch({ query: r.title, filters: { query: r.title } })} toggleSave={toggleSavedRecipe} />}
       {page === "search" && <SearchScreen profile={sharedProfile} diary={diary} saved={saved} catalog={catalog} onSearch={request => runSearch(request)} />}
@@ -424,7 +427,7 @@ export default function App() {
       {page === "help" && <HelpScreen back={() => go("settings")} />}
     </main>
     {page !== "cook" && <BottomNav page={page} go={go} />}
-    {page !== "cook" && <MoodyFab onOpen={() => setMoodyOpen(true)} />}
+    {page !== "cook" && <MoodyFab onOpen={openMoody} />}
     {moodyOpen && <MoodyPanel profile={sharedProfile} catalog={safeRecipes} loadCatalog={loadMoodyCatalog} turns={moodyTurns} setTurns={setMoodyTurns} close={() => setMoodyOpen(false)} openRecipe={openFromMoody} />}
     {notifOpen && <NotificationsPanel close={() => setNotifOpen(false)} profile={profile} save={setProfile} refresh={refreshNotifs} />}
     {menuOpen && <MainMenu profile={profile} page={page} go={go} close={() => setMenuOpen(false)} openNotifs={openNotifs} unread={unreadCount()} logout={() => { void authSignOut(); setEntry("welcome"); }} />}

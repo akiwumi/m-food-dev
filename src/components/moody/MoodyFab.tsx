@@ -1,11 +1,11 @@
 import type React from "react";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { Sparkles } from "lucide-react";
 
 // Floating "Ask Moody" button the user can drag anywhere on screen. A short drag
 // repositions it (and the position persists); a tap opens Moody. Position is
 // clamped to the viewport and re-clamped on resize/orientation change.
-export function MoodyFab({ onOpen }: { onOpen: () => void }) {
+export const MoodyFab = memo(function MoodyFab({ onOpen }: { onOpen: () => void }) {
   const SIZE = 52, MARGIN = 16, NAV = 92, THRESHOLD = 6;
   const clamp = (x: number, y: number) => ({
     x: Math.max(MARGIN, Math.min(x, window.innerWidth - SIZE - MARGIN)),
@@ -65,4 +65,4 @@ export function MoodyFab({ onOpen }: { onOpen: () => void }) {
     onClick={onClick}
     aria-label="Ask Moody (drag to move)"
   ><Sparkles /></button>;
-}
+});

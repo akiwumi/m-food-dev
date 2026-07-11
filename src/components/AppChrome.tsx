@@ -1,4 +1,4 @@
-import { useContext } from "react";
+import { memo, useContext } from "react";
 import {
   Home, Search, ListChecks, ShoppingCart, CalendarDays, Salad, Heart, Sparkles,
   UserRound, ArrowLeft, Menu, Bell,
@@ -12,7 +12,9 @@ const nav = [
   ["grocery", "Grocery", ShoppingCart], ["planner", "Planner", CalendarDays],
 ] as const;
 
-export function DesktopNav({ page, go, openMoody }: { page: Page; go: (p: Page) => void; openMoody: () => void }) {
+// memo'd: the nav/header chrome persists across page changes, so it should skip
+// re-rendering when unrelated App state changes (given stable go/openMoody props).
+export const DesktopNav = memo(function DesktopNav({ page, go, openMoody }: { page: Page; go: (p: Page) => void; openMoody: () => void }) {
   return <aside className="desktop-nav">
     <nav>
       {nav.map(([id, label, Icon]) => <button className={page === id ? "active" : ""} onClick={() => go(id)} key={id}><Icon size={19} />{label}</button>)}
@@ -28,9 +30,9 @@ export function DesktopNav({ page, go, openMoody }: { page: Page; go: (p: Page) 
       <button className="desktop-account" onClick={() => go("settings")}><UserRound size={18} />My MoodFood</button>
     </div>
   </aside>;
-}
+});
 
-export function BottomNav({ page, go }: { page: Page; go: (p: Page) => void }) {
+export const BottomNav = memo(function BottomNav({ page, go }: { page: Page; go: (p: Page) => void }) {
   const items: [Page, string, typeof Home][] = [
     ["home", "Home", Home],
     ["search", "Search", Search],
@@ -39,14 +41,14 @@ export function BottomNav({ page, go }: { page: Page; go: (p: Page) => void }) {
     ["grocery", "Grocery", ShoppingCart],
   ];
   return <nav className="bottom-nav">{items.map(([id, label, Icon]) => <button className={page === id ? "active" : ""} onClick={() => go(id)} key={id}><Icon size={19} /><span>{label}</span></button>)}</nav>;
-}
+});
 
-export function TopBar({ title, back }: { title: string; back?: () => void }) {
+export const TopBar = memo(function TopBar({ title, back }: { title: string; back?: () => void }) {
   const openMenu = useContext(MenuCtx);
   return <header className="top-bar"><button onClick={back} disabled={!back}><ArrowLeft /></button><h1>{title}</h1><button onClick={openMenu} aria-label="Open menu"><Menu /></button></header>;
-}
+});
 
-export function AppHeader({ openNotifs, unread, profile }: { openNotifs?: () => void; unread?: number; profile?: Profile }) {
+export const AppHeader = memo(function AppHeader({ openNotifs, unread, profile }: { openNotifs?: () => void; unread?: number; profile?: Profile }) {
   const openMenu = useContext(MenuCtx);
   return (
     <header className="app-header">
@@ -63,4 +65,4 @@ export function AppHeader({ openNotifs, unread, profile }: { openNotifs?: () => 
       <button className="icon-btn" aria-label="Open menu" onClick={openMenu}><Menu size={20} /></button>
     </header>
   );
-}
+});
