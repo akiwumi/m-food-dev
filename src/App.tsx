@@ -55,6 +55,7 @@ const DataPrivacyScreen = lazy(() => import("./screens/DataPrivacyScreen").then(
 const BillingScreen = lazy(() => import("./screens/BillingScreen").then(m => ({ default: m.BillingScreen })));
 const AccountScreen = lazy(() => import("./screens/AccountScreen").then(m => ({ default: m.AccountScreen })));
 const CommunityScreen = lazy(() => import("./screens/CommunityScreen").then(m => ({ default: m.CommunityScreen })));
+const FriendsScreen = lazy(() => import("./screens/FriendsScreen").then(m => ({ default: m.FriendsScreen })));
 const SearchResultsScreen = lazy(() => import("./screens/SearchResultsScreen").then(m => ({ default: m.SearchResultsScreen })));
 const EmptyResultsScreen = lazy(() => import("./screens/SearchResultsScreen").then(m => ({ default: m.EmptyResultsScreen })));
 const DetailScreen = lazy(() => import("./screens/DetailScreen").then(m => ({ default: m.DetailScreen })));
@@ -115,7 +116,7 @@ export default function App() {
   const [quickEnergy, setQuickEnergy] = useState(25);
   const [quickTime, setQuickTime] = useState(30);
   const [pendingShare, setPendingShare] = useState<string | undefined>(undefined);
-  const { saved, setSaved, diary, setDiary, groceries, setGroceries, posts, setPosts, connections, setConnections, diners, setDiners, selectedDiners, setSelectedDiners, eaterCount, setEaterCount, sharedProfile } = useHouseholdCollections(profile);
+  const { saved, setSaved, diary, setDiary, groceries, setGroceries, posts, setPosts, diners, setDiners, selectedDiners, setSelectedDiners, eaterCount, setEaterCount, sharedProfile } = useHouseholdCollections(profile);
   const { aiCuration, setAiCuration, learnedSignals, setLearnedSignals, behavioralConsent, cuisineSignal, moodSignal, suppressedCuisines, setSuppressedCuisines, appliedSignals } = useLearningSignals(entry, page, diary);
   // AI features are a Pro perk (strategy §6.5): the stored preference survives,
   // but AI curation only takes effect while the trial/subscription is live.
@@ -417,14 +418,15 @@ export default function App() {
       {page === "insights" && <InsightsScreen diary={diary} />}
       {page === "settings" && <SettingsScreen profile={profile} save={setProfile} go={go} logout={() => { void authSignOut(); setEntry("welcome"); }} aiCuration={aiCuration} setAiCuration={setAiCuration} learnedSignals={learnedSignals} setLearnedSignals={setLearnedSignals} behavioralConsent={behavioralConsent} pro={pro} />}
       {page === "privacy" && <DataPrivacyScreen signal={cuisineSignal} moodSignal={moodSignal} suppressed={suppressedCuisines} learningOn={learnedSignals} onForget={c => setSuppressedCuisines(prev => [...new Set([...prev, c])])} onRestore={c => setSuppressedCuisines(prev => prev.filter(x => x !== c))} pro={pro} />}
-      {page === "favorites" && <LibraryScreen title="Saved recipes" source={safeRecipes.filter(r => saved.includes(r.id))} open={open} remove={r => setSaved(saved.filter(id => id !== r.id))} />}
+      {page === "favorites" && <LibraryScreen title="Saved recipes" source={safeRecipes.filter(r => saved.includes(r.id))} open={open} remove={r => setSaved(saved.filter(id => id !== r.id))} share={shareRecipe} />}
       {page === "import" && <ImportScreen />}
       {page === "admin" && <AdminScreen catalog={catalog} />}
       {page === "billing" && <BillingScreen profile={profile} save={setProfile} />}
       {page === "psych-profile" && <PsychProfileScreen profile={profile} save={setProfile} back={() => go("settings")} />}
       {page === "food-profile" && <FoodProfileScreen profile={profile} save={setProfile} back={() => go("settings")} />}
       {page === "account" && <AccountScreen profile={profile} save={setProfile} posts={posts.filter(p => p.author === profile.name)} back={() => go("settings")} cancelAccount={cancelAccount} />}
-      {page === "community" && <CommunityScreen profile={profile} posts={posts} setPosts={setPosts} connections={connections} setConnections={setConnections} openRecipe={open} catalog={catalog} initialRecipeId={pendingShare} clearInitial={() => setPendingShare(undefined)} />}
+      {page === "community" && <CommunityScreen profile={profile} posts={posts} setPosts={setPosts} openRecipe={open} catalog={catalog} initialRecipeId={pendingShare} clearInitial={() => setPendingShare(undefined)} goFriends={() => go("friends")} />}
+      {page === "friends" && <FriendsScreen back={() => go("community")} />}
       {page === "health" && <HealthHub diary={diary} go={go} />}
       {page === "health-nutrition" && <HealthDetail kind="nutrition" diary={diary} back={() => go("health")} />}
       {page === "health-variety" && <HealthDetail kind="variety" diary={diary} back={() => go("health")} />}

@@ -569,6 +569,29 @@ form,.search-box,.search-actions,.search-filters,.entry{max-width:100%;min-width
 .composer-recipe svg:first-child{color:var(--olive)}
 .composer-recipe span{flex:1}
 .composer-recipe button{border:0;background:transparent;display:grid;place-items:center;color:var(--muted)}
+/* Community + Friends (social) additions */
+.community-intro .ci-actions{display:flex;gap:8px;align-items:center}
+.community-intro .secondary{background:transparent;color:#fff;border:1px solid #ffffff66;min-height:42px;padding:0 12px;display:flex;align-items:center;gap:5px}
+.visibility-toggle{border:1px solid var(--line);background:var(--cream);border-radius:10px;padding:0 10px;min-height:40px;display:flex;align-items:center;gap:5px;font-size:10px;font-weight:700;color:var(--olive)}
+.linked-recipe.static{cursor:default}
+.library-actions{display:flex;gap:8px;align-items:center;margin-top:8px}
+.library-actions .primary{flex:1}
+.icon-only{min-width:44px;display:grid;place-items:center;padding:0}
+.friends .friend-search{margin-top:12px}
+.fs-input{display:flex;align-items:center;gap:8px;background:var(--white);border:1px solid var(--line);border-radius:14px;padding:11px 13px}
+.fs-input svg{color:var(--muted);flex-shrink:0}
+.fs-input input{border:0;background:transparent;outline:0;flex:1;font-size:16px;min-width:0}
+.fs-results{margin-top:10px;display:grid;gap:4px}
+.fs-results .quiet{padding:12px;font-size:12px;color:var(--muted)}
+.friend-block{margin-top:22px}
+.friend-block h2{font:600 15px "Playfair Display",serif;display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.friend-block .count{background:var(--sage);color:var(--olive);border-radius:20px;font-size:11px;font-weight:700;padding:1px 9px}
+.friend-row{display:flex;align-items:center;gap:10px;background:var(--white);border:1px solid var(--line);border-radius:14px;padding:9px 12px}
+.friend-row>b{flex:1;font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.friend-tag{display:flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:var(--olive)}
+.friend-tag.muted{color:var(--muted)}
+button.sm{min-height:36px;padding:0 12px;border-radius:11px;display:flex;align-items:center;gap:5px;font-size:12px;font-weight:700}
+button.ghost{border:1px solid var(--line);background:transparent;color:var(--muted)}
 
 /* ── Food photo analysis: allergens + vitamins ───────────────────────────── */
 .fac-section-label{display:block;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:14px 0 8px}

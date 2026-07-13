@@ -12,7 +12,7 @@ export function MainMenu({ profile, page, go, close, openNotifs, unread, logout 
   const nav = (p: Page) => { go(p); close(); };
   const groups: { title: string; items: [Page, string, typeof Home][] }[] = [
     { title: "COOK & PLAN", items: [["home", "Home", Home], ["search", "Search recipes", Search], ["diary", "Diary", BookOpen], ["pantry", "My pantry", Salad], ["grocery", "Grocery", ShoppingCart], ["planner", "Planner", CalendarDays]] },
-    { title: "DISCOVER", items: [["community", "Community", Users], ["favorites", "Saved recipes", Heart], ["import", "Import a recipe", Upload]] },
+    { title: "DISCOVER", items: [["community", "Community", Users], ["friends", "Friends", UserPlus], ["favorites", "Saved recipes", Heart], ["import", "Import a recipe", Upload]] },
     { title: "TRACK", items: [["food-log", "Food photo log (camera)", Camera], ["insights", "Weekly reflections", BarChart3], ["health", "Health trends", Activity]] },
     { title: "YOUR PROFILE", items: [["food-profile", "Food profile & preferences", ClipboardCheck], ["psych-profile", "Psychological food profile", Sparkles], ["diners", "Household diners", UserPlus], ["account", "Account & public profile", UserRound]] },
     { title: "ACCOUNT & APP", items: [["billing", "Subscription & billing", Star], ["admin", "Editorial console", LayoutDashboard], ["help", "Help & FAQ", HelpCircle], ["settings", "Settings", Settings2]] },
