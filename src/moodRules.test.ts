@@ -66,3 +66,45 @@ describe("weighted mood scoring", () => {
     expect(scoreByMood(comforting, "Energised")).toBe(scoreByMood(comforting, "Focused"));
   });
 });
+
+describe("evidence-based nutrition inference (Food & Mood report)", () => {
+  const tagsOf = (patch: Partial<Recipe>) => flattenRecipeTags(inferRecipeTags(recipe(patch)));
+
+  it("detects Mediterranean / SMILES pattern components", () => {
+    expect(tagsOf({ title: "Baked salmon", ingredients: ["salmon", "olive oil", "lemon"] })).toEqual(expect.arrayContaining(["omega_3", "mediterranean"]));
+    expect(tagsOf({ title: "Oat porridge", ingredients: ["oats", "milk"] })).toEqual(expect.arrayContaining(["whole_grain", "slow_release_energy"]));
+    expect(tagsOf({ title: "Lentil stew", ingredients: ["lentils", "onion"] })).toEqual(expect.arrayContaining(["legumes", "slow_release_energy"]));
+    expect(tagsOf({ title: "Kale side", ingredients: ["kale", "garlic"] })).toContain("leafy_greens");
+    expect(tagsOf({ title: "Yoghurt bowl", ingredients: ["yoghurt", "berries"] })).toContain("fermented");
+  });
+
+  it("flags the evidence 'limit' list (added sugar, ultra-processed, caffeine)", () => {
+    expect(tagsOf({ title: "Chocolate brownie", ingredients: ["chocolate", "flour"] })).toContain("high_sugar");
+    expect(tagsOf({ title: "Espresso martini", ingredients: ["espresso", "coffee"] })).toContain("caffeine");
+    expect(tagsOf({ title: "Speedy dinner", ingredients: ["instant noodle", "hot dog"] })).toContain("ultra_processed");
+  });
+
+  it("does not mislabel white rice as a whole grain", () => {
+    expect(tagsOf({ title: "Rice bowl", ingredients: ["rice", "tomato"] })).not.toContain("whole_grain");
+  });
+});
+
+describe("evidence-informed mood weighting", () => {
+  it("Stressed favours steady-energy, omega-3 meals over caffeine/sugar ones", () => {
+    const steady = recipe({ title: "Salmon quinoa bowl", ingredients: ["salmon", "quinoa", "spinach", "olive oil"], tags: { sensory: ["warm"], mood: ["calming"] } });
+    const jittery = recipe({ title: "Espresso brownie", ingredients: ["espresso", "brownie"] });
+    expect(scoreByMood(steady, "Stressed")).toBeGreaterThan(scoreByMood(jittery, "Stressed"));
+  });
+
+  it("Focused rewards slow-release whole grains (weight was previously dead)", () => {
+    const wholegrain = recipe({ title: "Chicken quinoa bowl", ingredients: ["chicken", "quinoa", "broccoli"], diets: ["High protein"] });
+    const sugary = recipe({ title: "Syrup pancake stack", ingredients: ["flour", "syrup"] });
+    expect(scoreByMood(wholegrain, "Focused")).toBeGreaterThan(scoreByMood(sugary, "Focused"));
+  });
+
+  it("Healthy ranks a Mediterranean plate above a deep-fried, ultra-processed one", () => {
+    const med = recipe({ title: "Mediterranean salmon", ingredients: ["salmon", "lentils", "spinach", "olive oil"] });
+    const fried = recipe({ title: "Fried chicken bucket", ingredients: ["chicken", "flour"], tags: { nutrition: ["deep_fried", "high_sugar", "ultra_processed"] } });
+    expect(scoreByMood(med, "Healthy")).toBeGreaterThan(scoreByMood(fried, "Healthy"));
+  });
+});
