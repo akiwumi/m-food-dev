@@ -23,7 +23,6 @@ import { type Entry, type Page } from "./appTypes";
 import { MenuCtx } from "./components/MenuCtx";
 import { usePullToRefresh } from "./hooks/usePullToRefresh";
 import { useNotifications } from "./hooks/useNotifications";
-import { useMoodyChat } from "./hooks/useMoodyChat";
 import { useRecipeSearch } from "./hooks/useRecipeSearch";
 import { useHomeFeed } from "./hooks/useHomeFeed";
 import { useLearningSignals } from "./hooks/useLearningSignals";
@@ -34,7 +33,6 @@ import { PullRefreshIndicator } from "./components/PullRefreshIndicator";
 import { BottomNav, DesktopNav } from "./components/AppChrome";
 import { MainMenu } from "./components/MainMenu";
 import { NotificationsPanel } from "./components/NotificationsPanel";
-import { MoodyFab } from "./components/moody/MoodyFab";
 // Authenticated app screens: none are needed until the user is signed in and on
 // that page, so lazy-load them out of the initial (Landing/onboarding) chunk.
 // They render behind the <Suspense> around <main>, so nav stays put while a
@@ -62,7 +60,6 @@ const CookScreen = lazy(() => import("./screens/CookScreen").then(m => ({ defaul
 const DiaryScreen = lazy(() => import("./screens/DiaryScreen").then(m => ({ default: m.DiaryScreen })));
 const FoodLogScreen = lazy(() => import("./screens/FoodLogScreen").then(m => ({ default: m.FoodLogScreen })));
 const HelpScreen = lazy(() => import("./screens/HelpScreen").then(m => ({ default: m.HelpScreen })));
-const MoodyPanel = lazy(() => import("./components/moody/MoodyPanel").then(m => ({ default: m.MoodyPanel })));
 const PsychProfileScreen = lazy(() => import("./screens/profile/PsychProfileScreen").then(m => ({ default: m.PsychProfileScreen })));
 const FoodProfileScreen = lazy(() => import("./screens/profile/FoodProfileScreen").then(m => ({ default: m.FoodProfileScreen })));
 const QuickTasteStartScreen = lazy(() => import("./screens/entry/QuickTasteStartScreen").then(m => ({ default: m.QuickTasteStartScreen })));
@@ -115,8 +112,6 @@ export default function App() {
   const [quickMood, setQuickMood] = useState("Tired");
   const [quickEnergy, setQuickEnergy] = useState(25);
   const [quickTime, setQuickTime] = useState(30);
-  const [moodyOpen, setMoodyOpen] = useState(false);
-  const [detailReturnMoody, setDetailReturnMoody] = useState(false);
   const [pendingShare, setPendingShare] = useState<string | undefined>(undefined);
   const { saved, setSaved, diary, setDiary, groceries, setGroceries, posts, setPosts, connections, setConnections, diners, setDiners, selectedDiners, setSelectedDiners, eaterCount, setEaterCount, sharedProfile } = useHouseholdCollections(profile);
   const { aiCuration, setAiCuration, learnedSignals, setLearnedSignals, behavioralConsent, cuisineSignal, moodSignal, suppressedCuisines, setSuppressedCuisines, appliedSignals } = useLearningSignals(entry, page, diary);
@@ -165,7 +160,6 @@ export default function App() {
     results, setResults, ranked, curating, hasFetched, loadMore,
     live, curated, beginResults: beginCheckin, retry,
   } = useHomeFeed(entry, sharedProfile, foodHistory, appliedSignals, aiCuration, behavioralConsent, setCatalog);
-  const { moodyTurns, setMoodyTurns, loadMoodyCatalog } = useMoodyChat(catalog, setCatalog, foodHistory, mood, sharedProfile);
   const { searchRequest, setSearchRequest, searchResults, searchLoading, searchRelaxed, runSearch, cancelSearch } = useRecipeSearch(sharedProfile, mood, foodHistory, setPage);
 
   const { notifOpen, setNotifOpen, openNotifs, refreshNotifs } = useNotifications(setProfile);
@@ -291,10 +285,9 @@ export default function App() {
     setPage(next);
     window.scrollTo(0, 0);
   }, [cancelSearch]);
-  const openMoody = useCallback(() => setMoodyOpen(true), []);
   const open = (recipe: Recipe) => {
     addToCatalog(recipe);
-    setDetailReturnMoody(false); setSelected(recipe); setDetailReturnPage(page); go("detail");
+    setSelected(recipe); setDetailReturnPage(page); go("detail");
   };
   // Log a food photo: show it instantly (optimistic, inline data URL), then push
   // the binary to private Storage in the background and swap image→imagePath so it
@@ -306,24 +299,12 @@ export default function App() {
       setProfile(prev => ({ ...prev, photoLogs: prev.photoLogs.map(l => (l.id === stored.id ? stored : l)) }));
     });
   }, [setProfile]);
-  const openFromMoody = (recipe: Recipe) => {
-    addToCatalog(recipe);
-    setSelected(recipe);
-    setDetailReturnPage(page);
-    setDetailReturnMoody(true);
-    setMoodyOpen(false);
-    go("detail");
-  };
   const toggleSavedRecipe = useCallback((recipe: Recipe) => {
     addToCatalog(recipe);
     setSaved(current => nextSavedRecipeIds(current, recipe.id));
   }, [addToCatalog, setSaved]);
   const backFromDetail = () => {
     go(detailReturnPage);
-    if (detailReturnMoody) {
-      setDetailReturnMoody(false);
-      setMoodyOpen(true);
-    }
   };
   // Share a recipe into the community feed: make sure it's in the catalog so the
   // post can link it, preselect it in the composer, and jump to Community.
@@ -396,7 +377,7 @@ export default function App() {
   if (entry === "subscription") return <SubscriptionScreen profile={profile} save={setProfile} onStarted={refreshNotifs} proceed={() => { setProfile({ ...profile, activationPaywallSeen: true }); setEntry("app"); }} />;
   return <MenuCtx.Provider value={() => setMenuOpen(true)}><div className={page === "cook" ? "app cooking" : "app"}>
     <PullRefreshIndicator pullY={pullY} />
-    {page !== "cook" && <DesktopNav page={page} go={go} openMoody={openMoody} />}
+    {page !== "cook" && <DesktopNav page={page} go={go} />}
     <Suspense fallback={<main className="screen-loading" aria-busy="true" />}><main>
       {page === "home" && <HomeScreen profile={profile} diary={diary} saved={saved} catalog={catalog} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results={false} setResults={setResults} beginResults={() => { setSearchRequest(null); beginCheckin(); go("results"); }} ranked={ranked} curating={curating} loadMore={loadMore} live={live} curated={curated} retry={retry} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={addPhoto} onPickSuggestion={r => runSearch({ query: r.title, filters: { query: r.title } })} toggleSave={toggleSavedRecipe} />}
       {page === "search" && <SearchScreen profile={sharedProfile} diary={diary} saved={saved} catalog={catalog} onSearch={request => runSearch(request)} />}
@@ -432,8 +413,6 @@ export default function App() {
       {page === "help" && <HelpScreen back={() => go("settings")} />}
     </main></Suspense>
     {page !== "cook" && <BottomNav page={page} go={go} />}
-    {page !== "cook" && <MoodyFab onOpen={openMoody} />}
-    {moodyOpen && <Suspense fallback={null}><MoodyPanel profile={sharedProfile} catalog={safeRecipes} loadCatalog={loadMoodyCatalog} turns={moodyTurns} setTurns={setMoodyTurns} close={() => setMoodyOpen(false)} openRecipe={openFromMoody} /></Suspense>}
     {notifOpen && <NotificationsPanel close={() => setNotifOpen(false)} profile={profile} save={setProfile} refresh={refreshNotifs} />}
     {menuOpen && <MainMenu profile={profile} page={page} go={go} close={() => setMenuOpen(false)} openNotifs={openNotifs} unread={unreadCount()} logout={() => { void authSignOut(); setEntry("welcome"); }} />}
   </div></MenuCtx.Provider>;

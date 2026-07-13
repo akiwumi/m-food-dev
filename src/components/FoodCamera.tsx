@@ -1,9 +1,17 @@
 import type React from "react";
 import { useState } from "react";
-import { FlameKindling, ShieldCheck, Check, Camera } from "lucide-react";
+import { ShieldCheck, Check, Camera, Search } from "lucide-react";
 import { readSafeImage } from "../security";
-import { analyzeFood, flaggedAllergens, type FoodPhoto } from "../foodAnalysis";
+import { makeFoodLog, flaggedAllergens, type FoodPhoto } from "../foodAnalysis";
+import { searchFoods, primaryServing, type NutritionFood } from "../nutrition";
 
+type Fields = { dish: string; calories: string; protein: string; carbs: string; fat: string; fiber: string };
+const EMPTY: Fields = { dish: "", calories: "", protein: "", carbs: "", fat: "", fiber: "" };
+
+// Capture a meal photo, then log it with HONEST numbers only. Nothing is guessed
+// from the pixels: calories can be prefilled from the recipe you cooked, looked up
+// in the FatSecret food database, or typed in by hand — and blank means unknown,
+// not zero-guessed. See src/foodAnalysis.ts for the data model.
 export function FoodCamera({
   label = "Log a meal with photo",
   onSave,
@@ -15,91 +23,142 @@ export function FoodCamera({
 }: {
   label?: string;
   onSave: (p: FoodPhoto) => void;
-  hint?: { recipeCalories?: number; recipeName?: string };
+  hint?: { recipeCalories?: number; recipeName?: string; allergens?: string[] };
   allergies?: string[];
   compact?: boolean;
   tile?: boolean;
   style?: React.CSSProperties;
 }) {
-  const [state, setState] = useState<"idle" | "analyzing" | "done">("idle");
-  const [result, setResult] = useState<FoodPhoto | null>(null);
+  const [image, setImage] = useState<string | null>(null);
+  const [form, setForm] = useState<Fields>(EMPTY);
+  const [source, setSource] = useState<FoodPhoto["source"]>("manual");
+  const [lookup, setLookup] = useState<{ loading: boolean; results: NutritionFood[] | null }>({ loading: false, results: null });
 
-  const handle = async (file?: File) => {
+  const dishAllergens = hint?.allergens ?? [];
+  const flagged = flaggedAllergens(dishAllergens, allergies);
+
+  const pick = async (file?: File) => {
     if (!file) return;
     try {
-      const image = await readSafeImage(file);
-      setState("analyzing");
-      const analysis = await analyzeFood(image, { ...hint, allergies });
-      setResult(analysis);
-      setState("done");
+      const img = await readSafeImage(file);
+      setForm({
+        ...EMPTY,
+        dish: hint?.recipeName ?? "",
+        calories: hint?.recipeCalories ? String(hint.recipeCalories) : "",
+      });
+      setSource(hint?.recipeCalories ? "recipe" : "manual");
+      setLookup({ loading: false, results: null });
+      setImage(img);
     } catch {
-      setState("idle");
+      /* unreadable image, stay on the trigger */
     }
   };
 
-  const flagged = result ? flaggedAllergens(result.allergens, allergies) : [];
+  // Editing a number means the value is now the user's own — mark it manual.
+  const set = (key: keyof Fields, value: string) => {
+    setForm(f => ({ ...f, [key]: value }));
+    if (key !== "dish") setSource("manual");
+  };
 
-  if (state === "analyzing") {
-    return (
-      <div className="food-camera-analyzing" style={style}>
-        <div className="fca-spinner" />
-        <span>Moody is reading your plate…</span>
-      </div>
-    );
-  }
+  const runLookup = async () => {
+    const query = form.dish.trim();
+    if (!query) return;
+    setLookup({ loading: true, results: null });
+    const results = await searchFoods(query);
+    setLookup({ loading: false, results: results ?? [] });
+  };
 
-  if (state === "done" && result) {
+  const applyFood = (food: NutritionFood) => {
+    const s = primaryServing(food);
+    if (!s) return;
+    setForm(f => ({
+      ...f,
+      calories: String(Math.round(s.calories)),
+      protein: String(Math.round(s.protein)),
+      carbs: String(Math.round(s.carbs)),
+      fat: String(Math.round(s.fat)),
+      fiber: String(Math.round(s.fiber)),
+    }));
+    setSource("database");
+    setLookup({ loading: false, results: null });
+  };
+
+  const reset = () => { setImage(null); setForm(EMPTY); setLookup({ loading: false, results: null }); };
+
+  const save = () => {
+    if (!image) return;
+    onSave(makeFoodLog({
+      image,
+      dish: form.dish,
+      calories: Number(form.calories) || 0,
+      protein: Number(form.protein) || 0,
+      carbs: Number(form.carbs) || 0,
+      fat: Number(form.fat) || 0,
+      fiber: Number(form.fiber) || 0,
+      allergens: dishAllergens,
+      source,
+    }));
+    reset();
+  };
+
+  if (image) {
     return (
-      <div className="food-analysis-card" style={style}>
-        <img src={result.image} alt="Your meal" className="fac-photo" />
-        <div className="fac-body">
-          <div className="fac-dish">
-            <b>{result.dish}</b>
-            <span className="fac-conf">{result.confidence}% confidence</span>
+      <div className="food-log-form" style={style}>
+        <img src={image} alt="Your meal" className="flf-photo" />
+        <div className="flf-body">
+          <label className="flf-field">
+            <span className="flf-label">Dish</span>
+            <div className="flf-dish-row">
+              <input value={form.dish} onChange={e => set("dish", e.target.value)} placeholder="e.g. Chicken caesar salad" />
+              <button type="button" className="flf-lookup" onClick={runLookup} disabled={!form.dish.trim() || lookup.loading}>
+                <Search size={15} />{lookup.loading ? "…" : "Look up"}
+              </button>
+            </div>
+          </label>
+
+          {lookup.results !== null && (
+            <div className="flf-results">
+              {lookup.loading && <span className="flf-hint">Searching the food database…</span>}
+              {!lookup.loading && lookup.results.length === 0 && <span className="flf-hint">No match found — enter the numbers yourself below.</span>}
+              {!lookup.loading && lookup.results.slice(0, 3).map(food => {
+                const s = primaryServing(food);
+                if (!s) return null;
+                return (
+                  <button type="button" className="flf-result" key={food.food_id} onClick={() => applyFood(food)}>
+                    <b>{food.name}</b>
+                    <span>{s.calories} kcal · P {s.protein}g · C {s.carbs}g · F {s.fat}g — {s.description}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="flf-macros">
+            <NumField label="Calories" unit="kcal" value={form.calories} onChange={v => set("calories", v)} />
+            <NumField label="Protein" unit="g" value={form.protein} onChange={v => set("protein", v)} />
+            <NumField label="Carbs" unit="g" value={form.carbs} onChange={v => set("carbs", v)} />
+            <NumField label="Fat" unit="g" value={form.fat} onChange={v => set("fat", v)} />
+            <NumField label="Fibre" unit="g" value={form.fiber} onChange={v => set("fiber", v)} />
           </div>
-          <div className="fac-calories">
-            <FlameKindling size={18} /><span className="fac-kcal">{result.calories}</span><span className="fac-unit">kcal</span>
-          </div>
-          <div className="fac-macros">
-            <MacroBar label="Protein" value={result.protein} color="#57aecb" max={60} />
-            <MacroBar label="Carbs"   value={result.carbs}   color="#f0c050" max={100} />
-            <MacroBar label="Fat"     value={result.fat}     color="#ef9a6a" max={50} />
-            <MacroBar label="Fibre"   value={result.fiber}   color="#6acd8c" max={20} />
-          </div>
-          {/* Allergen warning, flag anything matching the user's profile first. */}
+
           {!!flagged.length && (
             <div className="fac-allergen-alert">
               <ShieldCheck size={15} />
-              <span>Heads up, may contain <b>{flagged.join(", ")}</b>, which you flagged as an allergy. Always double-check.</span>
+              <span>This recipe contains <b>{flagged.join(", ")}</b>, which you flagged as an allergy. Always double-check.</span>
             </div>
           )}
-          {!!result.allergens.length && (
-            <div className="fac-allergens">
-              <span className="fac-section-label">Allergens detected</span>
-              <div className="fac-allergen-chips">
-                {result.allergens.map(a => <span key={a} className={flagged.includes(a) ? "allergen-chip danger" : "allergen-chip"}>{a}</span>)}
-              </div>
-            </div>
-          )}
-          {!!result.vitamins.length && (
-            <div className="fac-vitamins">
-              <span className="fac-section-label">Key vitamins &amp; minerals</span>
-              {result.vitamins.map(v => (
-                <div className="vitamin-row" key={v.name}>
-                  <span className="vitamin-name">{v.name}</span>
-                  <div className="vitamin-track"><div className="vitamin-fill" style={{ width: `${Math.min(100, v.percentDV)}%` }} /></div>
-                  <span className="vitamin-val">{v.amount}{v.unit}{v.percentDV ? ` · ${v.percentDV}% DV` : ""}</span>
-                </div>
-              ))}
-            </div>
-          )}
+
+          <p className="flf-source">
+            {source === "recipe" && "Calories from this recipe. Look up or edit the rest below."}
+            {source === "database" && "Nutrition from the FatSecret food database, per serving."}
+            {source === "manual" && "Enter what you know — leave the rest blank. Nothing is guessed from the photo."}
+          </p>
+
           <div className="fac-actions">
-            <button className="primary" style={{ flex: 1 }} onClick={() => { onSave(result); setState("idle"); setResult(null); }}>
-              Save to diary <Check size={16} />
-            </button>
-            <button className="secondary" onClick={() => { setState("idle"); setResult(null); }}>Discard</button>
+            <button className="primary" style={{ flex: 1 }} onClick={save}>Save to diary <Check size={16} /></button>
+            <button className="secondary" onClick={reset}>Discard</button>
           </div>
-          <small className="fac-disclaimer">Estimates only, not medical or nutritional advice.</small>
+          <small className="fac-disclaimer">Not medical or nutritional advice.</small>
         </div>
       </div>
     );
@@ -109,7 +168,7 @@ export function FoodCamera({
     return (
       <label className="dps-add-tile" style={style}>
         <Camera size={20} />
-        <input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => handle(e.target.files?.[0])} />
+        <input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => pick(e.target.files?.[0])} />
       </label>
     );
   }
@@ -118,7 +177,7 @@ export function FoodCamera({
     return (
       <label className="food-camera-compact" style={style}>
         <Camera size={16} />{label}
-        <input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => handle(e.target.files?.[0])} />
+        <input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => pick(e.target.files?.[0])} />
       </label>
     );
   }
@@ -126,17 +185,19 @@ export function FoodCamera({
   return (
     <label className="food-camera-btn" style={style}>
       <Camera size={20} />{label}
-      <input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => handle(e.target.files?.[0])} />
+      <input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => pick(e.target.files?.[0])} />
     </label>
   );
 }
 
-function MacroBar({ label, value, color, max }: { label: string; value: number; color: string; max: number }) {
+function NumField({ label, unit, value, onChange }: { label: string; unit: string; value: string; onChange: (v: string) => void }) {
   return (
-    <div className="macro-row">
-      <span className="macro-label">{label}</span>
-      <div className="macro-track"><div className="macro-fill" style={{ width: `${Math.min(100, (value / max) * 100)}%`, background: color }} /></div>
-      <span className="macro-val">{value}g</span>
-    </div>
+    <label className="flf-num">
+      <span>{label}</span>
+      <div className="flf-num-input">
+        <input type="number" inputMode="numeric" min={0} value={value} onChange={e => onChange(e.target.value)} placeholder="—" />
+        <em>{unit}</em>
+      </div>
+    </label>
   );
 }

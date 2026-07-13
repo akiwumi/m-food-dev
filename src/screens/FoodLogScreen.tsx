@@ -35,9 +35,8 @@ export function FoodLogScreen({ logs, addPhoto, back, allergies }: { logs: FoodP
                   <FoodPhotoImg photo={p} placeholder="flog-noimg" />
                   <div className="flog-info">
                     <b>{p.dish}</b>
-                    <span><FlameKindling size={12} /> {p.calories} kcal</span>
-                    <span className="flog-macros">P {p.protein}g · C {p.carbs}g · F {p.fat}g</span>
-                    <span className="flog-conf">{p.confidence}% confidence</span>
+                    <span><FlameKindling size={12} /> {p.calories > 0 ? `${p.calories} kcal` : "No calories logged"}</span>
+                    {(p.protein > 0 || p.carbs > 0 || p.fat > 0) && <span className="flog-macros">P {p.protein}g · C {p.carbs}g · F {p.fat}g</span>}
                   </div>
                 </div>
               ))}

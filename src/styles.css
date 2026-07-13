@@ -422,6 +422,29 @@ body,.app{background:linear-gradient(180deg,#dceef2 0%,#eaf4f3 30%,#f5fbfa 100%)
 .photo-preview-mini img{width:54px;height:54px;border-radius:10px;object-fit:cover}
 .photo-preview-mini span{font-size:13px;font-weight:700}
 
+/* Honest food-log entry form (no AI, no fabricated numbers) */
+.food-log-form{background:var(--glass-strong);border:1px solid rgba(255,255,255,.75);border-radius:24px;overflow:hidden;box-shadow:var(--shadow)}
+.flf-photo{width:100%;height:180px;object-fit:cover}
+.flf-body{padding:16px;display:grid;gap:12px}
+.flf-field{display:grid;gap:6px}
+.flf-label{font-size:11px;font-weight:700;color:var(--muted)}
+.flf-dish-row{display:flex;gap:8px}
+.flf-dish-row input{flex:1;min-width:0;border:1px solid var(--line);background:var(--white);border-radius:12px;padding:12px;font-size:16px;outline-color:var(--blue-deep)}
+.flf-lookup{display:flex;align-items:center;gap:5px;border:0;border-radius:12px;background:var(--blue-deep);color:#fff;padding:0 14px;font-weight:700;font-size:13px;white-space:nowrap}
+.flf-lookup:disabled{opacity:.4}
+.flf-results{display:grid;gap:6px}
+.flf-hint{font-size:11px;color:var(--muted);line-height:1.5}
+.flf-result{display:grid;gap:2px;text-align:left;border:1px solid var(--line);background:var(--white);border-radius:12px;padding:10px 12px;cursor:pointer}
+.flf-result b{font-size:13px}
+.flf-result span{font-size:10px;color:var(--muted)}
+.flf-macros{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.flf-num{display:grid;gap:4px}
+.flf-num>span{font-size:11px;font-weight:700;color:var(--muted)}
+.flf-num-input{display:flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--white);border-radius:12px;padding:0 12px}
+.flf-num-input input{flex:1;min-width:0;border:0;background:transparent;outline:0;padding:12px 0;font-size:16px;font-weight:700}
+.flf-num-input em{font-size:11px;color:var(--muted);font-style:normal}
+.flf-source{font-size:11px;color:var(--muted);line-height:1.5;background:var(--bg1);border-radius:12px;padding:10px 12px;margin:0}
+
 /* Diary photo strip */
 .diary-photo-strip{background:var(--glass-strong);border:1px solid rgba(255,255,255,.75);border-radius:22px;padding:16px;margin-bottom:14px;box-shadow:var(--shadow-sm)}
 .dps-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
