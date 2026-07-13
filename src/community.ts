@@ -20,6 +20,7 @@ export type FeedComment = { id: string; authorId: string; authorName: string; au
 
 export type PostVisibility = "connections" | "public";
 const POST_IMAGES = "post-images";
+const AVATARS = "avatars";
 
 // Community is only "real" (multi-user) when a Supabase client exists AND the
 // user is signed in. Otherwise callers keep the local pilot feed.
@@ -31,6 +32,23 @@ async function session() {
 
 export async function communityReady(): Promise<boolean> {
   return (await session()) !== null;
+}
+
+// Upload the user's profile photo to the public avatars bucket and return its
+// public URL (stored in profiles.avatar_url so it shows in search + the feed).
+// Returns "" when there's no backend/session or the upload fails.
+export async function uploadAvatar(dataUrl: string): Promise<string> {
+  const s = await session();
+  if (!supabase || !s || !dataUrl.startsWith("data:")) return "";
+  try {
+    const blob = await (await fetch(dataUrl)).blob();
+    const path = `${s.user.id}/avatar-${crypto.randomUUID()}.jpg`;
+    const { error } = await supabase.storage.from(AVATARS).upload(path, blob, { contentType: blob.type || "image/jpeg", upsert: true });
+    if (error) return "";
+    return supabase.storage.from(AVATARS).getPublicUrl(path).data.publicUrl ?? "";
+  } catch {
+    return "";
+  }
 }
 
 function publicUrl(path: string | null | undefined): string {

@@ -35,6 +35,8 @@ export function useProfileSync() {
         id: user.id,
         display_name: profile.name,
         onboarded: profile.onboarded,
+        // Only persist the avatar once it's an uploaded URL, never a giant data URL.
+        ...(profile.avatar?.startsWith("http") ? { avatar_url: profile.avatar } : {}),
         preferences_json: prefsForUpsert(profile),
         updated_at: new Date().toISOString(),
       }, { onConflict: "id" });

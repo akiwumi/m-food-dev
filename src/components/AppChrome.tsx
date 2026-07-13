@@ -1,6 +1,6 @@
 import { memo, useContext } from "react";
 import {
-  Home, Search, ListChecks, ShoppingCart, CalendarDays, Salad, Heart,
+  Home, Search, Users, ShoppingCart, CalendarDays, Salad, Heart,
   UserRound, ArrowLeft, Menu, Bell,
 } from "lucide-react";
 import type { Page } from "../appTypes";
@@ -8,7 +8,7 @@ import type { Profile } from "../store";
 import { MenuCtx } from "./MenuCtx";
 
 const nav = [
-  ["home", "Home", Home], ["search", "Search", Search], ["results", "Results", ListChecks],
+  ["home", "Home", Home], ["search", "Search", Search], ["community", "Community", Users],
   ["grocery", "Grocery", ShoppingCart], ["planner", "Planner", CalendarDays],
 ] as const;
 
@@ -35,7 +35,7 @@ export const BottomNav = memo(function BottomNav({ page, go }: { page: Page; go:
   const items: [Page, string, typeof Home][] = [
     ["home", "Home", Home],
     ["search", "Search", Search],
-    ["results", "Results", ListChecks],
+    ["community", "Community", Users],
     ["favorites", "Saved", Heart],
     ["grocery", "Grocery", ShoppingCart],
   ];
