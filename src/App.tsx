@@ -19,6 +19,8 @@ const Landing = lazy(() => import("./Landing").then(m => ({ default: m.Landing }
 import { readDevTestState } from "./devTestState";
 import { buildQuickStartProfilePatch } from "./activation";
 import { syncSubscriptionFromDB } from "./api/backend";
+import { isNativeApp, linkPurchasesToUser, syncStoreSubscription, unlinkPurchasesUser } from "./purchases";
+import { isPro } from "./subscription";
 import { type Entry, type Page } from "./appTypes";
 import { MenuCtx } from "./components/MenuCtx";
 import { usePullToRefresh } from "./hooks/usePullToRefresh";
@@ -115,6 +117,11 @@ export default function App() {
   const [pendingShare, setPendingShare] = useState<string | undefined>(undefined);
   const { saved, setSaved, diary, setDiary, groceries, setGroceries, posts, setPosts, connections, setConnections, diners, setDiners, selectedDiners, setSelectedDiners, eaterCount, setEaterCount, sharedProfile } = useHouseholdCollections(profile);
   const { aiCuration, setAiCuration, learnedSignals, setLearnedSignals, behavioralConsent, cuisineSignal, moodSignal, suppressedCuisines, setSuppressedCuisines, appliedSignals } = useLearningSignals(entry, page, diary);
+  // AI features are a Pro perk (strategy §6.5): the stored preference survives,
+  // but AI curation only takes effect while the trial/subscription is live.
+  // Free users keep the deterministic ranking — the core never needs AI.
+  const pro = isPro(profile);
+  const aiCurationActive = aiCuration && pro;
 
   // Browser automation cannot use javascript: URLs to mutate localStorage.
   // Development-only test states provide explicit, repeatable access instead.
@@ -159,7 +166,7 @@ export default function App() {
     mealCategory, setMealCategory, cuisine, setCuisine, homeDiet, setHomeDiet,
     results, setResults, ranked, curating, hasFetched, loadMore,
     live, curated, beginResults: beginCheckin, retry,
-  } = useHomeFeed(entry, sharedProfile, foodHistory, appliedSignals, aiCuration, behavioralConsent, setCatalog);
+  } = useHomeFeed(entry, sharedProfile, foodHistory, appliedSignals, aiCurationActive, behavioralConsent, setCatalog);
   const { searchRequest, setSearchRequest, searchResults, searchLoading, searchRelaxed, runSearch, cancelSearch } = useRecipeSearch(sharedProfile, mood, foodHistory, setPage);
 
   const { notifOpen, setNotifOpen, openNotifs, refreshNotifs } = useNotifications(setProfile);
@@ -190,11 +197,14 @@ export default function App() {
   //    browser, new device) go straight to the app, never re-onboard.
   useEffect(() => onAuthChange(async (event, session) => {
     if (testState) return;
-    if (event === "SIGNED_OUT") { setEntry("welcome"); return; }
+    if (event === "SIGNED_OUT") { void unlinkPurchasesUser(); setEntry("welcome"); return; }
     if (!session) {
       setEntry(prev => prev === "app" ? "login" : prev);
       return;
     }
+    // Tie native store purchases to this account (no-op on web) so the
+    // RevenueCat webhook can unlock the subscription across devices.
+    void linkPurchasesToUser(session.user.id);
 
     if (isSupabaseConfigured && supabase) {
       const { data } = await supabase.from("profiles")
@@ -254,6 +264,18 @@ export default function App() {
       setEntry(prev => (prev === "welcome" || prev === "login") ? "app" : prev);
     }
   }), [storedProfile.onboarded, storedProfile.accountCreated, storedProfile, testState]);
+
+  // Native (Capacitor) launch: the App Store — via RevenueCat — is the source
+  // of truth for the subscription on iOS, not Stripe. Mirror the cached store
+  // entitlement into the profile; users with no store history keep whatever
+  // state they already have (invite code, web Stripe, pilot simulation).
+  useEffect(() => {
+    if (!isNativeApp) return;
+    void syncStoreSubscription().then(sub => {
+      if (!sub) return;
+      setProfile(p => ({ ...p, subscriptionStatus: sub.status, plan: sub.plan ?? p.plan, trialEndsAt: sub.expiresAt ?? p.trialEndsAt }));
+    });
+  }, [setProfile]);
 
   // Handle Stripe redirect back after Checkout (?checkout=success|canceled).
   useEffect(() => {
@@ -387,14 +409,14 @@ export default function App() {
           ? <HomeScreen profile={profile} diary={diary} saved={saved} catalog={catalog} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results setResults={v => { setResults(v); if (!v) go("home"); }} beginResults={() => {}} ranked={ranked} curating={curating} hasFetched={hasFetched} loadMore={loadMore} live={live} curated={curated} retry={retry} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={addPhoto} onPickSuggestion={r => runSearch({ query: r.title, filters: { query: r.title } })} toggleSave={toggleSavedRecipe} />
           : <EmptyResultsScreen home={() => go("home")} search={() => go("search")} />)}
       {page === "detail" && selected && <DetailScreen recipe={selected} servings={eaterCount} back={backFromDetail} cook={() => go("cook")} saved={saved.includes(selected.id)} toggleSave={() => toggleSavedRecipe(selected)} addGroceries={() => setGroceries(v => [...new Set([...v, ...selected.ingredients])])} addPhoto={addPhoto} shareToCommunity={() => shareRecipe(selected)} allergies={profile.allergies} />}
-      {page === "cook" && selected && <CookScreen recipe={selected} exit={() => go("detail")} allergies={profile.allergies} finish={(rating, photo) => { setDiary(v => [{ recipe: selected, rating, when: "Today" }, ...v]); if (photo) addPhoto(photo); if (behavioralConsent) void recordRating({ providerRecipeId: selected.id, title: selected.title, cuisine: selected.cuisine, source: aiCuration ? "ai" : "deterministic", rating, mood }); go("diary"); }} />}
+      {page === "cook" && selected && <CookScreen recipe={selected} exit={() => go("detail")} allergies={profile.allergies} finish={(rating, photo) => { setDiary(v => [{ recipe: selected, rating, when: "Today" }, ...v]); if (photo) addPhoto(photo); if (behavioralConsent) void recordRating({ providerRecipeId: selected.id, title: selected.title, cuisine: selected.cuisine, source: aiCurationActive ? "ai" : "deterministic", rating, mood }); go("diary"); }} />}
       {page === "diary" && <DiaryScreen diary={diary} open={open} photoLogs={profile.photoLogs} addPhoto={addPhoto} goFoodLog={() => go("food-log")} allergies={profile.allergies} />}
       {page === "grocery" && <GroceryScreen items={groceries} setItems={setGroceries} />}
       {page === "pantry" && <PantryScreen items={profile.pantryStaples} setItems={items => setProfile(p => ({ ...p, pantryStaples: items }))} addToGrocery={item => setGroceries(v => v.includes(item) ? v : [...v, item])} />}
       {page === "planner" && <PlannerScreen open={open} />}
       {page === "insights" && <InsightsScreen diary={diary} />}
-      {page === "settings" && <SettingsScreen profile={profile} save={setProfile} go={go} logout={() => { void authSignOut(); setEntry("welcome"); }} aiCuration={aiCuration} setAiCuration={setAiCuration} learnedSignals={learnedSignals} setLearnedSignals={setLearnedSignals} behavioralConsent={behavioralConsent} />}
-      {page === "privacy" && <DataPrivacyScreen signal={cuisineSignal} moodSignal={moodSignal} suppressed={suppressedCuisines} learningOn={learnedSignals} onForget={c => setSuppressedCuisines(prev => [...new Set([...prev, c])])} onRestore={c => setSuppressedCuisines(prev => prev.filter(x => x !== c))} />}
+      {page === "settings" && <SettingsScreen profile={profile} save={setProfile} go={go} logout={() => { void authSignOut(); setEntry("welcome"); }} aiCuration={aiCuration} setAiCuration={setAiCuration} learnedSignals={learnedSignals} setLearnedSignals={setLearnedSignals} behavioralConsent={behavioralConsent} pro={pro} />}
+      {page === "privacy" && <DataPrivacyScreen signal={cuisineSignal} moodSignal={moodSignal} suppressed={suppressedCuisines} learningOn={learnedSignals} onForget={c => setSuppressedCuisines(prev => [...new Set([...prev, c])])} onRestore={c => setSuppressedCuisines(prev => prev.filter(x => x !== c))} pro={pro} />}
       {page === "favorites" && <LibraryScreen title="Saved recipes" source={safeRecipes.filter(r => saved.includes(r.id))} open={open} remove={r => setSaved(saved.filter(id => id !== r.id))} />}
       {page === "import" && <ImportScreen />}
       {page === "admin" && <AdminScreen catalog={catalog} />}

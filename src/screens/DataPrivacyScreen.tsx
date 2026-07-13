@@ -9,7 +9,7 @@ import { deterministicTasteSummary, fetchTasteSummary } from "../tasteSummary";
 // Slice 1.5 (roadmap v3): the Data Governance surface. Granular consent (default
 // off, recorded), export, and the distinct pause / reset controls — all gated on
 // being signed in, since the data lives server-side.
-export function DataPrivacyScreen({ signal, moodSignal, suppressed, learningOn, onForget, onRestore }: { signal: CuisineSignal | null; moodSignal: MoodCuisineSignal | null; suppressed: string[]; learningOn: boolean; onForget: (c: string) => void; onRestore: (c: string) => void }) {
+export function DataPrivacyScreen({ signal, moodSignal, suppressed, learningOn, onForget, onRestore, pro }: { signal: CuisineSignal | null; moodSignal: MoodCuisineSignal | null; suppressed: string[]; learningOn: boolean; onForget: (c: string) => void; onRestore: (c: string) => void; pro: boolean }) {
   const [consents, setConsents] = useState<ConsentState>(NO_CONSENT);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState("");
@@ -71,7 +71,8 @@ export function DataPrivacyScreen({ signal, moodSignal, suppressed, learningOn, 
     </SettingsGroup>
     {consents.behavioral_learning && <SettingsGroup title="WHAT MOODFOOD HAS LEARNED">
       <p className="taste-summary">{shownSummary}</p>
-      {signal && signal.preferred.length > 0 && <button className="link-button" onClick={askMoody} disabled={busy === "summary"}><Sparkles size={14} />{busy === "summary" ? "Asking Moody…" : summary?.source === "ai" ? "Reworded by Moody" : "Say it in Moody’s words"}</button>}
+      {/* AI rephrasing is a Pro perk; the deterministic summary above is for everyone. */}
+      {pro && signal && signal.preferred.length > 0 && <button className="link-button" onClick={askMoody} disabled={busy === "summary"}><Sparkles size={14} />{busy === "summary" ? "Asking Moody…" : summary?.source === "ai" ? "Reworded by Moody" : "Say it in Moody’s words"}</button>}
       {signal && signal.preferred.length > 0 ? <>
         <p className="quiet">From the meals you’ve rated{learningOn ? ", these gently lift matching picks." : " (turn on “Learn from what I cook & rate” to use them)."}</p>
         {signal.preferred.map(c => {

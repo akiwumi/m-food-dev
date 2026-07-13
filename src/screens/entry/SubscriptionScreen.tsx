@@ -4,6 +4,8 @@ import { PlanPicker } from "../../components/misc";
 import { PLANS } from "../../appTypes";
 import { isSupabaseConfigured } from "../../auth";
 import { startCheckout, redeemInviteCode } from "../../api/backend";
+import { canUseNativePurchases, purchasePlan, restoreStorePurchases } from "../../purchases";
+import type { StoreSubscription } from "../../subscription";
 import { scheduleTrial } from "../../notifications";
 import type { Profile } from "../../store";
 
@@ -14,14 +16,42 @@ export function SubscriptionScreen({ profile, save, proceed, onStarted }: { prof
   const [inviteError, setInviteError] = useState("");
   const [inviteLoading, setInviteLoading] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [restoreLoading, setRestoreLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState("");
   const chosen = PLANS.find(p => p.id === plan);
+
+  // A store purchase/restore succeeded: mirror it into the profile and enter.
+  const enterWithStoreSub = (sub: StoreSubscription) => {
+    const now = new Date().toISOString();
+    save({
+      ...profile,
+      plan: sub.plan ?? plan,
+      trialStartedAt: sub.status === "trialing" ? now : profile.trialStartedAt,
+      trialEndsAt: sub.expiresAt ?? profile.trialEndsAt,
+      subscriptionStatus: sub.status,
+    });
+    if (sub.status === "trialing" && sub.expiresAt) {
+      scheduleTrial(profile.email, chosen?.name || plan, chosen?.price || "", sub.expiresAt);
+    }
+    onStarted?.();
+    proceed();
+  };
 
   const start = async () => {
     setCheckoutLoading(true);
     setCheckoutError("");
-    if (isSupabaseConfigured) {
-      // Real Stripe Checkout, redirects user to Stripe's hosted page.
+    if (canUseNativePurchases) {
+      // Native iOS: the subscription must go through Apple IAP (StoreKit via
+      // RevenueCat) — App Store guideline 3.1.1. Stripe checkout is web-only.
+      const result = await purchasePlan(plan);
+      setCheckoutLoading(false);
+      if (!result.ok) {
+        if (!result.cancelled) setCheckoutError(result.error ?? "Purchase failed. Please try again.");
+        return;
+      }
+      enterWithStoreSub(result.sub);
+    } else if (isSupabaseConfigured) {
+      // Web: real Stripe Checkout, redirects user to Stripe's hosted page.
       const result = await startCheckout(plan);
       if (result.url) {
         window.location.href = result.url;
@@ -38,6 +68,19 @@ export function SubscriptionScreen({ profile, save, proceed, onStarted }: { prof
       onStarted?.();
       proceed();
     }
+  };
+
+  // Apple requires a Restore Purchases affordance wherever we sell.
+  const restore = async () => {
+    setRestoreLoading(true);
+    setCheckoutError("");
+    const result = await restoreStorePurchases();
+    setRestoreLoading(false);
+    if (!result.ok) {
+      setCheckoutError(result.error ?? "Nothing to restore.");
+      return;
+    }
+    enterWithStoreSub(result.sub);
   };
 
   const redeem = async () => {
@@ -68,10 +111,19 @@ export function SubscriptionScreen({ profile, save, proceed, onStarted }: { prof
             <p>Save your quick profile, unlock guided cooking, and let Moody get sharper every time you cook, reject, or rate a meal.</p>
             <PlanPicker plan={plan} setPlan={setPlan} />
             {checkoutError && <p className="invite-error">{checkoutError}</p>}
-            <button className="primary" onClick={start} disabled={checkoutLoading}>
+            <button className="primary" onClick={start} disabled={checkoutLoading || restoreLoading}>
               {checkoutLoading ? "Opening checkout…" : <>Start 7-day free trial <ArrowRight /></>}
             </button>
-            <small>7 days free, then {chosen?.price}. Cancel before the trial ends if MoodFood does not make dinner feel easier.</small>
+            <small>
+              {canUseNativePurchases
+                ? `7 days free, then ${chosen?.price}. Billed through your App Store account; cancel anytime in your Apple ID subscriptions.`
+                : `7 days free, then ${chosen?.price}. Cancel before the trial ends if MoodFood does not make dinner feel easier.`}
+            </small>
+            {canUseNativePurchases && (
+              <button className="skip" onClick={restore} disabled={checkoutLoading || restoreLoading}>
+                {restoreLoading ? "Restoring…" : "Restore purchases"}
+              </button>
+            )}
           </>
         ) : (
           <>
@@ -89,7 +141,7 @@ export function SubscriptionScreen({ profile, save, proceed, onStarted }: { prof
             <button className="primary" onClick={redeem} disabled={inviteLoading}>
               {inviteLoading ? "Checking…" : <>Redeem code <ArrowRight /></>}
             </button>
-            <small>Valid codes grant 1 year of full access, tracked in Stripe.</small>
+            <small>Valid codes grant 1 year of full access, no payment details needed.</small>
           </>
         )}
         <button className="skip" onClick={proceed}>Continue without saving trial</button>

@@ -10,6 +10,8 @@
     "csp:check": "node scripts/sync-vercel-csp.mjs --check",
     "test": "vitest run",
     "e2e": "playwright test",
+    "ios:sync": "npm run build && cap sync ios",
+    "ios:open": "cap open ios",
     "lint": "eslint .",
     "security:audit": "npm audit --audit-level=high",
     "verify": "npm run security:audit && npm run lint && npm test && npm run build"
@@ -22,6 +24,7 @@
     "@capacitor/cli": "^8.4.1",
     "@capacitor/core": "^8.4.1",
     "@capacitor/ios": "^8.4.1",
+    "@revenuecat/purchases-capacitor": "^13.2.2",
     "@supabase/supabase-js": "^2.110.2",
     "gsap": "^3.15.0",
     "lucide-react": "^1.24.0",

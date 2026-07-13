@@ -5,6 +5,8 @@ import { PlanPicker } from "../components/misc";
 import { PLANS } from "../appTypes";
 import { redeemInviteCode, startCheckout } from "../api/backend";
 import { isSupabaseConfigured } from "../auth";
+import { canUseNativePurchases, openManageSubscriptions, purchasePlan, restoreStorePurchases } from "../purchases";
+import { isPro, type StoreSubscription } from "../subscription";
 import type { Profile } from "../store";
 
 export function BillingScreen({ profile, save }: { profile: Profile; save: (p: Profile) => void }) {
@@ -14,7 +16,37 @@ export function BillingScreen({ profile, save }: { profile: Profile; save: (p: P
   const [inviteError, setInviteError] = useState("");
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteSuccess, setInviteSuccess] = useState(false);
+  const [storeBusy, setStoreBusy] = useState(false);
+  const [storeError, setStoreError] = useState("");
   const chosen = PLANS.find(p => p.id === plan);
+  const subscribed = isPro(profile);
+
+  const applyStoreSub = (sub: StoreSubscription) => {
+    save({ ...profile, plan: sub.plan ?? plan, subscriptionStatus: sub.status, trialEndsAt: sub.expiresAt ?? profile.trialEndsAt });
+  };
+
+  // Native iOS billing actions (Apple IAP via RevenueCat — never Stripe here).
+  const storeAction = async () => {
+    setStoreError("");
+    if (subscribed) { await openManageSubscriptions(); return; }
+    setStoreBusy(true);
+    const result = await purchasePlan(plan);
+    setStoreBusy(false);
+    if (!result.ok) {
+      if (!result.cancelled) setStoreError(result.error ?? "Purchase failed. Please try again.");
+      return;
+    }
+    applyStoreSub(result.sub);
+  };
+
+  const restore = async () => {
+    setStoreError("");
+    setStoreBusy(true);
+    const result = await restoreStorePurchases();
+    setStoreBusy(false);
+    if (!result.ok) { setStoreError(result.error ?? "Nothing to restore."); return; }
+    applyStoreSub(result.sub);
+  };
 
   const redeem = async () => {
     const code = inviteInput.trim().toUpperCase();
@@ -46,7 +78,9 @@ export function BillingScreen({ profile, save }: { profile: Profile; save: (p: P
               <>
                 <p>Personalized decisions, safe recommendations, cook mode, and weekly reflections.</p>
                 <PlanPicker plan={plan} setPlan={setPlan} />
-                <button className="primary" onClick={async () => {
+                {storeError && <p className="invite-error">{storeError}</p>}
+                <button className="primary" disabled={storeBusy} onClick={async () => {
+                  if (canUseNativePurchases) { await storeAction(); return; }
                   if (isSupabaseConfigured) {
                     const result = await startCheckout(plan);
                     if (result.url) window.location.href = result.url;
@@ -54,11 +88,14 @@ export function BillingScreen({ profile, save }: { profile: Profile; save: (p: P
                     save({ ...profile, plan });
                   }
                 }}>
-                  {profile.subscriptionStatus === "active" || profile.subscriptionStatus === "trialing"
-                    ? "Manage subscription on Stripe"
-                    : `Start free trial: ${chosen?.name}`}
+                  {canUseNativePurchases
+                    ? (subscribed ? "Manage subscription in the App Store" : storeBusy ? "Opening App Store…" : `Start free trial: ${chosen?.name}`)
+                    : subscribed ? "Manage subscription on Stripe" : `Start free trial: ${chosen?.name}`}
                 </button>
-                <small>Managed securely by Stripe. Cancel anytime.</small>
+                {canUseNativePurchases && (
+                  <button className="skip" onClick={restore} disabled={storeBusy}>Restore purchases</button>
+                )}
+                <small>{canUseNativePurchases ? "Billed through your App Store account. Cancel anytime." : "Managed securely by Stripe. Cancel anytime."}</small>
               </>
             ) : inviteSuccess ? (
               <p className="invite-success"><Check size={18} /> Code redeemed, you now have 1 year of full access.</p>
