@@ -436,7 +436,7 @@ export default function App() {
       {page === "psych-profile" && <PsychProfileScreen profile={profile} save={setProfile} back={() => go("settings")} />}
       {page === "food-profile" && <FoodProfileScreen profile={profile} save={setProfile} back={() => go("settings")} />}
       {page === "account" && <AccountScreen profile={profile} save={setProfile} posts={posts.filter(p => p.author === profile.name)} back={() => go("settings")} cancelAccount={cancelAccount} />}
-      {page === "community" && <CommunityScreen profile={profile} posts={posts} setPosts={setPosts} openRecipe={open} catalog={catalog} savedRecipes={savedRecipes} initialRecipeId={pendingShare} clearInitial={() => setPendingShare(undefined)} goFriends={() => go("friends")} openMember={openMember} refreshNotifications={refreshNotifs} />}
+      {page === "community" && <CommunityScreen profile={profile} posts={posts} setPosts={setPosts} openRecipe={open} catalog={catalog} savedRecipes={savedRecipes} initialRecipeId={pendingShare} clearInitial={() => setPendingShare(undefined)} goFriends={() => go("friends")} openMember={openMember} openNotifications={openNotifs} unreadNotifications={unreadCount()} refreshNotifications={refreshNotifs} />}
       {page === "friends" && <FriendsScreen back={() => go("community")} openMember={openMember} />}
       {page === "member-profile" && viewingMember && <FriendProfileScreen memberId={viewingMember} back={() => go("friends")} openRecipeRef={openRecipeRef} />}
       {page === "health" && <HealthHub diary={diary} go={go} />}

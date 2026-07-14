@@ -20,6 +20,10 @@ create policy "likes own update" on public.post_likes for update
 
 grant update (reaction) on public.post_likes to authenticated;
 
+-- The return shape gains reaction columns below. PostgreSQL cannot change OUT
+-- parameters with CREATE OR REPLACE, so clean installs must drop the old RPC.
+drop function if exists public.community_feed(int);
+
 create or replace function public.community_feed(limit_n int default 50)
 returns table (
   id uuid, author_id uuid, author_name text, author_avatar text,

@@ -75,6 +75,8 @@ describe("client security controls", () => {
   });
 
   it("recreates the community feed RPC when its return shape changes", () => {
+    const historical = readFileSync("supabase/migrations/023_post_reactions.sql", "utf8");
+    expect(historical.indexOf("drop function if exists public.community_feed(int)")).toBeLessThan(historical.indexOf("create or replace function public.community_feed"));
     const migration = readFileSync("supabase/migrations/20260714170830_harden_community_contract.sql", "utf8");
     expect(migration).toContain("drop function if exists public.community_feed(int)");
     expect(migration).toContain("create or replace function public.community_feed");

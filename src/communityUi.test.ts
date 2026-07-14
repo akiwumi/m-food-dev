@@ -29,6 +29,8 @@ describe("community mobile UI contract", () => {
     expect(source).toContain('className="community-post-detail"');
     expect(source).toContain("Reply as");
     expect(source).toContain("openRecipe(item.recipe)");
+    expect(source).toContain("Visible to everyone");
+    expect(source).toContain(">Retry</button>");
   });
 
   it("lets the user silence post notifications and reset hidden dishes", () => {
@@ -36,5 +38,13 @@ describe("community mobile UI contract", () => {
     expect(source).toContain("communityPostNotifications");
     expect(source).toContain("Show hidden community dishes again");
     expect(source).toContain("resetDismissedRecipes");
+    expect(source).toContain("communityIdentity");
+  });
+
+  it("serializes reaction writes and keeps the feed ref current", () => {
+    const source = readFileSync("src/hooks/useCommunity.ts", "utf8");
+    expect(source).toContain("reactionWrites");
+    expect(source).toContain("previousWrite");
+    expect(source).toContain("feedRef.current = feedRef.current.map");
   });
 });

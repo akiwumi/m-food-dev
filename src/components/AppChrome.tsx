@@ -42,9 +42,9 @@ export const BottomNav = memo(function BottomNav({ page, go }: { page: Page; go:
   return <nav className="bottom-nav">{items.map(([id, label, Icon]) => <button className={page === id ? "active" : ""} onClick={() => go(id)} key={id}><Icon size={19} /><span>{label}</span></button>)}</nav>;
 });
 
-export const TopBar = memo(function TopBar({ title, back }: { title: string; back?: () => void }) {
+export const TopBar = memo(function TopBar({ title, back, openNotifs, unread }: { title: string; back?: () => void; openNotifs?: () => void; unread?: number }) {
   const openMenu = useContext(MenuCtx);
-  return <header className="top-bar"><button onClick={back} disabled={!back}><ArrowLeft /></button><h1>{title}</h1><button onClick={openMenu} aria-label="Open menu"><Menu /></button></header>;
+  return <header className={`top-bar${openNotifs ? " has-actions" : ""}`}><button onClick={back} disabled={!back}><ArrowLeft /></button><h1>{title}</h1><div className="top-bar-actions">{openNotifs && <button className="notif-bell" onClick={openNotifs} aria-label="Notifications"><Bell />{!!unread && <span className="notif-dot">{unread}</span>}</button>}<button onClick={openMenu} aria-label="Open menu"><Menu /></button></div></header>;
 });
 
 export const AppHeader = memo(function AppHeader({ openNotifs, unread, profile }: { openNotifs?: () => void; unread?: number; profile?: Profile }) {

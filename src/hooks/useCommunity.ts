@@ -19,6 +19,7 @@ export function useCommunity() {
   const [requests, setRequests] = useState<FriendRequest[]>([]);
   const feedRef = useRef<FeedPost[]>([]);
   const reactionVersions = useRef(new Map<string, number>());
+  const reactionWrites = useRef(new Map<string, Promise<void>>());
 
   const refreshFeed = useCallback(async () => {
     const next = await fetchFeed();
@@ -62,7 +63,14 @@ export function useCommunity() {
     reactionVersions.current.set(postId, version);
     feedRef.current = feedRef.current.map(post => post.id === postId ? update.post : post);
     setFeed(feedRef.current);
-    const result = await setPostReaction(postId, update.nextReaction);
+    const previousWrite = reactionWrites.current.get(postId) ?? Promise.resolve();
+    const write = previousWrite
+      .catch(() => undefined)
+      .then(() => setPostReaction(postId, update.nextReaction));
+    const tail = write.then(() => undefined, () => undefined);
+    reactionWrites.current.set(postId, tail);
+    const result = await write;
+    if (reactionWrites.current.get(postId) === tail) reactionWrites.current.delete(postId);
     if (!result.ok && reactionVersions.current.get(postId) === version) {
       feedRef.current = feedRef.current.map(post => post.id === postId ? previousPost : post);
       setFeed(feedRef.current);
@@ -78,7 +86,10 @@ export function useCommunity() {
 
   const comment = useCallback(async (postId: string, body: string) => {
     const result = await addComment(postId, body);
-    if (result.ok) setFeed(prev => prev.map(p => p.id === postId ? { ...p, commentCount: p.commentCount + 1 } : p));
+    if (result.ok) {
+      feedRef.current = feedRef.current.map(p => p.id === postId ? { ...p, commentCount: p.commentCount + 1 } : p);
+      setFeed(feedRef.current);
+    }
     return result;
   }, []);
 

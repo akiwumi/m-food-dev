@@ -54,22 +54,48 @@ test("community post composer accepts touch input", async ({ page, browserName }
   test.skip(browserName !== "webkit", "iOS-specific keyboard focus regression");
   await page.goto("/?testState=home");
   await page.getByRole("button", { name: "Community" }).click();
-  await page.getByRole("button", { name: "Post" }).click();
+  await page.getByRole("button", { name: "Post", exact: true }).click();
 
-  const composer = page.getByRole("textbox", { name: /Share a cook, recipe, or tip/i });
-  await composer.tap();
+  const composer = page.getByRole("textbox", { name: "Post message" });
+  // Focus must be established by the same user gesture that opens the
+  // composer; WKWebView otherwise refuses to show the software keyboard.
   await expect(composer).toBeFocused();
   await composer.pressSequentially("Dinner turned out beautifully");
   await expect(composer).toHaveValue("Dinner turned out beautifully");
+});
 
-  // WKWebView needs focus to happen inside the touch gesture to reliably show
-  // the software keyboard. Keep that timing guarantee separate from hit testing.
-  await composer.blur();
-  await composer.dispatchEvent("touchstart", {
-    touches: [{ clientX: 40, clientY: 40 }],
-    changedTouches: [{ clientX: 40, clientY: 40 }],
-  });
+test("community publishing, replies, and trending recipes work on WebKit", async ({ page, browserName }) => {
+  test.skip(browserName !== "webkit", "iPhone community journey");
+  await page.goto("/?testState=home");
+  await page.getByRole("button", { name: "Community" }).click();
+
+  await page.getByRole("button", { name: "Post", exact: true }).click();
+  const composer = page.getByRole("textbox", { name: "Post message" });
   await expect(composer).toBeFocused();
+  await composer.fill("WebKit community dinner test");
+  await page.getByRole("button", { name: "Publish" }).click();
+  await expect(page.getByRole("status")).toContainText("Post published");
+
+  const published = page.locator(".community-feed-item", { hasText: "WebKit community dinner test" });
+  await expect(published).toBeVisible();
+  await published.locator(".community-feed-open").click();
+  const detail = page.getByRole("dialog", { name: "Community post detail" });
+  await expect(detail).toBeVisible();
+  await detail.getByRole("textbox", { name: /Reply as/i }).fill("Looks delicious");
+  await detail.getByRole("button", { name: "Send reply" }).click();
+  await expect(detail.getByText("Looks delicious")).toBeVisible();
+  await detail.getByRole("button", { name: "Back to community" }).click();
+
+  const cards = page.locator(".community-trending-card");
+  const first = cards.first();
+  const dismissedTitle = (await first.locator(".community-trending-open b").innerText()).trim();
+  await first.getByRole("button", { name: /Not interested in/i }).click();
+  await first.getByRole("button", { name: "Not interested", exact: true }).click();
+  await expect(page.locator(".community-trending-open b", { hasText: dismissedTitle })).toHaveCount(0);
+
+  await cards.first().locator(".community-trending-open").click();
+  await expect(page.locator(".detail")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Open guided cooking/i })).toBeVisible();
 });
 
 test("first-run choices respond to touch", async ({ page, browserName }) => {

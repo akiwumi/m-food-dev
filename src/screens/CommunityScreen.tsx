@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { Plus, UserPlus, Users } from "lucide-react";
+import { Plus, RotateCcw, UserPlus, Users } from "lucide-react";
 import { TopBar } from "../components/AppChrome";
 import { CommunityComposer } from "../components/community/CommunityComposer";
 import { CommunityFeedItem, CommunityPostDetail, type CommunityCommentView, type CommunityFeedView } from "../components/community/CommunityFeed";
@@ -17,7 +17,7 @@ import { notifyCommunityMessage, notifyCommunityPost } from "../notifications";
 const EMPTY_REACTIONS: ReactionCounts = { like: [], love: [], applaud: [] };
 const REACTION_KINDS: ReactionKind[] = ["like", "love", "applaud"];
 
-export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog, savedRecipes, initialRecipeId, clearInitial, goFriends, openMember, refreshNotifications }: {
+export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog, savedRecipes, initialRecipeId, clearInitial, goFriends, openMember, openNotifications, unreadNotifications, refreshNotifications }: {
   profile: Profile;
   posts: SocialPost[];
   setPosts: (posts: SocialPost[]) => void;
@@ -28,6 +28,8 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
   clearInitial?: () => void;
   goFriends: () => void;
   openMember: (id: string) => void;
+  openNotifications: () => void;
+  unreadNotifications: number;
   refreshNotifications: () => void;
 }) {
   const community = useCommunity();
@@ -49,6 +51,7 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
   const [reply, setReply] = useState("");
   const [replyError, setReplyError] = useState("");
   const [submittingReply, setSubmittingReply] = useState(false);
+  const [reactionRetry, setReactionRetry] = useState<{ postId: string; reaction: ReactionKind; message: string } | null>(null);
   const [dismissed, setDismissed] = useState(() => readDismissedRecipes(localStorage, identity));
 
   const findRecipe = (id?: string) => catalog.find(recipe => recipe.id === id);
@@ -100,6 +103,7 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
     image: post.image,
     recipe: findRecipe(post.recipeRef),
     recipeTitle: post.recipeTitle,
+    visibility: post.visibility,
     createdAt: post.createdAt,
     activeReaction: post.myReaction,
     reactionCounts: post.reactionCounts,
@@ -202,9 +206,12 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
     }));
   };
 
-  const react = (postId: string, reaction: ReactionKind) => {
-    if (community.ready) void community.react(postId, reaction);
-    else reactLocal(postId, reaction);
+  const react = async (postId: string, reaction: ReactionKind) => {
+    setReactionRetry(null);
+    if (community.ready) {
+      const result = await community.react(postId, reaction);
+      if (!result.ok) setReactionRetry({ postId, reaction, message: result.message });
+    } else reactLocal(postId, reaction);
   };
 
   const openPost = async (postId: string) => {
@@ -263,12 +270,13 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
 
   return (
     <div className="screen community community-feed-screen">
-      <TopBar title="Community" />
+      <TopBar title="Community" openNotifs={openNotifications} unread={unreadNotifications} />
       <div className="community-feed-toolbar">
         <button type="button" onClick={goFriends}><UserPlus />Friends</button>
         <button type="button" className="primary" onClick={openComposer}><Plus />Post</button>
       </div>
       {statusMessage && <p className="community-status" role="status">{statusMessage}</p>}
+      {reactionRetry && <div className="community-action-error" role="alert"><span>{reactionRetry.message}</span><button type="button" onClick={() => void react(reactionRetry.postId, reactionRetry.reaction)}><RotateCcw />Retry</button></div>}
       <TrendingRail items={trending} openRecipe={openRecipe} dismiss={dismissRecipe} />
       <section className="community-feed-list" aria-label="Community posts">
         {community.loading && !liveFeed.length && <p className="quiet">Loading your community...</p>}
@@ -282,7 +290,7 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
             openPost={() => void openPost(post.id)}
             openAuthor={() => post.authorId && openMember(post.authorId)}
             openRecipe={openRecipe}
-            onReact={reaction => react(post.id, reaction)}
+            onReact={reaction => void react(post.id, reaction)}
           />
         ))}
       </section>
@@ -319,7 +327,7 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
           close={closePost}
           openAuthor={() => selectedPost.authorId && openMember(selectedPost.authorId)}
           openRecipe={openRecipe}
-          onReact={reaction => react(selectedPost.id, reaction)}
+          onReact={reaction => void react(selectedPost.id, reaction)}
           submit={() => void submitReply()}
         />
       )}

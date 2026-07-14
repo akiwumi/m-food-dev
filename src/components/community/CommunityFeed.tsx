@@ -19,6 +19,7 @@ export type CommunityFeedView = {
   image: string;
   recipe?: Recipe;
   recipeTitle?: string;
+  visibility?: string;
   createdAt: string;
   activeReaction?: ReactionKind;
   reactionCounts: Record<ReactionKind, number>;
@@ -128,6 +129,7 @@ export function CommunityPostDetail({ item, profile, comments, draft, setDraft, 
             <Avatar name={item.authorName} image={item.authorAvatar} />
             <span><b>{item.authorName}</b><small>{displayDate(item.createdAt)}</small></span>
           </button>
+          {item.visibility && <p className="community-post-visibility">{item.visibility === "public" ? "Visible to everyone" : "Visible to friends"}</p>}
           {item.body && <p className="community-post-body">{item.body}</p>}
           {item.recipe && (
             <button type="button" className="community-detail-recipe" onClick={() => openRecipe(item.recipe!)}>
@@ -155,7 +157,7 @@ export function CommunityPostDetail({ item, profile, comments, draft, setDraft, 
         <Avatar name={profile.name || "You"} image={profile.avatar} />
         <label><span>Reply as {profile.name || "you"}</span><textarea inputMode="text" enterKeyHint="send" rows={1} maxLength={500} value={draft} onChange={event => setDraft(event.target.value)} /></label>
         <button type="submit" disabled={!draft.trim() || submitting} aria-label="Send reply"><Send /></button>
-        {error && <p role="alert">{error}</p>}
+        {error && <div className="community-reply-error" role="alert"><span>{error}</span><button type="button" onClick={submit}>Retry</button></div>}
       </form>
     </section>
   );
