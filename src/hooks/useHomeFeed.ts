@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetState
 import { recommend, RANKING_CONFIG_VERSION, type LearnedSignals } from "../recommendation";
 import { finalizeSearchResults } from "../searchResults";
 import { fetchCuratedRecipes, buildFoodHistory } from "../recipes";
-import { trackSearch } from "../telemetry";
+import { trackSearch, telemetrySource } from "../telemetry";
 import { recordRun } from "../behavioral";
 import type { Recipe } from "../data";
 import type { Profile } from "../store";
@@ -98,7 +98,7 @@ export function useHomeFeed(
           mode: "home",
           durationMs: Math.round(performance.now() - startedAt),
           resultCount: list?.length ?? 0,
-          source: list?.length ? "spoonacular" : "none",
+          source: telemetrySource(list),
           aiAttempted: aiCuration,
           aiSucceeded: aiCuration && !!list?.length,
           fallbackUsed: false,
@@ -128,7 +128,7 @@ export function useHomeFeed(
         mode: "load_more",
         durationMs: Math.round(performance.now() - startedAt),
         resultCount: list?.length ?? 0,
-        source: list?.length ? "spoonacular" : "none",
+        source: telemetrySource(list),
         aiAttempted: aiCuration,
         aiSucceeded: aiCuration && !!list?.length,
         fallbackUsed: false,

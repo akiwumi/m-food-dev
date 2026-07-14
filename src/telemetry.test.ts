@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createTelemetry, type QueuedEvent } from "./telemetry";
+import { createTelemetry, telemetrySource, type QueuedEvent } from "./telemetry";
 
 // A controllable transport that records every batch it's asked to send and
 // resolves to a configurable success flag.
@@ -97,5 +97,29 @@ describe("createTelemetry", () => {
     t.track({ event_type: "search_completed" });
     await expect(t.flush()).resolves.toBeUndefined();
     expect(t.pending()).toBe(1);
+  });
+});
+
+describe("telemetrySource", () => {
+  it("reports 'none' for an empty or null result set", () => {
+    expect(telemetrySource(null)).toBe("none");
+    expect(telemetrySource(undefined)).toBe("none");
+    expect(telemetrySource([])).toBe("none");
+  });
+
+  it("labels a TheMealDB fallback response 'themealdb' (not 'spoonacular')", () => {
+    expect(telemetrySource([{ provider: "TheMealDB" }, { provider: "TheMealDB" }])).toBe("themealdb");
+  });
+
+  it("labels a Spoonacular response 'spoonacular'", () => {
+    expect(telemetrySource([{ provider: "Spoonacular" }])).toBe("spoonacular");
+  });
+
+  it("prefers the primary provider when a list somehow mixes both", () => {
+    expect(telemetrySource([{ provider: "TheMealDB" }, { provider: "Spoonacular" }])).toBe("spoonacular");
+  });
+
+  it("defaults an unlabeled but non-empty live list to 'spoonacular'", () => {
+    expect(telemetrySource([{}, {}])).toBe("spoonacular");
   });
 });

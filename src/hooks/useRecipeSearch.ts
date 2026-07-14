@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { finalizeSearchResults } from "../searchResults";
 import { appendUniqueRecipes, RESULT_BATCH_SIZE, takeUniqueBatch } from "../resultBatches";
-import { trackSearch } from "../telemetry";
+import { trackSearch, telemetrySource } from "../telemetry";
 import { RANKING_CONFIG_VERSION } from "../recommendation";
 import { fetchCuratedRecipes, buildFoodHistory } from "../recipes";
 import type { Recipe } from "../data";
@@ -80,7 +80,7 @@ export function useRecipeSearch(
         mode: nextPage ? "load_more" : "search",
         durationMs: Math.round(performance.now() - startedAt),
         resultCount: nextResults.length,
-        source: live?.length ? "spoonacular" : "none",
+        source: telemetrySource(live),
         aiAttempted: false,
         aiSucceeded: false,
         fallbackUsed: false,

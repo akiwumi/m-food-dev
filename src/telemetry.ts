@@ -145,6 +145,23 @@ export type SearchTelemetry = {
   filterCount?: number;
 };
 
+// Derive the telemetry `source` from the provider stamped on the live recipes
+// the edge function returned (the same per-recipe `provider` the UI shows as
+// "Live from …"). A single search response is single-provider, but a mixed list
+// resolves to "spoonacular" (the primary) when any Spoonacular result is present.
+// An empty/null list is "none"; a non-empty list with no provider label (e.g.
+// dev-injected fixtures) defaults to "spoonacular", since user searches are
+// live-only. This keeps "themealdb" fallbacks from being mislabeled.
+export function telemetrySource(
+  recipes: ReadonlyArray<{ provider?: string }> | null | undefined,
+): "spoonacular" | "themealdb" | "none" {
+  if (!recipes?.length) return "none";
+  const providers = new Set(recipes.map(r => r.provider));
+  if (providers.has("Spoonacular")) return "spoonacular";
+  if (providers.has("TheMealDB")) return "themealdb";
+  return "spoonacular";
+}
+
 export function trackSearch(t: SearchTelemetry): void {
   telemetry.track({
     event_type: "search_completed",
