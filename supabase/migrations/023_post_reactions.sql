@@ -20,6 +20,10 @@ create policy "likes own update" on public.post_likes for update
 
 grant update (reaction) on public.post_likes to authenticated;
 
+-- PostgreSQL cannot replace a function when OUT columns change. Drop the old
+-- 13-column feed before recreating it with reaction totals.
+drop function if exists public.community_feed(int);
+
 create or replace function public.community_feed(limit_n int default 50)
 returns table (
   id uuid, author_id uuid, author_name text, author_avatar text,

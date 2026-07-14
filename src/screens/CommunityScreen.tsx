@@ -70,16 +70,16 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
     const recipe = findRecipe(recipeId);
     if (community.ready) {
       setPosting(true);
-      const ok = await community.publish({ body: safeText, imageDataUrl: image || undefined, recipeRef: recipeId || undefined, recipeTitle: recipe?.title, visibility });
+      const result = await community.publish({ body: safeText, imageDataUrl: image || undefined, recipeRef: recipeId || undefined, recipeTitle: recipe?.title, visibility });
       setPosting(false);
-      if (ok) {
+      if (result.ok) {
         if (profile.communityPostNotifications) {
           notifyCommunityPost(profile.name || "You", safeText || recipe?.title || "A saved recipe was shared.");
           refreshNotifications();
         }
         resetComposer();
       }
-      else setUploadError("Couldn't post right now. Try again.");
+      else setUploadError(result.message);
       return;
     }
     // Pilot fallback: local-only feed.
@@ -139,12 +139,12 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
             <RealPost key={post.id} post={post} me={profile} catalog={catalog} openRecipe={openRecipe} openMember={openMember}
               onReact={(reaction) => community.react(post.id, reaction)}
               onComment={async (postId, body) => {
-                const ok = await community.comment(postId, body);
-                if (ok && profile.communityPostNotifications) {
+                const result = await community.comment(postId, body);
+                if (result.ok && profile.communityPostNotifications) {
                   notifyCommunityMessage(profile.name || "You", body);
                   refreshNotifications();
                 }
-                return ok;
+                return result.ok;
               }} />
           ))}
         </div>
@@ -217,8 +217,10 @@ function RealPost({ post, me, catalog, openRecipe, openMember, onReact, onCommen
     e.preventDefault();
     const body = cleanText(draft, 500);
     if (!body) return;
-    setDraft("");
-    if (await onComment(post.id, body)) setComments(await fetchComments(post.id));
+    if (await onComment(post.id, body)) {
+      setDraft("");
+      setComments(await fetchComments(post.id));
+    }
   };
 
   return (

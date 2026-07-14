@@ -61,6 +61,25 @@ describe("client security controls", () => {
     expect(migration).toContain("(storage.foldername(name))[1] = auth.uid()::text");
   });
 
+  it("keeps community publishing available to authenticated users", () => {
+    const migration = readFileSync(
+      "supabase/migrations/20260714163702_community_publish_contract.sql",
+      "utf8",
+    );
+    expect(migration).toContain("grant select, insert, update, delete on public.community_posts to authenticated");
+    expect(migration).toContain("grant select, insert, update, delete on public.post_comments to authenticated");
+    expect(migration).toContain("grant select, insert, update, delete on public.post_likes to authenticated");
+    expect(migration).toContain("alter table public.community_posts enable row level security");
+    expect(migration).toContain("(storage.foldername(name))[1] = auth.uid()::text");
+    expect(migration).toContain("'post-images', 'post-images', true");
+  });
+
+  it("recreates the community feed RPC when its return shape changes", () => {
+    const migration = readFileSync("supabase/migrations/023_post_reactions.sql", "utf8");
+    expect(migration).toContain("drop function if exists public.community_feed(int)");
+    expect(migration).toContain("create or replace function public.community_feed");
+  });
+
   it("uses function-level auth for asymmetric Supabase user tokens", () => {
     const config = readFileSync("supabase/config.toml", "utf8");
     for (const slug of ["ai-gateway", "recipes"]) {

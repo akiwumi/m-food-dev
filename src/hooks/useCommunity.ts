@@ -46,8 +46,10 @@ export function useCommunity() {
 
   const react = useCallback(async (postId: string, reaction: PostReaction) => {
     let nextReaction: PostReaction | undefined;
+    let previousPost: FeedPost | undefined;
     setFeed(prev => prev.map(p => {
       if (p.id !== postId) return p;
+      previousPost = p;
       const previous = p.myReaction;
       nextReaction = previous === reaction ? undefined : reaction;
       const reactionCounts = { ...p.reactionCounts };
@@ -56,19 +58,24 @@ export function useCommunity() {
       const likeCount = reactionCounts.like + reactionCounts.love + reactionCounts.applaud;
       return { ...p, myReaction: nextReaction, likedByMe: !!nextReaction, likeCount, reactionCounts };
     }));
-    await setPostReaction(postId, nextReaction);
+    const result = await setPostReaction(postId, nextReaction);
+    if (!result.ok && previousPost) {
+      const rollback = previousPost;
+      setFeed(prev => prev.map(p => p.id === postId ? rollback : p));
+    }
+    return result;
   }, []);
 
   const publish = useCallback(async (input: { body: string; imageDataUrl?: string; recipeRef?: string; recipeTitle?: string; visibility?: PostVisibility }) => {
-    const ok = await createPost(input);
-    if (ok) await refreshFeed();
-    return ok;
+    const result = await createPost(input);
+    if (result.ok) await refreshFeed();
+    return result;
   }, [refreshFeed]);
 
   const comment = useCallback(async (postId: string, body: string) => {
-    const ok = await addComment(postId, body);
-    if (ok) setFeed(prev => prev.map(p => p.id === postId ? { ...p, commentCount: p.commentCount + 1 } : p));
-    return ok;
+    const result = await addComment(postId, body);
+    if (result.ok) setFeed(prev => prev.map(p => p.id === postId ? { ...p, commentCount: p.commentCount + 1 } : p));
+    return result;
   }, []);
 
   return { ready, loading, feed, friends, requests, refreshFeed, refreshFriends, toggleLike, react, publish, comment };

@@ -1,4 +1,10 @@
 import { supabase } from "./supabase";
+import {
+  COMMUNITY_UPLOAD_ERROR,
+  classifyCommunityError,
+  type CommunityMutationFailure,
+  type CommunityMutationResult,
+} from "./communityMutation";
 
 // Real, multi-user community data layer backed by Supabase (migration 018).
 // Reads go through SECURITY DEFINER RPCs so the social-graph rules (friends can
@@ -112,32 +118,41 @@ export async function fetchFeed(limit = 50): Promise<FeedPost[]> {
 }
 
 // Upload a post image (compressed data URL) to the public post-images bucket and
-// return its storage path, or "" on failure.
-async function uploadPostImage(dataUrl: string, uid: string): Promise<string> {
-  if (!supabase || !dataUrl.startsWith("data:")) return "";
+// return its storage path. Image posts never silently degrade to text-only.
+async function uploadPostImage(dataUrl: string, uid: string): Promise<{ ok: true; path: string } | CommunityMutationFailure> {
+  if (!supabase || !dataUrl.startsWith("data:")) return COMMUNITY_UPLOAD_ERROR;
   try {
     const blob = await (await fetch(dataUrl)).blob();
     const path = `${uid}/${crypto.randomUUID()}.jpg`;
     const { error } = await supabase.storage.from(POST_IMAGES).upload(path, blob, { contentType: blob.type || "image/jpeg", upsert: false });
-    return error ? "" : path;
+    return error ? COMMUNITY_UPLOAD_ERROR : { ok: true, path };
   } catch {
-    return "";
+    return COMMUNITY_UPLOAD_ERROR;
   }
 }
 
-export async function createPost(input: { body: string; imageDataUrl?: string; recipeRef?: string; recipeTitle?: string; visibility?: PostVisibility }): Promise<boolean> {
+export async function createPost(input: { body: string; imageDataUrl?: string; recipeRef?: string; recipeTitle?: string; visibility?: PostVisibility }): Promise<CommunityMutationResult> {
   const s = await session();
-  if (!supabase || !s) return false;
-  const image_path = input.imageDataUrl ? await uploadPostImage(input.imageDataUrl, s.user.id) : null;
-  const { error } = await supabase.from("community_posts").insert({
-    user_id: s.user.id,
-    body: input.body || null,
-    image_path,
-    recipe_ref: input.recipeRef ?? null,
-    recipe_title: input.recipeTitle ?? null,
-    visibility: input.visibility ?? "connections",
-  });
-  return !error;
+  if (!supabase || !s) return classifyCommunityError({ code: "PGRST301", message: "No active session" });
+  try {
+    let image_path: string | null = null;
+    if (input.imageDataUrl) {
+      const upload = await uploadPostImage(input.imageDataUrl, s.user.id);
+      if (!upload.ok) return upload;
+      image_path = upload.path;
+    }
+    const { error } = await supabase.from("community_posts").insert({
+      user_id: s.user.id,
+      body: input.body || null,
+      image_path,
+      recipe_ref: input.recipeRef ?? null,
+      recipe_title: input.recipeTitle ?? null,
+      visibility: input.visibility ?? "connections",
+    });
+    return error ? classifyCommunityError(error) : { ok: true };
+  } catch (error) {
+    return classifyCommunityError(error);
+  }
 }
 
 export async function setLike(postId: string, liked: boolean): Promise<void> {
@@ -147,18 +162,23 @@ export async function setLike(postId: string, liked: boolean): Promise<void> {
   else await supabase.from("post_likes").delete().eq("post_id", postId).eq("user_id", s.user.id);
 }
 
-export async function setPostReaction(postId: string, next?: PostReaction): Promise<void> {
+export async function setPostReaction(postId: string, next?: PostReaction): Promise<CommunityMutationResult> {
   const s = await session();
-  if (!supabase || !s) return;
-  if (!next) {
-    await supabase.from("post_likes").delete().eq("post_id", postId).eq("user_id", s.user.id);
-    return;
+  if (!supabase || !s) return classifyCommunityError({ code: "PGRST301", message: "No active session" });
+  try {
+    if (!next) {
+      const { error } = await supabase.from("post_likes").delete().eq("post_id", postId).eq("user_id", s.user.id);
+      return error ? classifyCommunityError(error) : { ok: true };
+    }
+    const { error } = await supabase.from("post_likes").upsert({
+      post_id: postId,
+      user_id: s.user.id,
+      reaction: next,
+    }, { onConflict: "post_id,user_id" });
+    return error ? classifyCommunityError(error) : { ok: true };
+  } catch (error) {
+    return classifyCommunityError(error);
   }
-  await supabase.from("post_likes").upsert({
-    post_id: postId,
-    user_id: s.user.id,
-    reaction: next,
-  }, { onConflict: "post_id,user_id" });
 }
 
 export async function fetchComments(postId: string): Promise<FeedComment[]> {
@@ -168,11 +188,16 @@ export async function fetchComments(postId: string): Promise<FeedComment[]> {
   return (data as Row[]).map(r => ({ id: str(r.id), authorId: str(r.author_id), authorName: str(r.author_name), authorAvatar: str(r.author_avatar), body: str(r.body), createdAt: str(r.created_at) }));
 }
 
-export async function addComment(postId: string, body: string): Promise<boolean> {
+export async function addComment(postId: string, body: string): Promise<CommunityMutationResult> {
   const s = await session();
-  if (!supabase || !s || !body.trim()) return false;
-  const { error } = await supabase.from("post_comments").insert({ post_id: postId, user_id: s.user.id, body: body.trim() });
-  return !error;
+  if (!supabase || !s) return classifyCommunityError({ code: "PGRST301", message: "No active session" });
+  if (!body.trim()) return classifyCommunityError(new Error("Comment is empty"));
+  try {
+    const { error } = await supabase.from("post_comments").insert({ post_id: postId, user_id: s.user.id, body: body.trim() });
+    return error ? classifyCommunityError(error) : { ok: true };
+  } catch (error) {
+    return classifyCommunityError(error);
+  }
 }
 
 // ── Friend suggestions (shared food profile) ───────────────────────────────
