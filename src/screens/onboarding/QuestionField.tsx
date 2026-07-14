@@ -17,7 +17,7 @@ export function QuestionField({ q, profile, update }: { q: OnboardingQuestion; p
     return <div className="scale-field"><input type="range" min={q.min ?? 0} max={q.max ?? 100} value={value as number} onChange={e => update(q.key, +e.target.value)} /><div className="range-label"><span>{q.lowLabel}</span><b>{value as number}%</b><span>{q.highLabel}</span></div></div>;
   if (q.type === "stepper") {
     const n = value as number;
-    return <div className="stepper"><button onClick={() => update(q.key, Math.max(q.min ?? 1, n - 1))}>−</button><b>{n}</b><button onClick={() => update(q.key, Math.min(q.max ?? 99, n + 1))}>+</button></div>;
+    return <div className="stepper"><button type="button" aria-label={`${q.title}: decrease from ${n}`} onClick={() => update(q.key, Math.max(q.min ?? 1, n - 1))}>−</button><b aria-live="polite">{n}</b><button type="button" aria-label={`${q.title}: increase from ${n}`} onClick={() => update(q.key, Math.min(q.max ?? 99, n + 1))}>+</button></div>;
   }
   if (q.type === "textgrid") {
     const rec = (value as Record<string, string>) || {};
@@ -46,10 +46,10 @@ function GroupedMultiField({ q, values, update }: { q: OnboardingQuestion; value
   return <>
     {q.groups!.map(g => <div className="ob-group" key={g.group}>
       <div className="ob-group-label">{g.group}{g.note && <em>{g.note}</em>}</div>
-      <div className="choice">{g.items.map(v => <button className={values.includes(v) ? "active" : ""} onClick={() => update(q.key, toggle(values, v))} key={v}>{v}</button>)}</div>
+      <div className="choice">{g.items.map(v => <button type="button" aria-pressed={values.includes(v)} className={values.includes(v) ? "active" : ""} onClick={() => update(q.key, toggle(values, v))} key={v}>{v}</button>)}</div>
     </div>)}
-    {q.allowCustom && <form className="add-cue" onSubmit={e => { e.preventDefault(); const c = cleanText(custom, 40); if (c) { update(q.key, [...new Set([...values, c])]); setCustom(""); } }}><input value={custom} onChange={e => setCustom(e.target.value)} placeholder="Add your own" /><button><Plus /></button></form>}
-    {!!extras.length && <div className="choice" style={{ marginTop: 8 }}>{extras.map(v => <button className="custom-cue" onClick={() => update(q.key, values.filter(x => x !== v))} key={v}>{v}<X size={13} /></button>)}</div>}
+    {q.allowCustom && <form className="add-cue" onSubmit={e => { e.preventDefault(); const c = cleanText(custom, 40); if (c) { update(q.key, [...new Set([...values, c])]); setCustom(""); } }}><input value={custom} onChange={e => setCustom(e.target.value)} placeholder="Add your own" /><button type="submit" aria-label="Add option"><Plus /></button></form>}
+    {!!extras.length && <div className="choice" style={{ marginTop: 8 }}>{extras.map(v => <button type="button" className="custom-cue" onClick={() => update(q.key, values.filter(x => x !== v))} key={v}>{v}<X size={13} /></button>)}</div>}
     <p className="multi-hint">{values.length ? `${values.length} selected, pick as many as you like` : "Select all that apply"}</p>
   </>;
 }
@@ -61,12 +61,12 @@ function MoodCardsField({ values, update }: { values: string[]; update: (v: stri
       const sel = values.includes(m.label);
       const expanded = open === m.id;
       return <div className={"mood-pick-card" + (sel ? " selected" : "")} key={m.id}>
-        <button className="mpc-top" onClick={() => update(toggle(values, m.label))}>
+        <button type="button" aria-pressed={sel} className="mpc-top" onClick={() => update(toggle(values, m.label))}>
           <span className="mpc-emoji">{m.emoji}</span>
           <span className="mpc-head"><b>{m.label}</b><em>{m.tagline}</em></span>
           {sel && <Check size={17} className="mpc-check" />}
         </button>
-        <button className="mpc-more" onClick={() => setOpen(expanded ? null : m.id)}>{expanded ? "Less" : "What this means"}</button>
+        <button type="button" className="mpc-more" onClick={() => setOpen(expanded ? null : m.id)}>{expanded ? "Less" : "What this means"}</button>
         {expanded && <div className="mpc-body">
           <p>{m.what}</p>
           <ul>{m.descriptors.map(d => <li key={d}>{d}</li>)}</ul>
@@ -79,7 +79,7 @@ function MoodCardsField({ values, update }: { values: string[]; update: (v: stri
 }
 
 function SkillCardsField({ active, pick }: { active: string; pick: (v: string) => void }) {
-  return <div className="skill-cards">{skillLevels.map(s => <button className={"skill-pick-card" + (active === s.label ? " selected" : "")} onClick={() => pick(s.label)} key={s.id}>
+  return <div className="skill-cards">{skillLevels.map(s => <button type="button" aria-pressed={active === s.label} className={"skill-pick-card" + (active === s.label ? " selected" : "")} onClick={() => pick(s.label)} key={s.id}>
     <span className="spc-emoji">{s.emoji}</span>
     <span className="spc-text"><b>{s.label}</b><em>{s.desc}</em><small>{s.detail}</small></span>
     {active === s.label && <Check size={17} className="spc-check" />}
@@ -90,9 +90,9 @@ function MultiField({ q, values, update }: { q: OnboardingQuestion; values: stri
   const [custom, setCustom] = useState("");
   const extras = values.filter(v => !q.options!.includes(v));
   return <>
-    <div className="choice">{q.options!.map(v => <button className={values.includes(v) ? "active" : ""} onClick={() => update(q.key, toggle(values, v))} key={v}>{v}</button>)}</div>
-    {q.allowCustom && <form className="add-cue" onSubmit={e => { e.preventDefault(); const c = cleanText(custom, 40); if (c) { update(q.key, [...new Set([...values, c])]); setCustom(""); } }}><input value={custom} onChange={e => setCustom(e.target.value)} placeholder="Add your own" /><button><Plus /></button></form>}
-    {extras.map(v => <button className="custom-cue" onClick={() => update(q.key, values.filter(x => x !== v))} key={v}>{v}<X size={13} /></button>)}
+    <div className="choice">{q.options!.map(v => <button type="button" aria-pressed={values.includes(v)} className={values.includes(v) ? "active" : ""} onClick={() => update(q.key, toggle(values, v))} key={v}>{v}</button>)}</div>
+    {q.allowCustom && <form className="add-cue" onSubmit={e => { e.preventDefault(); const c = cleanText(custom, 40); if (c) { update(q.key, [...new Set([...values, c])]); setCustom(""); } }}><input value={custom} onChange={e => setCustom(e.target.value)} placeholder="Add your own" /><button type="submit" aria-label="Add option"><Plus /></button></form>}
+    {extras.map(v => <button type="button" className="custom-cue" onClick={() => update(q.key, values.filter(x => x !== v))} key={v}>{v}<X size={13} /></button>)}
     <p className="multi-hint">{values.length ? `${values.length} selected, pick as many as you like` : "Select all that apply"}</p>
   </>;
 }

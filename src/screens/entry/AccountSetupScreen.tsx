@@ -32,7 +32,7 @@ export function AccountSetupScreen({ profile, back, submit, simulate = false }: 
     submit(patch, { hasSession: res.hasSession });
   };
   return <div className="auth-modern">
-    <button className="back" onClick={back} aria-label="Back" style={{ marginBottom: 8 }}><ArrowLeft /></button>
+    <button type="button" className="back" onClick={back} aria-label="Back" style={{ marginBottom: 8 }}><ArrowLeft /></button>
     <div className="auth-logo"><img src="/images/logo-1.png" alt="" /><span>MoodFood</span></div>
     <span className="eyebrow">CREATE YOUR ACCOUNT</span>
     <h1>Save your profile.</h1>

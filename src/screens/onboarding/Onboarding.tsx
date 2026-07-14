@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, ArrowRight, Clock3 } from "lucide-react";
 import { useStoredState, type Profile } from "../../store";
 import { onboardingQuestions, onboardingSections, type OnboardingKey, type OnboardingQuestion, type ProfileValue } from "../../onboarding";
@@ -29,8 +29,13 @@ export function Onboarding({ profile, save, finish }: { profile: Profile; save: 
   const [desktopStep, setDesktopStep] = useStoredState<number>("moodfood-onboarding-section-step", 0);
   const index = Math.min(Math.max(0, step), total);          // index === total -> review
   const onReview = index === total;
+  const sheetRef = useRef<HTMLDivElement>(null);
   const update = (key: OnboardingKey, value: ProfileValue) => save({ ...profile, [key]: value });
   const go = (n: number) => { setStep(n); window.scrollTo(0, 0); };
+
+  useEffect(() => {
+    if (!desktop) sheetRef.current?.scrollTo({ top: 0 });
+  }, [desktop, index]);
 
   if (desktop) {
     return <DesktopOnboarding profile={profile} visible={visible} step={desktopStep} setStep={setDesktopStep} update={update} finish={finish} />;
@@ -64,7 +69,7 @@ export function Onboarding({ profile, save, finish }: { profile: Profile; save: 
             <span className="op-step-chip"><Check size={13} /> {total} answers</span>
           </div>
         </div>
-        <div className="onboarding-sheet">
+        <div className="onboarding-sheet" ref={sheetRef}>
           <div className="drag-h" />
           <div className="ob-segments">{onboardingSections.map((_, n) => <i className="active" key={n} />)}</div>
           <div className="ob-main">
@@ -74,8 +79,8 @@ export function Onboarding({ profile, save, finish }: { profile: Profile; save: 
           </div>
         </div>
         <div className="ob-footer">
-          <button className="secondary" onClick={() => go(total - 1)}>Back</button>
-          <button className="primary" onClick={() => finish(profile)}>Continue <ArrowRight size={16} /></button>
+          <button type="button" className="secondary" onClick={() => go(total - 1)}>Back</button>
+          <button type="button" className="primary" onClick={() => finish(profile)}>Continue <ArrowRight size={16} /></button>
         </div>
       </div>
     );
@@ -107,7 +112,7 @@ export function Onboarding({ profile, save, finish }: { profile: Profile; save: 
       </div>
 
       {/* White bottom sheet, slides up over the photo */}
-      <div className="onboarding-sheet">
+      <div className="onboarding-sheet" ref={sheetRef}>
         <div className="drag-h" />
         {/* Section progress bar */}
         <div className="ob-segments">
@@ -121,8 +126,8 @@ export function Onboarding({ profile, save, finish }: { profile: Profile; save: 
       </div>
 
       <div className="ob-footer">
-        <button className="secondary" disabled={index === 0} onClick={() => go(index - 1)}>Back</button>
-        <button className="primary" onClick={() => go(index + 1)}>
+        <button type="button" className="secondary" disabled={index === 0} onClick={() => go(index - 1)}>Back</button>
+        <button type="button" className="primary" onClick={() => go(index + 1)}>
           {last ? "Review profile" : "Continue"} <ArrowRight size={16} />
         </button>
       </div>
@@ -213,7 +218,7 @@ function DesktopOnboardingRail({ sections, active }: { sections: string[]; activ
 
 function DesktopOnboardingFooter({ back, next, nextLabel, backDisabled = false }: { back: () => void; next: () => void; nextLabel: string; backDisabled?: boolean }) {
   return <footer className="desktop-ob-footer">
-    <button className="secondary" disabled={backDisabled} onClick={back}>Back</button>
-    <button className="primary" onClick={next}>{nextLabel} <ArrowRight size={16} /></button>
+    <button type="button" className="secondary" disabled={backDisabled} onClick={back}>Back</button>
+    <button type="button" className="primary" onClick={next}>{nextLabel} <ArrowRight size={16} /></button>
   </footer>;
 }

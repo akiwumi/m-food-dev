@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo, lazy, Suspense } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef, lazy, Suspense } from "react";
 import { useSocialSync } from "./hooks/useSocialSync";
 import { type Recipe } from "./data";
 import { clearStored, defaultProfile, reportStorageEstimate, useStoredState, type Profile } from "./store";
@@ -24,7 +24,6 @@ import { isNativeApp, linkPurchasesToUser, syncStoreSubscription, unlinkPurchase
 import { isPro } from "./subscription";
 import { type Entry, type Page } from "./appTypes";
 import { MenuCtx } from "./components/MenuCtx";
-import { usePullToRefresh } from "./hooks/usePullToRefresh";
 import { useNotifications } from "./hooks/useNotifications";
 import { useRecipeSearch } from "./hooks/useRecipeSearch";
 import { useHomeFeed } from "./hooks/useHomeFeed";
@@ -32,7 +31,6 @@ import { useLearningSignals } from "./hooks/useLearningSignals";
 import { useProfileSync, prefsForUpsert } from "./hooks/useProfileSync";
 import { useHouseholdCollections } from "./hooks/useHouseholdCollections";
 import { useRecipeCatalog } from "./hooks/useRecipeCatalog";
-import { PullRefreshIndicator } from "./components/PullRefreshIndicator";
 import { BottomNav, DesktopNav } from "./components/AppChrome";
 import { MainMenu } from "./components/MainMenu";
 import { NotificationsPanel } from "./components/NotificationsPanel";
@@ -98,8 +96,8 @@ function parseSubscriptionStatus(raw: unknown): Profile["subscriptionStatus"] {
 
 
 export default function App() {
-  const pullY = usePullToRefresh();
   const testState = readDevTestState(window.location.search, import.meta.env.DEV);
+  const appliedTestState = useRef<string | null>(null);
   const [splash, setSplash] = useState(true);
   const [entry, setEntry] = useStoredState<Entry>("moodfood-entry", "welcome");
   const [passwordRecovery, setPasswordRecovery] = useState(false);
@@ -130,11 +128,15 @@ export default function App() {
   // Browser automation cannot use javascript: URLs to mutate localStorage.
   // Development-only test states provide explicit, repeatable access instead.
   useEffect(() => {
-    if (!testState) return;
+    if (!testState || appliedTestState.current === testState) return;
+    appliedTestState.current = testState;
     setSplash(false);
     if (testState === "home") {
       setProfile(prev => ({ ...prev, name: prev.name || "Test Cook", email: prev.email || "test@example.com", onboarded: true, accountCreated: true }));
       setEntry("app");
+    } else if (testState === "onboarding") {
+      setProfile(prev => ({ ...prev, name: prev.name || "Test Cook", email: prev.email || "test@example.com", accountCreated: true }));
+      setEntry("onboarding");
     } else if (testState === "quick-start") {
       setEntry("quick-start");
     } else if (testState === "first-pick") {
@@ -397,7 +399,7 @@ export default function App() {
     />
   );
   if (entry === "onboarding") return <Onboarding profile={profile} save={setProfile} finish={(next) => { setProfile({ ...next, onboarded: true }); clearStored("moodfood-onboarding-step"); setEntry("account"); }} />;
-  if (entry === "account") return <AccountSetupScreen profile={profile} back={() => setEntry("onboarding")} simulate={testState === "account"} submit={(patch, opts) => {
+  if (entry === "account") return <AccountSetupScreen profile={profile} back={() => setEntry("onboarding")} simulate={testState === "account" || testState === "onboarding"} submit={(patch, opts) => {
     const confirmed = !!opts?.hasSession; // session present = email confirmation is OFF, so they're in
     const next = { ...profile, ...patch, accountCreated: true, emailVerified: confirmed };
     setProfile(next);
@@ -409,7 +411,6 @@ export default function App() {
   if (entry === "verified") return <VerifiedScreen name={profile.name} proceed={() => setEntry("subscription")} />;
   if (entry === "subscription") return <SubscriptionScreen profile={profile} save={setProfile} onStarted={refreshNotifs} proceed={() => { setProfile({ ...profile, activationPaywallSeen: true }); setEntry("app"); }} />;
   return <MenuCtx.Provider value={() => setMenuOpen(true)}><div className={page === "cook" ? "app cooking" : "app"}>
-    <PullRefreshIndicator pullY={pullY} />
     {page !== "cook" && <DesktopNav page={page} go={go} />}
     <Suspense fallback={<main className="screen-loading" aria-busy="true" />}><main>
       {page === "home" && <HomeScreen profile={profile} diary={diary} saved={saved} catalog={catalog} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results={false} setResults={setResults} beginResults={() => { setSearchRequest(null); beginCheckin(); go("results"); }} ranked={ranked} curating={curating} loadMore={loadMore} live={live} curated={curated} retry={retry} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={addPhoto} onPickSuggestion={r => runSearch({ query: r.title, filters: { query: r.title } })} toggleSave={toggleSavedRecipe} />}
@@ -452,5 +453,3 @@ export default function App() {
     {menuOpen && <MainMenu profile={profile} page={page} go={go} close={() => setMenuOpen(false)} openNotifs={openNotifs} unread={unreadCount()} logout={() => { void authSignOut(); setEntry("welcome"); }} />}
   </div></MenuCtx.Provider>;
 }
-
-

@@ -71,3 +71,121 @@ test("community post composer accepts touch input", async ({ page, browserName }
   });
   await expect(composer).toBeFocused();
 });
+
+test("first-run choices respond to touch", async ({ page, browserName }) => {
+  test.skip(browserName !== "webkit", "iPhone touch-flow coverage");
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Let's eat" }).tap();
+  await page.getByRole("button", { name: "Continue" }).tap();
+  await page.getByRole("button", { name: "Pick your meal" }).tap();
+
+  const stressed = page.getByRole("button", { name: "Stressed", exact: true });
+  await stressed.tap();
+  await expect(stressed).toHaveClass(/active/);
+
+  const thirtyMinutes = page.getByRole("button", { name: "30", exact: true });
+  await thirtyMinutes.tap();
+  await expect(thirtyMinutes).toHaveClass(/active/);
+
+  await page.getByRole("combobox", { name: "Diet" }).selectOption("Vegetarian");
+  await page.getByRole("textbox", { name: "Allergies" }).fill("peanuts");
+  await page.getByRole("button", { name: "Choose" }).tap();
+
+  await expect(page.getByText("DINNER IS HANDLED")).toBeVisible();
+  await expect(page.getByText("Safety checked")).toBeVisible();
+});
+
+test("pulling down does not reload the app", async ({ page, browserName }) => {
+  test.skip(browserName !== "webkit", "iPhone pull-gesture coverage");
+  await page.addInitScript(() => {
+    const count = Number(sessionStorage.getItem("moodfood-test-loads") || "0");
+    sessionStorage.setItem("moodfood-test-loads", String(count + 1));
+  });
+  await page.goto("/?testState=home");
+  await expect(page.getByRole("heading", { name: /How does dinner feel tonight/i })).toBeVisible();
+
+  const dispatchTouch = (type: "touchstart" | "touchmove" | "touchend", y: number) => page.evaluate(({ type, y }) => {
+    const touch = { identifier: 1, target: document.body, clientX: 180, clientY: y };
+    const event = new Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "touches", { value: type === "touchend" ? [] : [touch] });
+    Object.defineProperty(event, "changedTouches", { value: [touch] });
+    document.dispatchEvent(event);
+  }, { type, y });
+
+  await dispatchTouch("touchstart", 20);
+  await dispatchTouch("touchmove", 150);
+  await dispatchTouch("touchend", 150);
+  await page.waitForTimeout(500);
+
+  await expect(page.getByRole("heading", { name: /How does dinner feel tonight/i })).toBeVisible();
+  await expect.poll(async () => page.evaluate(() => sessionStorage.getItem("moodfood-test-loads"))).toBe("1");
+});
+
+test("profile onboarding remains tappable through account setup", async ({ page, browserName }) => {
+  test.skip(browserName !== "webkit", "iPhone onboarding-flow coverage");
+  await page.goto("/?testState=onboarding");
+
+  const stressedMood = page.getByRole("button", { name: /Stressed My mind is full/i });
+  await stressedMood.tap();
+  await expect(stressedMood).toHaveAttribute("aria-pressed", "true");
+
+  await page.getByRole("button", { name: /^Continue/ }).tap();
+  await expect(page.getByRole("heading", { name: /When you're stressed/i })).toBeVisible();
+
+  const stressAnswer = page.getByRole("button", { name: /Cooking is therapy/i });
+  await stressAnswer.tap();
+  await expect(stressAnswer).toHaveAttribute("aria-pressed", "true");
+
+  await page.getByRole("button", { name: "Back", exact: true }).tap();
+  await expect(stressedMood).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: /^Continue/ }).tap();
+
+  for (let step = 0; step < 60; step += 1) {
+    if (await page.getByRole("heading", { name: /Nice to meet you/i }).isVisible().catch(() => false)) break;
+    await page.getByRole("button", { name: /^(Continue|Review profile)/ }).tap();
+  }
+
+  await expect(page.getByRole("heading", { name: /Nice to meet you/i })).toBeVisible();
+  const sheet = page.locator(".onboarding-sheet");
+  await sheet.evaluate(element => element.scrollTo(0, element.scrollHeight));
+  await expect.poll(() => sheet.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+  await page.getByRole("button", { name: "Back", exact: true }).tap();
+  await expect(page.getByRole("heading", { name: /Nice to meet you/i })).not.toBeVisible();
+  await expect.poll(() => sheet.evaluate(element => element.scrollTop)).toBe(0);
+  await page.getByRole("button", { name: "Review profile" }).tap();
+  await expect(page.getByRole("heading", { name: /Nice to meet you/i })).toBeVisible();
+  await page.getByRole("button", { name: /^Continue/ }).tap();
+  await expect(page.getByRole("heading", { name: "Save your profile." })).toBeVisible();
+
+  await page.getByLabel("Name").fill("iPhone Test Cook");
+  await page.getByLabel("Email address").fill("iphone-test@gmail.com");
+  const password = page.getByLabel("Password");
+  await password.tap();
+  await expect(password).toBeFocused();
+  await password.fill("onboarding-test-password");
+  await page.getByRole("button", { name: /Create account/i }).tap();
+  await expect(page.getByRole("heading", { name: /Welcome aboard, iPhone Test Cook/i })).toBeVisible();
+});
+
+test("onboarding remains usable in a short iPhone viewport", async ({ page, browserName }) => {
+  test.skip(browserName !== "webkit", "iPhone compact-height coverage");
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.goto("/?testState=onboarding");
+
+  const sheet = page.locator(".onboarding-sheet");
+  await expect(sheet).toBeVisible();
+  await expect.poll(() => sheet.evaluate(element => element.clientHeight)).toBeGreaterThan(160);
+  await expect(page.getByRole("button", { name: /^Continue/ })).toBeInViewport();
+});
+
+test("desktop onboarding remains scrollable", async ({ page, browserName }) => {
+  test.skip(browserName !== "chromium", "desktop layout coverage");
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto("/?testState=onboarding");
+
+  await expect(page.locator(".desktop-onboarding")).toBeVisible();
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  await expect(page.locator(".desktop-ob-footer")).toBeVisible();
+});

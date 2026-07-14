@@ -106,15 +106,15 @@ export function FoodCamera({
       <div className="food-log-form" style={style}>
         <img src={image} alt="Your meal" className="flf-photo" />
         <div className="flf-body">
-          <label className="flf-field">
-            <span className="flf-label">Dish</span>
+          <div className="flf-field">
+            <label className="flf-label" htmlFor="food-log-dish">Dish</label>
             <div className="flf-dish-row">
-              <input value={form.dish} onChange={e => set("dish", e.target.value)} placeholder="e.g. Chicken caesar salad" />
+              <input id="food-log-dish" value={form.dish} onChange={e => set("dish", e.target.value)} placeholder="e.g. Chicken caesar salad" />
               <button type="button" className="flf-lookup" onClick={runLookup} disabled={!form.dish.trim() || lookup.loading}>
                 <Search size={15} />{lookup.loading ? "…" : "Look up"}
               </button>
             </div>
-          </label>
+          </div>
 
           {lookup.results !== null && (
             <div className="flf-results">

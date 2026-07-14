@@ -24,21 +24,21 @@ export function QuickTasteStartScreen({
     <div className="quick-start">
       <header className="quick-top">
         <div className="ih-logo dark"><img src="/images/logo-1.png" alt="" /><span>MoodFood</span></div>
-        <button className="ih-signin dark" onClick={signin}>Sign in</button>
+        <button type="button" className="ih-signin dark" onClick={signin}>Sign in</button>
       </header>
       <main className="quick-card">
         <span>TONIGHT, FAST</span>
         <h1>Tell me how dinner feels.</h1>
         <p>Four quick answers. Then I'll pick one safe meal and explain why it fits.</p>
 
-        <label className="quick-field">
-          <b>Mood</b>
+        <fieldset className="quick-field">
+          <legend>Mood</legend>
           <div className="mood-pills">
             {["Tired", "Stressed", "Cozy", "Happy"].map(value => (
-              <button key={value} className={mood === value ? "active" : ""} onClick={() => setMood(value)}>{value}</button>
+              <button type="button" key={value} aria-pressed={mood === value} className={mood === value ? "active" : ""} onClick={() => setMood(value)}>{value}</button>
             ))}
           </div>
-        </label>
+        </fieldset>
 
         <label className="quick-field">
           <b>Energy: {energy}%</b>
@@ -46,14 +46,14 @@ export function QuickTasteStartScreen({
           <div className="range-label"><span>Keep it easy</span><span>I'm up for more</span></div>
         </label>
 
-        <label className="quick-field">
-          <b>Time</b>
+        <fieldset className="quick-field">
+          <legend>Time</legend>
           <div className="time-pills">
             {[15, 30, 45, 60].map(value => (
-              <button key={value} className={time === value ? "active" : ""} onClick={() => setTime(value)}>{value}</button>
+              <button type="button" key={value} aria-pressed={time === value} className={time === value ? "active" : ""} onClick={() => setTime(value)}>{value}</button>
             ))}
           </div>
-        </label>
+        </fieldset>
 
         <label className="quick-field">
           <b>Diet</b>
@@ -69,7 +69,7 @@ export function QuickTasteStartScreen({
           <input value={allergyText} onChange={event => setAllergyText(event.target.value)} placeholder="e.g. peanuts, dairy" />
         </label>
 
-        <button className="primary quick-submit" onClick={() => save({ diet: diet === "Any" ? "Everything" : diet, allergies })}>
+        <button type="button" className="primary quick-submit" onClick={() => save({ diet: diet === "Any" ? "Everything" : diet, allergies })}>
           Choose <ArrowRight size={18} />
         </button>
       </main>

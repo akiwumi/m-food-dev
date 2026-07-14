@@ -7,7 +7,7 @@ import { toggle } from "../lib/toggle";
 
 export function SetupStep({ eyebrow, title, text, children }: { eyebrow: string; title: string; text: string; children: ReactNode }) { return <section className="setup-step"><span>{eyebrow}</span><h1>{title}</h1><p>{text}</p>{children}</section>; }
 
-export function Choice({ values, active, pick, multi }: { values: string[]; active: string | string[]; pick: (v: string) => void; multi?: boolean }) { return <div className="choice">{values.map(v => <button className={(multi ? (active as string[]).includes(v) : active === v) ? "active" : ""} onClick={() => pick(v)} key={v}>{v}</button>)}</div>; }
+export function Choice({ values, active, pick, multi }: { values: string[]; active: string | string[]; pick: (v: string) => void; multi?: boolean }) { return <div className="choice">{values.map(v => { const selected = multi ? (active as string[]).includes(v) : active === v; return <button type="button" aria-pressed={selected} className={selected ? "active" : ""} onClick={() => pick(v)} key={v}>{v}</button>; })}</div>; }
 
 export function SettingsGroup({ title, children }: { title: string; children: ReactNode }) { return <section className="settings-group"><small>{title}</small>{children}</section>; }
 

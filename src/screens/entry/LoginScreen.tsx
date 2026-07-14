@@ -87,7 +87,7 @@ export function LoginScreen({ back, onSignedIn, recovery, doneRecovery }: { back
     <div className="ap-hero">
       <img src={LOGIN_PHOTO} alt="A bowl of fresh food" />
       <div className="ap-veil" />
-      <button className="ap-back" onClick={back} aria-label="Back"><ArrowLeft size={19} /></button>
+      <button type="button" className="ap-back" onClick={back} aria-label="Back"><ArrowLeft size={19} /></button>
       <div className="ap-logo"><img src="/images/logo-1.png" alt="" /><span>MoodFood</span></div>
     </div>
     <div className="ap-sheet">
@@ -95,20 +95,20 @@ export function LoginScreen({ back, onSignedIn, recovery, doneRecovery }: { back
       <h1 data-auth>{title}</h1>
       <p className="ap-lede" data-auth>{lede}</p>
       {mode === "signin" && <form onSubmit={onSubmit} data-auth>
-        <label>Email address<input type="email" autoComplete="email" value={email} onChange={e => { setEmail(e.target.value); setError(""); }} placeholder="you@example.com" /></label>
-        <label>Password<span className="password-field"><input type={showPassword ? "text" : "password"} autoComplete="current-password" value={password} onChange={e => { setPassword(e.target.value); setError(""); }} placeholder="Your password" /><button type="button" onClick={() => setShowPassword(v => !v)} aria-label={showPassword ? "Hide password" : "Show password"}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></span></label>
+        <label htmlFor="signin-email">Email address<input id="signin-email" type="email" autoComplete="email" value={email} onChange={e => { setEmail(e.target.value); setError(""); }} placeholder="you@example.com" /></label>
+        <div className="ap-field"><label htmlFor="signin-password">Password</label><span className="password-field"><input id="signin-password" type={showPassword ? "text" : "password"} autoComplete="current-password" value={password} onChange={e => { setPassword(e.target.value); setError(""); }} placeholder="Your password" /><button type="button" onClick={() => setShowPassword(v => !v)} aria-label={showPassword ? "Hide password" : "Show password"}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></span></div>
         {error && <span className="err" role="alert">{error}</span>}
         {notice && <span className="auth-notice" role="status">{notice}</span>}
         <button className="primary" type="submit" disabled={busy}>{busy ? "Signing in…" : <>Sign in <ArrowRight size={18} /></>}</button>
       </form>}
       {mode === "forgot" && <form onSubmit={sendReset} data-auth>
-        <label>Email address<input type="email" autoComplete="email" value={email} onChange={e => { setEmail(e.target.value); setError(""); }} placeholder="you@example.com" /></label>
+        <label htmlFor="reset-email">Email address<input id="reset-email" type="email" autoComplete="email" value={email} onChange={e => { setEmail(e.target.value); setError(""); }} placeholder="you@example.com" /></label>
         {error && <span className="err" role="alert">{error}</span>}
         {notice && <span className="auth-notice" role="status">{notice}</span>}
         <button className="primary" type="submit" disabled={busy}>{busy ? "Sending…" : <>Send reset link <Mail size={18} /></>}</button>
       </form>}
       {mode === "reset" && <form onSubmit={saveNewPassword} data-auth>
-        <label>New password<span className="password-field"><input type={showNewPassword ? "text" : "password"} autoComplete="new-password" value={newPassword} onChange={e => { setNewPassword(e.target.value); setError(""); }} placeholder="At least 6 characters" /><button type="button" onClick={() => setShowNewPassword(v => !v)} aria-label={showNewPassword ? "Hide password" : "Show password"}>{showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></span></label>
+        <div className="ap-field"><label htmlFor="new-password">New password</label><span className="password-field"><input id="new-password" type={showNewPassword ? "text" : "password"} autoComplete="new-password" value={newPassword} onChange={e => { setNewPassword(e.target.value); setError(""); }} placeholder="At least 6 characters" /><button type="button" onClick={() => setShowNewPassword(v => !v)} aria-label={showNewPassword ? "Hide password" : "Show password"}>{showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></span></div>
         {error && <span className="err" role="alert">{error}</span>}
         {notice && <span className="auth-notice" role="status">{notice}</span>}
         <button className="primary" type="submit" disabled={busy}>{busy ? "Saving…" : <>Save new password <Check size={18} /></>}</button>
