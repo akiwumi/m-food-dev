@@ -20,7 +20,7 @@ export function MainMenu({ profile, page, go, close, openNotifs, unread, logout 
   return <div className="panel-bg menu-bg" onClick={close}>
     <aside className="main-menu" onClick={e => e.stopPropagation()}>
       <header className="mm-head">
-        <div className="mm-id">{profile.avatar ? <img src={profile.avatar} alt="" /> : <span>{(profile.name || "Y").slice(0, 1).toUpperCase()}</span>}<div><b>{profile.name || "Your profile"}</b><small>{profile.email || "MoodFood"}</small></div></div>
+        <button type="button" className="mm-id" onClick={() => nav("account")} aria-label="Edit your account and profile picture">{profile.avatar ? <img src={profile.avatar} alt="" /> : <span>{(profile.name || "Y").slice(0, 1).toUpperCase()}</span>}<div><b>{profile.name || "Your profile"}</b><small>{profile.email || "MoodFood"}</small></div></button>
         <button onClick={close} aria-label="Close menu"><X /></button>
       </header>
       <button className="mm-notifs" onClick={() => { openNotifs(); close(); }}><Bell size={18} />Notifications{!!unread && <span className="mm-badge">{unread}</span>}</button>

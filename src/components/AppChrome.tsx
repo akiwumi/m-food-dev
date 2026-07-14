@@ -1,7 +1,7 @@
 import { memo, useContext } from "react";
 import {
   Home, Search, Users, ShoppingCart, CalendarDays, Salad, Heart,
-  UserRound, ArrowLeft, Menu, Bell,
+  UserRound, ArrowLeft, Menu, Bell, Camera,
 } from "lucide-react";
 import type { Page } from "../appTypes";
 import type { Profile } from "../store";
@@ -47,13 +47,24 @@ export const TopBar = memo(function TopBar({ title, back, openNotifs, unread }: 
   return <header className={`top-bar${openNotifs ? " has-actions" : ""}`}><button onClick={back} disabled={!back}><ArrowLeft /></button><h1>{title}</h1><div className="top-bar-actions">{openNotifs && <button className="notif-bell" onClick={openNotifs} aria-label="Notifications"><Bell />{!!unread && <span className="notif-dot">{unread}</span>}</button>}<button onClick={openMenu} aria-label="Open menu"><Menu /></button></div></header>;
 });
 
-export const AppHeader = memo(function AppHeader({ openNotifs, unread, profile }: { openNotifs?: () => void; unread?: number; profile?: Profile }) {
+export const AppHeader = memo(function AppHeader({ openNotifs, unread, profile, openProfile }: { openNotifs?: () => void; unread?: number; profile?: Profile; openProfile?: () => void }) {
   const openMenu = useContext(MenuCtx);
+  const ring = profile?.avatar
+    ? <div className="user-avatar-ring"><img src={profile.avatar} alt={profile.name} /></div>
+    : <div className="logo-ring"><img src="/images/logo-1.png" alt="MoodFood" /></div>;
   return (
     <header className="app-header">
-      {profile?.avatar
-        ? <div className="user-avatar-ring"><img src={profile.avatar} alt={profile.name} /></div>
-        : <div className="logo-ring"><img src="/images/logo-1.png" alt="MoodFood" /></div>}
+      {openProfile
+        ? <button
+            type="button"
+            className="header-identity"
+            onClick={openProfile}
+            aria-label={profile?.avatar ? "Edit your profile picture" : "Add a profile picture"}
+          >
+            {ring}
+            {!profile?.avatar && <span className="add-photo-badge" aria-hidden="true"><Camera size={11} /></span>}
+          </button>
+        : ring}
       <div className="header-meta">
         <span className="header-name">{profile?.name ? `Hey, ${profile.name.split(" ")[0]}.` : "MoodFood"}</span>
         <span className="header-sub">Good food. Better mood.</span>

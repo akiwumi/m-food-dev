@@ -44,7 +44,7 @@ export function HomeScreen({ profile, diary, saved, catalog, mood, setMood, ener
   // Results view, same layout container, different content
   if (results) return (
     <div className="home-screen">
-      <AppHeader profile={profile} openNotifs={openNotifs} unread={unread} />
+      <AppHeader profile={profile} openNotifs={openNotifs} unread={unread} openProfile={() => go("account")} />
       {(curating || !hasFetched) ? <div className="thinking-state">
         <div className="thinking-orbit"><Sparkles /><i /><i /><i /></div>
         <span>MOODY IS THINKING</span>
@@ -90,7 +90,7 @@ export function HomeScreen({ profile, diary, saved, catalog, mood, setMood, ener
   return (
     <div className="home-screen">
       {/* Header: avatar/logo + greeting + bell, cloned from reference */}
-      <AppHeader profile={profile} openNotifs={openNotifs} unread={unread} />
+      <AppHeader profile={profile} openNotifs={openNotifs} unread={unread} openProfile={() => go("account")} />
 
       <div className="home-greeting">
         <h1>How does dinner feel tonight?</h1>
