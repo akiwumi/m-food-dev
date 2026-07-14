@@ -1,46 +1,65 @@
-import { useEffect, useRef, useState } from "react";
-import { Plus, ChefHat, X, Camera, Send, Users, MoreVertical, ChevronRight, Heart, MessageCircle, UserPlus, Globe, ThumbsUp, Hand, type LucideIcon } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Plus, UserPlus, Users } from "lucide-react";
 import { TopBar } from "../components/AppChrome";
-import { Avatar } from "../components/misc";
+import { CommunityComposer } from "../components/community/CommunityComposer";
+import { CommunityFeedItem, CommunityPostDetail, type CommunityCommentView, type CommunityFeedView } from "../components/community/CommunityFeed";
+import { TrendingRail } from "../components/community/TrendingRail";
 import { readSafeImage, cleanText } from "../security";
 import { useCommunity } from "../hooks/useCommunity";
-import { fetchComments, type FeedPost, type FeedComment, type PostReaction, type PostVisibility } from "../community";
+import { fetchComments, type FeedPost, type PostVisibility } from "../community";
+import { rankTrendingRecipes } from "../communityRanking";
+import { addDismissedRecipe, readDismissedRecipes } from "../communityPreferences";
 import type { Recipe } from "../data";
 import type { Profile, ReactionCounts, ReactionKind, SocialPost } from "../store";
 import { notifyCommunityMessage, notifyCommunityPost } from "../notifications";
 
 const EMPTY_REACTIONS: ReactionCounts = { like: [], love: [], applaud: [] };
-const REACTIONS: { kind: ReactionKind; label: string; Icon: LucideIcon }[] = [
-  { kind: "like", label: "Like", Icon: ThumbsUp },
-  { kind: "love", label: "Love", Icon: Heart },
-  { kind: "applaud", label: "Applaud", Icon: Hand },
-];
+const REACTION_KINDS: ReactionKind[] = ["like", "love", "applaud"];
 
 export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog, savedRecipes, initialRecipeId, clearInitial, goFriends, openMember, refreshNotifications }: {
-  profile: Profile; posts: SocialPost[]; setPosts: (p: SocialPost[]) => void;
-  openRecipe: (r: Recipe) => void; catalog: Recipe[]; savedRecipes: Recipe[];
-  initialRecipeId?: string; clearInitial?: () => void; goFriends: () => void; openMember: (id: string) => void;
+  profile: Profile;
+  posts: SocialPost[];
+  setPosts: (posts: SocialPost[]) => void;
+  openRecipe: (recipe: Recipe) => void;
+  catalog: Recipe[];
+  savedRecipes: Recipe[];
+  initialRecipeId?: string;
+  clearInitial?: () => void;
+  goFriends: () => void;
+  openMember: (id: string) => void;
   refreshNotifications: () => void;
 }) {
   const community = useCommunity();
   const seenRealPostIds = useRef<Set<string> | null>(null);
-  const [composer, setComposer] = useState(false);
-  const [text, setText] = useState(""); const [image, setImage] = useState(""); const [recipeId, setRecipeId] = useState("");
+  const feedScroll = useRef(0);
+  const identity = profile.email || profile.name || "pilot";
+  const actor = profile.name || "You";
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [image, setImage] = useState("");
+  const [recipeId, setRecipeId] = useState("");
   const [visibility, setVisibility] = useState<PostVisibility>("connections");
-  const [uploadError, setUploadError] = useState(""); const [posting, setPosting] = useState(false);
-  const [comment, setComment] = useState<Record<string, string>>({}); // local-feed (pilot) comment drafts
-  const findRecipe = (id?: string) => catalog.find(r => r.id === id);
-  // The composer links a SAVED recipe. If one was pre-shared from a recipe
-  // screen and isn't saved, keep it selectable so the link isn't lost.
-  const preShared = recipeId && !savedRecipes.some(r => r.id === recipeId) ? findRecipe(recipeId) : undefined;
+  const [publishError, setPublishError] = useState("");
+  const [posting, setPosting] = useState(false);
+  const [selectedPostId, setSelectedPostId] = useState("");
+  const [detailComments, setDetailComments] = useState<CommunityCommentView[]>([]);
+  const [reply, setReply] = useState("");
+  const [replyError, setReplyError] = useState("");
+  const [submittingReply, setSubmittingReply] = useState(false);
+  const [dismissed, setDismissed] = useState(() => readDismissedRecipes(localStorage, identity));
+
+  const findRecipe = (id?: string) => catalog.find(recipe => recipe.id === id);
+  const preShared = recipeId && !savedRecipes.some(recipe => recipe.id === recipeId) ? findRecipe(recipeId) : undefined;
   const linkOptions = preShared ? [preShared, ...savedRecipes] : savedRecipes;
 
-  // A recipe shared from the detail/saved screen opens the composer prefilled.
+  useEffect(() => setDismissed(readDismissedRecipes(localStorage, identity)), [identity]);
+
   useEffect(() => {
     if (!initialRecipeId) return;
-    const r = findRecipe(initialRecipeId);
-    setComposer(true); setRecipeId(initialRecipeId);
-    setText(t => t || (r ? `Just found ${r.title} on MoodFood, looks perfect. ` : ""));
+    const recipe = findRecipe(initialRecipeId);
+    setRecipeId(initialRecipeId);
+    setText(current => current || (recipe ? `Just found ${recipe.title} on MoodFood, looks perfect. ` : ""));
+    setComposerOpen(true);
     clearInitial?.();
   }, [initialRecipeId]);
 
@@ -61,8 +80,81 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
     if (fresh.length) refreshNotifications();
   }, [community.ready, community.feed, profile.communityPostNotifications, profile.name, refreshNotifications]);
 
-  const upload = async (file?: File) => { if (!file) return; try { setImage(await readSafeImage(file)); setUploadError(""); } catch (e) { setUploadError((e as Error).message); } };
-  const resetComposer = () => { setText(""); setImage(""); setRecipeId(""); setComposer(false); };
+  const localReactions = (post: SocialPost): ReactionCounts => ({
+    like: post.reactions?.like ?? post.likes ?? [],
+    love: post.reactions?.love ?? [],
+    applaud: post.reactions?.applaud ?? [],
+  });
+  const localUserReaction = (post: SocialPost) => REACTION_KINDS.find(kind => localReactions(post)[kind].includes(actor));
+  const localReactionCounts = (post: SocialPost) => Object.fromEntries(REACTION_KINDS.map(kind => [kind, localReactions(post)[kind].length])) as Record<ReactionKind, number>;
+
+  const realViews = useMemo<CommunityFeedView[]>(() => community.feed.map(post => ({
+    id: post.id,
+    authorId: post.authorId,
+    authorName: post.authorName,
+    authorAvatar: post.authorAvatar,
+    body: post.body,
+    image: post.image,
+    recipe: findRecipe(post.recipeRef),
+    recipeTitle: post.recipeTitle,
+    createdAt: post.createdAt,
+    activeReaction: post.myReaction,
+    reactionCounts: post.reactionCounts,
+    commentCount: post.commentCount,
+  })), [community.feed, catalog]);
+
+  const localViews = useMemo<CommunityFeedView[]>(() => posts.map(post => ({
+    id: post.id,
+    authorName: post.author,
+    authorAvatar: post.avatar,
+    body: post.text,
+    image: post.image,
+    recipe: findRecipe(post.recipeId),
+    recipeTitle: findRecipe(post.recipeId)?.title,
+    createdAt: post.createdAt,
+    activeReaction: localUserReaction(post),
+    reactionCounts: localReactionCounts(post),
+    commentCount: post.comments.length,
+  })), [posts, catalog, actor]);
+
+  const liveFeed = community.ready ? realViews : localViews;
+  const trendingPosts = useMemo<FeedPost[]>(() => community.ready ? community.feed : posts.map(post => ({
+    id: post.id,
+    authorId: "pilot",
+    authorName: post.author,
+    authorAvatar: post.avatar,
+    body: post.text,
+    image: post.image,
+    recipeRef: post.recipeId,
+    recipeTitle: findRecipe(post.recipeId)?.title,
+    visibility: "connections",
+    createdAt: post.createdAt,
+    likeCount: Object.values(localReactionCounts(post)).reduce((sum, value) => sum + value, 0),
+    likedByMe: !!localUserReaction(post),
+    commentCount: post.comments.length,
+    reactionCounts: localReactionCounts(post),
+    myReaction: localUserReaction(post),
+  })), [community.ready, community.feed, posts, catalog, actor]);
+  const trending = useMemo(() => rankTrendingRecipes(trendingPosts, catalog, profile, dismissed), [trendingPosts, catalog, profile, dismissed]);
+  const selectedPost = liveFeed.find(post => post.id === selectedPostId);
+
+  const upload = async (file?: File) => {
+    if (!file) return;
+    try {
+      setImage(await readSafeImage(file));
+      setPublishError("");
+    } catch (error) {
+      setPublishError((error as Error).message);
+    }
+  };
+
+  const resetComposer = () => {
+    setText("");
+    setImage("");
+    setRecipeId("");
+    setPublishError("");
+    setComposerOpen(false);
+  };
 
   const publish = async () => {
     const safeText = cleanText(text, 1000);
@@ -72,194 +164,147 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
       setPosting(true);
       const result = await community.publish({ body: safeText, imageDataUrl: image || undefined, recipeRef: recipeId || undefined, recipeTitle: recipe?.title, visibility });
       setPosting(false);
-      if (result.ok) {
-        if (profile.communityPostNotifications) {
-          notifyCommunityPost(profile.name || "You", safeText || recipe?.title || "A saved recipe was shared.");
-          refreshNotifications();
-        }
-        resetComposer();
+      if (!result.ok) {
+        setPublishError(result.message);
+        return;
       }
-      else setUploadError(result.message);
-      return;
+    } else {
+      setPosts([{ id: crypto.randomUUID(), author: actor, avatar: profile.avatar, text: safeText, image: image || "", recipeId: recipeId || undefined, createdAt: new Date().toISOString(), reactions: { ...EMPTY_REACTIONS }, comments: [] }, ...posts.slice(0, 99)]);
     }
-    // Pilot fallback: local-only feed.
-    setPosts([{ id: crypto.randomUUID(), author: cleanText(profile.name, 80) || "You", avatar: profile.avatar, text: safeText, image: image || recipe?.image || "", recipeId: recipeId || undefined, createdAt: "Just now", reactions: { ...EMPTY_REACTIONS }, comments: [] }, ...posts.slice(0, 99)]);
     if (profile.communityPostNotifications) {
-      notifyCommunityPost(profile.name || "You", safeText || recipe?.title || "A saved recipe was shared.");
+      notifyCommunityPost(actor, safeText || recipe?.title || "A saved recipe was shared.");
       refreshNotifications();
     }
     resetComposer();
   };
 
-  const intro = (
-    <section className="community-intro">
-      <div><b>Cook together, from wherever.</b><p>Share recipes, photos, and tips with friends. Your private mood and psychology profile stay private.</p></div>
-      <div className="ci-actions">
-        <button className="secondary" onClick={goFriends}><UserPlus size={17} />Friends</button>
-        <button className="primary" onClick={() => setComposer(c => !c)}><Plus />Post</button>
-      </div>
-    </section>
-  );
-
-  const composerEl = composer && (
-    <section className="composer">
-      <div><Avatar name={profile.name} image={profile.avatar} /><textarea maxLength={1000} value={text} onTouchStart={e => e.currentTarget.focus()} onChange={e => setText(e.target.value)} placeholder="Share a cook, recipe, or tip..." /></div>
-      {image && <img src={image} alt="Post preview" />}
-      {recipeId && findRecipe(recipeId) && <div className="composer-recipe"><ChefHat size={15} /><span>Saved recipe <b>{findRecipe(recipeId)!.title}</b></span><button onClick={() => setRecipeId("")} aria-label="Remove saved recipe link"><X size={14} /></button></div>}
-      <select value={recipeId} onChange={e => setRecipeId(e.target.value)}>
-        <option value="">{savedRecipes.length ? "Add a saved recipe link (optional)" : "Save a recipe first to add it here"}</option>
-        {linkOptions.map(r => <option value={r.id} key={r.id}>{r.title}</option>)}
-      </select>
-      {uploadError && <p className="upload-error">{uploadError}</p>}
-      <footer>
-        <label><Camera />Add photo<input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => upload(e.target.files?.[0])} /></label>
-        {community.ready && (
-          <button type="button" className="visibility-toggle" onClick={() => setVisibility(v => v === "public" ? "connections" : "public")}>
-            {visibility === "public" ? <><Globe size={14} />Public</> : <><Users size={14} />Friends</>}
-          </button>
-        )}
-        <button className="primary" onClick={publish} disabled={posting}><Send />{posting ? "Sharing…" : "Share"}</button>
-      </footer>
-    </section>
-  );
-
-  // ── Real (multi-user) feed ────────────────────────────────────────────────
-  if (community.ready) {
-    return (
-      <div className="screen community">
-        <TopBar title="Community" />
-        {intro}
-        {composerEl}
-        <div className="feed">
-          {community.loading && community.feed.length === 0 && <p className="quiet" style={{ margin: "24px 16px" }}>Loading your community…</p>}
-          {!community.loading && community.feed.length === 0 && !composer && (
-            <div className="empty-state" style={{ margin: "24px 16px" }}><Users /><h2>Your feed is quiet</h2><p>Add friends and share a cook to get the conversation going.</p><button className="secondary" onClick={goFriends} style={{ marginTop: 10 }}><UserPlus size={16} />Find friends</button></div>
-          )}
-          {community.feed.map(post => (
-            <RealPost key={post.id} post={post} me={profile} catalog={catalog} openRecipe={openRecipe} openMember={openMember}
-              onReact={(reaction) => community.react(post.id, reaction)}
-              onComment={async (postId, body) => {
-                const result = await community.comment(postId, body);
-                if (result.ok && profile.communityPostNotifications) {
-                  notifyCommunityMessage(profile.name || "You", body);
-                  refreshNotifications();
-                }
-                return result.ok;
-              }} />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  // ── Pilot fallback: local-only feed (no accounts / offline) ───────────────
-  const updatePost = (id: string, change: (p: SocialPost) => SocialPost) => setPosts(posts.map(p => p.id === id ? change(p) : p));
-  const actor = profile.name || "You";
-  const localReactions = (post: SocialPost): ReactionCounts => ({
-    like: post.reactions?.like ?? post.likes ?? [],
-    love: post.reactions?.love ?? [],
-    applaud: post.reactions?.applaud ?? [],
-  });
-  const localUserReaction = (post: SocialPost) => {
-    const reactions = localReactions(post);
-    return REACTIONS.find(r => reactions[r.kind].includes(actor))?.kind;
+  const reactLocal = (postId: string, reaction: ReactionKind) => {
+    setPosts(posts.map(post => {
+      if (post.id !== postId) return post;
+      const previous = localUserReaction(post);
+      const next: ReactionCounts = {
+        like: localReactions(post).like.filter(name => name !== actor),
+        love: localReactions(post).love.filter(name => name !== actor),
+        applaud: localReactions(post).applaud.filter(name => name !== actor),
+      };
+      if (previous !== reaction) next[reaction] = [...next[reaction], actor];
+      return { ...post, reactions: next, likes: next.like };
+    }));
   };
-  const toggleLocalReaction = (post: SocialPost, reaction: ReactionKind): SocialPost => {
-    const previous = localUserReaction(post);
-    const next: ReactionCounts = {
-      like: localReactions(post).like.filter(name => name !== actor),
-      love: localReactions(post).love.filter(name => name !== actor),
-      applaud: localReactions(post).applaud.filter(name => name !== actor),
-    };
-    if (previous !== reaction) next[reaction] = [...next[reaction], actor];
-    return { ...post, reactions: next, likes: next.like };
-  };
-  const commentOnPost = (post: SocialPost, body: string): SocialPost => {
-    const next = { ...post, comments: [...post.comments, { author: actor, avatar: profile.avatar, text: cleanText(body, 500) }] };
-    if (profile.communityPostNotifications) notifyCommunityMessage(actor, body);
-    return next;
-  };
-  return (
-    <div className="screen community">
-      <TopBar title="Community" />
-      {intro}
-      {composerEl}
-      <div className="feed">
-        {posts.length === 0 && !composer && <div className="empty-state" style={{ margin: "24px 16px" }}><Users /><h2>Be the first to post</h2><p>Share a cook, tip, or recipe. Your psychological profile and diary stay completely private.</p></div>}
-        {posts.map(post => <article className="social-post" key={post.id}>
-          <header><Avatar name={post.author} image={post.avatar} /><div><b>{post.author}</b><span>{post.createdAt}</span></div><MoreVertical /></header>
-          <p>{post.text}</p>
-          {post.image && <img src={post.image} alt="Cooked meal" />}
-          {post.recipeId && findRecipe(post.recipeId) && <button className="linked-recipe" onClick={() => { const r = findRecipe(post.recipeId); if (r) openRecipe(r); }}><ChefHat /><span><small>SAVED RECIPE</small><b>{findRecipe(post.recipeId)?.title}</b></span><ChevronRight /></button>}
-          <ReactionBar active={localUserReaction(post)} counts={Object.fromEntries(REACTIONS.map(r => [r.kind, localReactions(post)[r.kind].length])) as Record<ReactionKind, number>} comments={post.comments.length} onReact={(reaction) => updatePost(post.id, p => toggleLocalReaction(p, reaction))} />
-          {post.comments.map((c, n) => <div className="comment" key={n}><Avatar name={c.author} image={c.avatar} /><p><b>{c.author}</b> {c.text}</p></div>)}
-          <form className="comment-form" onSubmit={e => { e.preventDefault(); if (!comment[post.id]?.trim()) return; updatePost(post.id, p => commentOnPost(p, comment[post.id])); setComment({ ...comment, [post.id]: "" }); refreshNotifications(); }}>
-            <input maxLength={500} value={comment[post.id] || ""} onChange={e => setComment({ ...comment, [post.id]: cleanText(e.target.value, 500) })} placeholder="Add a helpful comment..." /><button><Send /></button>
-          </form>
-        </article>)}
-      </div>
-    </div>
-  );
-}
 
-// A single post in the real feed: like, expand/add comments, open a linked recipe.
-function RealPost({ post, me, catalog, openRecipe, openMember, onReact, onComment }: {
-  post: FeedPost; me: Profile; catalog: Recipe[]; openRecipe: (r: Recipe) => void; openMember: (id: string) => void;
-  onReact: (reaction: PostReaction) => void; onComment: (postId: string, body: string) => Promise<boolean>;
-}) {
-  const [open, setOpen] = useState(false);
-  const [comments, setComments] = useState<FeedComment[]>([]);
-  const [draft, setDraft] = useState("");
-  const linked = post.recipeRef ? catalog.find(r => r.id === post.recipeRef) : undefined;
+  const react = (postId: string, reaction: ReactionKind) => {
+    if (community.ready) void community.react(postId, reaction);
+    else reactLocal(postId, reaction);
+  };
 
-  const expand = async () => { const next = !open; setOpen(next); if (next) setComments(await fetchComments(post.id)); };
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const body = cleanText(draft, 500);
-    if (!body) return;
-    if (await onComment(post.id, body)) {
-      setDraft("");
-      setComments(await fetchComments(post.id));
+  const openPost = async (postId: string) => {
+    feedScroll.current = window.scrollY;
+    setSelectedPostId(postId);
+    setReply("");
+    setReplyError("");
+    if (community.ready) {
+      const comments = await fetchComments(postId);
+      setDetailComments(comments.map(comment => ({ id: comment.id, authorName: comment.authorName, authorAvatar: comment.authorAvatar, body: comment.body, createdAt: comment.createdAt })));
+    } else {
+      const post = posts.find(candidate => candidate.id === postId);
+      setDetailComments((post?.comments ?? []).map((comment, index) => ({ id: `${postId}-${index}`, authorName: comment.author, authorAvatar: comment.avatar ?? "", body: comment.text })));
     }
   };
 
-  return (
-    <article className="social-post">
-      <header><button className="post-author" onClick={() => openMember(post.authorId)}><Avatar name={post.authorName} image={post.authorAvatar} /><div><b>{post.authorName}</b><span>{new Date(post.createdAt).toLocaleDateString()}</span></div></button><MoreVertical /></header>
-      {post.body && <p>{post.body}</p>}
-      {post.image && <img src={post.image} alt="Cooked meal" />}
-      {linked
-        ? <button className="linked-recipe" onClick={() => openRecipe(linked)}><ChefHat /><span><small>SAVED RECIPE</small><b>{linked.title}</b></span><ChevronRight /></button>
-        : post.recipeTitle && <div className="linked-recipe static"><ChefHat /><span><small>SAVED RECIPE</small><b>{post.recipeTitle}</b></span></div>}
-      <ReactionBar active={post.myReaction} counts={post.reactionCounts} comments={post.commentCount} onReact={onReact} onComments={expand} />
-      {open && (
-        <>
-          {comments.map(c => <div className="comment" key={c.id}><Avatar name={c.authorName} image={c.authorAvatar} /><p><b>{c.authorName}</b> {c.body}</p></div>)}
-          <form className="comment-form" onSubmit={submit}>
-            <input maxLength={500} value={draft} onChange={e => setDraft(e.target.value)} placeholder={`Reply as ${me.name || "you"}...`} />
-            <button><Send /></button>
-          </form>
-        </>
-      )}
-    </article>
-  );
-}
+  const closePost = () => {
+    setSelectedPostId("");
+    requestAnimationFrame(() => window.scrollTo({ top: feedScroll.current }));
+  };
 
-function ReactionBar({ active, counts, comments, onReact, onComments }: {
-  active?: ReactionKind;
-  counts: Record<ReactionKind, number>;
-  comments: number;
-  onReact: (reaction: ReactionKind) => void;
-  onComments?: () => void;
-}) {
+  const submitReply = async () => {
+    if (!selectedPost) return;
+    const body = cleanText(reply, 500);
+    if (!body) return;
+    setSubmittingReply(true);
+    setReplyError("");
+    if (community.ready) {
+      const result = await community.comment(selectedPost.id, body);
+      if (!result.ok) {
+        setReplyError(result.message);
+        setSubmittingReply(false);
+        return;
+      }
+      const comments = await fetchComments(selectedPost.id);
+      setDetailComments(comments.map(comment => ({ id: comment.id, authorName: comment.authorName, authorAvatar: comment.authorAvatar, body: comment.body, createdAt: comment.createdAt })));
+    } else {
+      const nextComment = { author: actor, avatar: profile.avatar, text: body };
+      setPosts(posts.map(post => post.id === selectedPost.id ? { ...post, comments: [...post.comments, nextComment] } : post));
+      setDetailComments(current => [...current, { id: crypto.randomUUID(), authorName: actor, authorAvatar: profile.avatar, body }]);
+    }
+    if (profile.communityPostNotifications) {
+      notifyCommunityMessage(actor, body);
+      refreshNotifications();
+    }
+    setReply("");
+    setSubmittingReply(false);
+  };
+
+  const dismissRecipe = (dismissedRecipeId: string) => setDismissed(addDismissedRecipe(localStorage, identity, dismissedRecipeId));
+
   return (
-    <div className="social-actions">
-      {REACTIONS.map(({ kind, label, Icon }) => (
-        <button key={kind} onClick={() => onReact(kind)} aria-pressed={active === kind} title={label}>
-          <Icon fill={kind === "love" && active === kind ? "currentColor" : "none"} />{counts[kind]}
-        </button>
-      ))}
-      <button type="button" onClick={onComments}><MessageCircle />{comments}</button>
+    <div className="screen community community-feed-screen">
+      <TopBar title="Community" />
+      <div className="community-feed-toolbar">
+        <button type="button" onClick={goFriends}><UserPlus />Friends</button>
+        <button type="button" className="primary" onClick={() => setComposerOpen(true)}><Plus />Post</button>
+      </div>
+      <TrendingRail items={trending} openRecipe={openRecipe} dismiss={dismissRecipe} />
+      <section className="community-feed-list" aria-label="Community posts">
+        {community.loading && !liveFeed.length && <p className="quiet">Loading your community...</p>}
+        {!community.loading && !liveFeed.length && (
+          <div className="community-feed-empty"><Users /><h2>Your feed is quiet</h2><p>Add friends or share the first dish.</p><button type="button" onClick={() => setComposerOpen(true)}><Plus />Create post</button></div>
+        )}
+        {liveFeed.map(post => (
+          <CommunityFeedItem
+            key={post.id}
+            item={post}
+            openPost={() => void openPost(post.id)}
+            openAuthor={() => post.authorId && openMember(post.authorId)}
+            onReact={reaction => react(post.id, reaction)}
+          />
+        ))}
+      </section>
+
+      <button type="button" className="community-floating-post" onClick={() => setComposerOpen(true)} aria-label="Create post"><Plus /></button>
+      <CommunityComposer
+        open={composerOpen}
+        profile={profile}
+        text={text}
+        setText={setText}
+        image={image}
+        removeImage={() => setImage("")}
+        recipeId={recipeId}
+        setRecipeId={setRecipeId}
+        recipes={linkOptions.filter((recipe): recipe is Recipe => !!recipe)}
+        visibility={visibility}
+        setVisibility={setVisibility}
+        posting={posting}
+        error={publishError}
+        upload={file => void upload(file)}
+        close={() => setComposerOpen(false)}
+        publish={() => void publish()}
+      />
+      {selectedPost && (
+        <CommunityPostDetail
+          item={selectedPost}
+          profile={profile}
+          comments={detailComments}
+          draft={reply}
+          setDraft={setReply}
+          submitting={submittingReply}
+          error={replyError}
+          close={closePost}
+          openAuthor={() => selectedPost.authorId && openMember(selectedPost.authorId)}
+          openRecipe={openRecipe}
+          onReact={reaction => react(selectedPost.id, reaction)}
+          submit={() => void submitReply()}
+        />
+      )}
     </div>
   );
 }

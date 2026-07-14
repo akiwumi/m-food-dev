@@ -117,4 +117,11 @@ describe("client security controls", () => {
     expect(styles).toContain("max-width:100%");
     expect(styles).toContain("overflow-x:hidden");
   });
+
+  it("disables native iOS web-view bounce instead of reloading on pull-down", () => {
+    const appDelegate = readFileSync("ios/App/App/AppDelegate.swift", "utf8");
+    expect(appDelegate).toContain("scrollView.bounces = false");
+    expect(appDelegate).toContain("scrollView.alwaysBounceVertical = false");
+    expect(appDelegate).toContain("configureWebViewScrolling()");
+  });
 });
