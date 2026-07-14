@@ -32,7 +32,7 @@ export type OnboardingKey =
   | "foodValues" | "cookingMotivations" | "eatingHabits" | "emotionalTriggers"
   | "comfortFoods" | "comfortCues" | "avoidCues" | "moodNeeds"
   | "cookingMoods" | "moodContext" | "foodRelationship"
-  | "skill" | "confidenceBlockers" | "equipment" | "cookingMethods"
+  | "skill" | "confidenceBlockers" | "cookingMethods"
   | "cookingFor" | "servings" | "weeknightTime" | "typicalTime"
   | "eatingPattern" | "mealTypes" | "occasions" | "diningStyle"
   | "leftoverHabits" | "wasteApproach" | "planningStyle" | "budget"
@@ -310,14 +310,8 @@ export const onboardingQuestions: OnboardingQuestion[] = [
     id: "confidence-blockers", section: "Kitchen, time & table", eyebrow: "YOUR KITCHEN",
     title: "What holds you back in the kitchen?", type: "multi", key: "confidenceBlockers",
     text: "Naming the friction lets Moody route around it.",
-    options: ["Techniques I don't know", "Getting timing right", "Fear of wasting food", "Unfamiliar ingredients", "Lack of equipment", "The mess", "Cooking for others", "Food safety anxiety", "Cost of ingredients", "No real blockers"],
+    options: ["Techniques I don't know", "Getting timing right", "Fear of wasting food", "Unfamiliar ingredients", "The mess", "Cooking for others", "Food safety anxiety", "Cost of ingredients", "No real blockers"],
     optional: true,
-  },
-  {
-    id: "equipment", section: "Kitchen, time & table", eyebrow: "YOUR KITCHEN",
-    title: "What can you cook with?", type: "multi", key: "equipment",
-    text: "We'll never suggest a recipe that needs gear you don't have.",
-    options: ["Stovetop", "Oven", "Microwave", "Blender", "Immersion blender", "Air fryer", "Slow cooker", "Instant Pot", "Grill", "Food processor", "Stand mixer", "Cast iron pan", "Wok", "Thermometer", "Pasta machine", "Sous vide"],
   },
   {
     id: "cooking-methods", section: "Kitchen, time & table", eyebrow: "HOW YOU COOK",

@@ -87,8 +87,7 @@ export function safeRecipes(recipes: Recipe[], profile: Profile) {
       !hasAllergen &&
       supportsDiet(recipe, profile.diet) &&
       !(diet.includes("pesc") && LAND_MEAT.test(text)) &&
-      !((diet.includes("vegetarian") || diet.includes("vegan")) && (LAND_MEAT.test(text) || FISH.test(text))) &&
-      recipe.equipment.every(item => profile.equipment.includes(item));
+      !((diet.includes("vegetarian") || diet.includes("vegan")) && (LAND_MEAT.test(text) || FISH.test(text)));
   });
 }
 

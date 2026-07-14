@@ -34,6 +34,16 @@ describe("recommendation safety", () => {
     expect(safe.map(recipe => recipe.id)).toEqual(["r1", "r2"]);
   });
 
+  it("does not filter otherwise safe recipes by equipment", () => {
+    const recipes: Recipe[] = [
+      { ...fixture[0], id: "pan", title: "Skillet dessert", equipment: ["frying pan"], mealTypes: ["dessert"] },
+      { ...fixture[0], id: "sheet", title: "Tray bake", equipment: ["baking sheet"], mealTypes: ["dessert"] },
+      { ...fixture[0], id: "specialty", title: "Air fryer bites", equipment: ["air fryer"], mealTypes: ["snack"] },
+    ];
+
+    expect(safeRecipes(recipes, { ...defaultProfile, equipment: [] }).map(recipe => recipe.id)).toEqual(["pan", "sheet", "specialty"]);
+  });
+
   it("rejects meat recipes mislabeled vegetarian", () => {
     const safe = safeRecipes(fixture, { ...defaultProfile, diet: "Vegetarian", equipment: ["Stovetop", "Oven", "Blender"] });
     expect(safe.map(recipe => recipe.title)).toEqual(["Pasta"]);
