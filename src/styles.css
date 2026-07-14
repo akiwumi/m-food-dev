@@ -592,6 +592,44 @@ form,.search-box,.search-actions,.search-filters,.entry{max-width:100%;min-width
 .friend-tag.muted{color:var(--muted)}
 button.sm{min-height:36px;padding:0 12px;border-radius:11px;display:flex;align-items:center;gap:5px;font-size:12px;font-weight:700}
 button.ghost{border:1px solid var(--line);background:transparent;color:var(--muted)}
+/* Friend suggestions / recommendations / member profile (021) */
+.friend-open{display:flex;align-items:center;gap:10px;flex:1;min-width:0;border:0;background:transparent;text-align:left;padding:0}
+.friend-open>b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fr-text{display:grid;min-width:0}
+.fr-text b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fr-text small{font-size:10px;color:var(--muted)}
+.friend-block .fb-sub{font-size:11px;color:var(--muted);margin:-4px 0 8px}
+.social-post .post-author{display:flex;align-items:center;gap:9px;flex:1;border:0;background:transparent;text-align:left;padding:0}
+.friend-profile .fp-hero{display:grid;justify-items:center;text-align:center;gap:4px;padding:18px 0 8px}
+.fp-hero .avatar-img,.fp-hero .avatar-fallback{width:80px;height:80px;font-size:24px}
+.fp-hero h1{font:700 24px "Playfair Display",serif;margin-top:6px}
+.fp-loc{font-size:11px;color:var(--muted)}
+.fp-bio{font-size:12px;color:var(--ink);max-width:300px;line-height:1.5}
+.fp-stats{display:flex;gap:18px;margin:8px 0 4px;font-size:12px;color:var(--muted)}
+.fp-stats b{color:var(--olive)}
+.fp-actions{display:flex;gap:8px;align-items:center;margin-top:6px}
+.fp-block{margin-top:20px}
+.fp-block h2{font:600 15px "Playfair Display",serif;margin-bottom:10px}
+.fp-field{margin-bottom:12px}
+.fp-label{display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:5px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{background:var(--sage);color:var(--olive);border-radius:20px;padding:4px 11px;font-size:11px;font-weight:600}
+.spice-bar{height:8px;border-radius:6px;background:var(--line);overflow:hidden}
+.spice-bar>div{height:100%;background:linear-gradient(90deg,#f0c050,#ef6a4a)}
+.fp-tabs{display:flex;gap:6px;margin-bottom:12px}
+.fp-tabs button{flex:1;border:1px solid var(--line);background:var(--white);border-radius:12px;padding:9px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:12px;font-weight:700;color:var(--muted)}
+.fp-tabs button.active{background:var(--olive);color:#fff;border-color:var(--olive)}
+.fp-recipes{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.fp-recipe{border:1px solid var(--line);background:var(--white);border-radius:14px;overflow:hidden;text-align:left;padding:0}
+.fp-recipe img,.fp-recipe-noimg{width:100%;height:96px;object-fit:cover;display:block}
+.fp-recipe-noimg{display:grid;place-items:center;background:var(--sage);color:var(--olive)}
+.fp-recipe>div{padding:8px 10px;display:grid;gap:2px}
+.fp-recipe b{font-size:12px;line-height:1.3}
+.fp-recipe small{font-size:10px;color:var(--muted)}
+.fp-rating{color:#f0b429;display:flex;gap:1px;margin-top:2px}
+.recommend-sheet{position:fixed;left:0;right:0;bottom:0;background:var(--white);border-radius:22px 22px 0 0;padding:16px;max-height:70vh;overflow:auto;display:grid;gap:8px}
+.recommend-sheet .rs-handle{width:40px;height:4px;border-radius:3px;background:var(--line);margin:0 auto 6px}
+.recommend-sheet h3{font:600 17px "Playfair Display",serif;margin-bottom:4px}
 
 /* ── Food photo analysis: allergens + vitamins ───────────────────────────── */
 .fac-section-label{display:block;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:14px 0 8px}

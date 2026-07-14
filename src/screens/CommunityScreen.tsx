@@ -9,10 +9,10 @@ import { fetchComments, type FeedPost, type FeedComment, type PostVisibility } f
 import type { Recipe } from "../data";
 import type { Profile, SocialPost } from "../store";
 
-export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog, initialRecipeId, clearInitial, goFriends }: {
+export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog, initialRecipeId, clearInitial, goFriends, openMember }: {
   profile: Profile; posts: SocialPost[]; setPosts: (p: SocialPost[]) => void;
   openRecipe: (r: Recipe) => void; catalog: Recipe[];
-  initialRecipeId?: string; clearInitial?: () => void; goFriends: () => void;
+  initialRecipeId?: string; clearInitial?: () => void; goFriends: () => void; openMember: (id: string) => void;
 }) {
   const community = useCommunity();
   const [composer, setComposer] = useState(false);
@@ -93,7 +93,7 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
             <div className="empty-state" style={{ margin: "24px 16px" }}><Users /><h2>Your feed is quiet</h2><p>Add friends and share a cook to get the conversation going.</p><button className="secondary" onClick={goFriends} style={{ marginTop: 10 }}><UserPlus size={16} />Find friends</button></div>
           )}
           {community.feed.map(post => (
-            <RealPost key={post.id} post={post} me={profile} catalog={catalog} openRecipe={openRecipe}
+            <RealPost key={post.id} post={post} me={profile} catalog={catalog} openRecipe={openRecipe} openMember={openMember}
               onLike={() => community.toggleLike(post.id, !post.likedByMe)}
               onComment={community.comment} />
           ))}
@@ -131,8 +131,8 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
 }
 
 // A single post in the real feed: like, expand/add comments, open a linked recipe.
-function RealPost({ post, me, catalog, openRecipe, onLike, onComment }: {
-  post: FeedPost; me: Profile; catalog: Recipe[]; openRecipe: (r: Recipe) => void;
+function RealPost({ post, me, catalog, openRecipe, openMember, onLike, onComment }: {
+  post: FeedPost; me: Profile; catalog: Recipe[]; openRecipe: (r: Recipe) => void; openMember: (id: string) => void;
   onLike: () => void; onComment: (postId: string, body: string) => Promise<boolean>;
 }) {
   const [open, setOpen] = useState(false);
@@ -151,7 +151,7 @@ function RealPost({ post, me, catalog, openRecipe, onLike, onComment }: {
 
   return (
     <article className="social-post">
-      <header><Avatar name={post.authorName} image={post.authorAvatar} /><div><b>{post.authorName}</b><span>{new Date(post.createdAt).toLocaleDateString()}</span></div><MoreVertical /></header>
+      <header><button className="post-author" onClick={() => openMember(post.authorId)}><Avatar name={post.authorName} image={post.authorAvatar} /><div><b>{post.authorName}</b><span>{new Date(post.createdAt).toLocaleDateString()}</span></div></button><MoreVertical /></header>
       {post.body && <p>{post.body}</p>}
       {post.image && <img src={post.image} alt="Cooked meal" />}
       {linked

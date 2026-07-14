@@ -153,6 +153,82 @@ export async function addComment(postId: string, body: string): Promise<boolean>
   return !error;
 }
 
+// ── Friend suggestions (shared food profile) ───────────────────────────────
+export type Suggestion = { id: string; name: string; avatar: string; sharedCuisines: number };
+export async function suggestFriends(): Promise<Suggestion[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("suggest_friends");
+  if (error || !data) return [];
+  return (data as Row[]).map(r => ({ id: str(r.id), name: str(r.display_name), avatar: str(r.avatar_url), sharedCuisines: num(r.shared_cuisines) }));
+}
+
+// ── Recommend-a-friend ──────────────────────────────────────────────────────
+export type Recommendation = { recommendedId: string; recommendedName: string; recommendedAvatar: string; recommenderName: string; note: string; relationship: Relationship };
+export async function recommendFriend(recommended: string, target: string, note?: string): Promise<void> {
+  await supabase?.rpc("recommend_friend", { recommended, target, note: note ?? null });
+}
+export async function listRecommendations(): Promise<Recommendation[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("list_recommendations");
+  if (error || !data) return [];
+  return (data as Row[]).map(r => ({
+    recommendedId: str(r.recommended_id), recommendedName: str(r.recommended_name), recommendedAvatar: str(r.recommended_avatar),
+    recommenderName: str(r.recommender_name), note: str(r.note), relationship: (str(r.relationship) || "none") as Relationship,
+  }));
+}
+
+// ── A member's profile (food profile + activity) ────────────────────────────
+export type MemberProfile = {
+  id: string; name: string; avatar: string; bio: string; location: string;
+  visibility: string; isFriend: boolean; foodProfile: Record<string, unknown>;
+  cookedCount: number; favoriteCount: number;
+};
+export type MemberRecipe = { recipeRef: string; title: string; image: string; cuisine: string; rating?: number; when: string };
+
+export async function getMemberProfile(target: string): Promise<MemberProfile | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("member_profile", { target });
+  const row = (data as Row[] | null)?.[0];
+  if (error || !row) return null;
+  return {
+    id: str(row.id), name: str(row.display_name), avatar: str(row.avatar_url), bio: str(row.bio), location: str(row.location),
+    visibility: str(row.visibility), isFriend: !!row.is_friend,
+    foodProfile: (row.food_profile && typeof row.food_profile === "object" ? row.food_profile as Record<string, unknown> : {}),
+    cookedCount: num(row.cooked_count), favoriteCount: num(row.favorite_count),
+  };
+}
+export async function getMemberCooked(target: string): Promise<MemberRecipe[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("member_cooked", { target });
+  if (error || !data) return [];
+  return (data as Row[]).map(r => ({ recipeRef: str(r.recipe_ref), title: str(r.recipe_title), image: str(r.recipe_image), cuisine: str(r.cuisine), rating: r.rating == null ? undefined : num(r.rating), when: str(r.cooked_label) || str(r.created_at) }));
+}
+export async function getMemberFavorites(target: string): Promise<MemberRecipe[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("member_favorites", { target });
+  if (error || !data) return [];
+  return (data as Row[]).map(r => ({ recipeRef: str(r.recipe_ref), title: str(r.recipe_title), image: str(r.recipe_image), cuisine: str(r.cuisine), when: str(r.created_at) }));
+}
+
+// ── Activity sync (diary + saved → server, so friends can see them) ─────────
+export type CookedRow = { recipe_ref: string | null; recipe_title: string; recipe_image: string | null; cuisine: string | null; rating: number | null; cooked_label: string | null };
+export type SavedRow = { recipe_ref: string; recipe_title: string; recipe_image: string | null; cuisine: string | null };
+
+export async function syncCookedMeals(rows: CookedRow[]): Promise<void> {
+  const s = await session();
+  if (!supabase || !s) return;
+  await supabase.from("cooked_meals").delete().eq("user_id", s.user.id);
+  if (rows.length) await supabase.from("cooked_meals").insert(rows.map(r => ({ ...r, user_id: s.user.id })));
+}
+export async function syncSavedRecipes(rows: SavedRow[]): Promise<void> {
+  const s = await session();
+  if (!supabase || !s) return;
+  const seen = new Set<string>();
+  const unique = rows.filter(r => (seen.has(r.recipe_ref) ? false : (seen.add(r.recipe_ref), true)));
+  await supabase.from("saved_recipes").delete().eq("user_id", s.user.id);
+  if (unique.length) await supabase.from("saved_recipes").insert(unique.map(r => ({ ...r, user_id: s.user.id })));
+}
+
 // Loosely-typed RPC row (Supabase returns untyped JSON); coerced into the typed
 // shapes above. `str`/`num` normalise null and non-string scalars.
 type Row = Record<string, unknown>;

@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback, lazy, Suspense } from "react";
+import { useEffect, useState, useCallback, useMemo, lazy, Suspense } from "react";
+import { useSocialSync } from "./hooks/useSocialSync";
 import { type Recipe } from "./data";
 import { clearStored, defaultProfile, reportStorageEstimate, useStoredState, type Profile } from "./store";
 import { recordRating } from "./behavioral";
@@ -56,6 +57,7 @@ const BillingScreen = lazy(() => import("./screens/BillingScreen").then(m => ({ 
 const AccountScreen = lazy(() => import("./screens/AccountScreen").then(m => ({ default: m.AccountScreen })));
 const CommunityScreen = lazy(() => import("./screens/CommunityScreen").then(m => ({ default: m.CommunityScreen })));
 const FriendsScreen = lazy(() => import("./screens/FriendsScreen").then(m => ({ default: m.FriendsScreen })));
+const FriendProfileScreen = lazy(() => import("./screens/FriendProfileScreen").then(m => ({ default: m.FriendProfileScreen })));
 const SearchResultsScreen = lazy(() => import("./screens/SearchResultsScreen").then(m => ({ default: m.SearchResultsScreen })));
 const EmptyResultsScreen = lazy(() => import("./screens/SearchResultsScreen").then(m => ({ default: m.EmptyResultsScreen })));
 const DetailScreen = lazy(() => import("./screens/DetailScreen").then(m => ({ default: m.DetailScreen })));
@@ -116,6 +118,7 @@ export default function App() {
   const [quickEnergy, setQuickEnergy] = useState(25);
   const [quickTime, setQuickTime] = useState(30);
   const [pendingShare, setPendingShare] = useState<string | undefined>(undefined);
+  const [viewingMember, setViewingMember] = useState<string | undefined>(undefined);
   const { saved, setSaved, diary, setDiary, groceries, setGroceries, posts, setPosts, diners, setDiners, selectedDiners, setSelectedDiners, eaterCount, setEaterCount, sharedProfile } = useHouseholdCollections(profile);
   const { aiCuration, setAiCuration, learnedSignals, setLearnedSignals, behavioralConsent, cuisineSignal, moodSignal, suppressedCuisines, setSuppressedCuisines, appliedSignals } = useLearningSignals(entry, page, diary);
   // AI features are a Pro perk (strategy §6.5): the stored preference survives,
@@ -336,6 +339,13 @@ export default function App() {
     setPendingShare(recipe.id);
     go("community");
   };
+  // Open a member's public profile (food profile + cooked/favourite meals).
+  const openMember = useCallback((id: string) => { setViewingMember(id); go("member-profile"); }, [go]);
+  // Open a shared recipe by its catalog ref (from a friend's profile), if we have it.
+  const openRecipeRef = (ref: string) => { const r = catalog.find(c => c.id === ref); if (r) open(r); };
+  // Mirror the diary + favourites up to Supabase so friends can see them.
+  const savedRecipes = useMemo(() => safeRecipes.filter(r => saved.includes(r.id)), [safeRecipes, saved]);
+  useSocialSync(diary, savedRecipes);
 
   // The landing doubles as the splash: brand-new visitors (entry === "welcome")
   // begin onboarding from it; returning visitors mid-flow (splash still true)
@@ -425,8 +435,9 @@ export default function App() {
       {page === "psych-profile" && <PsychProfileScreen profile={profile} save={setProfile} back={() => go("settings")} />}
       {page === "food-profile" && <FoodProfileScreen profile={profile} save={setProfile} back={() => go("settings")} />}
       {page === "account" && <AccountScreen profile={profile} save={setProfile} posts={posts.filter(p => p.author === profile.name)} back={() => go("settings")} cancelAccount={cancelAccount} />}
-      {page === "community" && <CommunityScreen profile={profile} posts={posts} setPosts={setPosts} openRecipe={open} catalog={catalog} initialRecipeId={pendingShare} clearInitial={() => setPendingShare(undefined)} goFriends={() => go("friends")} />}
-      {page === "friends" && <FriendsScreen back={() => go("community")} />}
+      {page === "community" && <CommunityScreen profile={profile} posts={posts} setPosts={setPosts} openRecipe={open} catalog={catalog} initialRecipeId={pendingShare} clearInitial={() => setPendingShare(undefined)} goFriends={() => go("friends")} openMember={openMember} />}
+      {page === "friends" && <FriendsScreen back={() => go("community")} openMember={openMember} />}
+      {page === "member-profile" && viewingMember && <FriendProfileScreen memberId={viewingMember} back={() => go("friends")} openRecipeRef={openRecipeRef} />}
       {page === "health" && <HealthHub diary={diary} go={go} />}
       {page === "health-nutrition" && <HealthDetail kind="nutrition" diary={diary} back={() => go("health")} />}
       {page === "health-variety" && <HealthDetail kind="variety" diary={diary} back={() => go("health")} />}
