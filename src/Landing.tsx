@@ -142,7 +142,6 @@ export function Landing({ begin, signin }: { begin: () => void; signin: () => vo
         <AddToHomeScreenHint />
         <header className="ih-top">
           <div className="ih-logo"><img src="/images/logo-1.png" alt="" /><span>MoodFood</span></div>
-          <button className="ih-signin" onClick={signin}>Sign in</button>
         </header>
         <div className="ih-copy">
           <span className="ih-eyebrow" data-reveal>YOUR PERSONAL FOOD COMPANION</span>
