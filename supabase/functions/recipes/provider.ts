@@ -6,6 +6,21 @@ const FISH = /\b(fish|salmon|tuna|cod|haddock|trout|sardine|anchov|prawn|shrimp|
 const PROVIDER_CUISINE_FAMILIES: Record<string, string[]> = {
   asian: ["Asian", "Chinese", "Indian", "Japanese", "Korean", "Thai", "Vietnamese"],
 };
+const MEALDB_CATEGORY_FILTERS: Record<string, string[]> = {
+  breakfast: ["Breakfast"],
+  lunch: ["Chicken", "Pasta", "Seafood", "Vegetarian", "Vegan"],
+  dinner: ["Beef", "Chicken", "Lamb", "Pasta", "Pork", "Seafood", "Vegetarian", "Vegan"],
+  snacks: ["Starter", "Side"],
+  snack: ["Starter", "Side"],
+  starter: ["Starter", "Side"],
+  dessert: ["Dessert"],
+};
+const MEALDB_AREAS = new Set([
+  "American", "British", "Canadian", "Chinese", "Croatian", "Dutch", "Egyptian",
+  "Filipino", "French", "Greek", "Indian", "Irish", "Italian", "Jamaican", "Japanese",
+  "Kenyan", "Malaysian", "Mexican", "Moroccan", "Polish", "Portuguese", "Russian",
+  "Spanish", "Thai", "Tunisian", "Turkish", "Ukrainian", "Vietnamese",
+]);
 
 function inferProviderTags(recipe: any) {
   const text = `${recipe.title ?? ""} ${recipe.reason ?? ""} ${(recipe.ingredients ?? []).join(" ")} ${(recipe.steps ?? []).map((step: any) => step?.text ?? "").join(" ")}`.toLowerCase();
@@ -84,6 +99,37 @@ function normalizeMeal(meal: Record<string, unknown>, mood: string) {
 }
 
 const stripHtml = (value: string) => (value ?? "").replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+const decodeHtml = (value: string) => value
+  .replace(/&nbsp;/gi, " ")
+  .replace(/&amp;/gi, "&")
+  .replace(/&quot;/gi, '"')
+  .replace(/&#39;|&apos;/gi, "'")
+  .replace(/&lt;/gi, "<")
+  .replace(/&gt;/gi, ">");
+
+function instructionTextSteps(value: unknown): string[] {
+  const source = String(value ?? "").trim();
+  if (!source) return [];
+  const blocks = source.match(/<(?:li|p)(?:\s[^>]*)?>[\s\S]*?<\/(?:li|p)>/gi) ?? [];
+  const candidates = blocks.length
+    ? blocks.map(block => decodeHtml(stripHtml(block)))
+    : decodeHtml(stripHtml(source)).split(/\r?\n+|(?<=[.!?])\s+(?=[A-Z0-9])/);
+  return candidates.map(step => step.replace(/^\s*(?:step\s*)?\d+[.):\-]?\s*/i, "").trim()).filter(Boolean);
+}
+
+export function loosenProviderParams(params: URLSearchParams): URLSearchParams {
+  const loose = new URLSearchParams(params);
+  for (const key of ["maxReadyTime", "includeIngredients", "equipment", "minServings", "minProtein", "maxCalories", "minFiber", "maxSaturatedFat"]) loose.delete(key);
+  return loose;
+}
+
+export function rotateRecipes<T>(recipes: T[], seed: string): T[] {
+  if (recipes.length < 2 || !seed) return [...recipes];
+  let hash = 0;
+  for (const character of seed) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+  const start = hash % recipes.length;
+  return [...recipes.slice(start), ...recipes.slice(0, start)];
+}
 const spoonacularImage = (recipe: any) => {
   const image = String(recipe.image ?? "").trim();
   if (/^https?:\/\//.test(image)) return image;
@@ -93,7 +139,7 @@ const spoonacularImage = (recipe: any) => {
 
 export function filterRecipesForProfile(recipes: any[], profile: any): any[] {
   const diet = String(profile?.diet ?? "").toLowerCase();
-  const dietConstraints = diet.split("+").map(value => value.trim()).filter(value => value && !["any", "anything", "everything", "flexitarian"].includes(value));
+  const dietConstraints = diet.split("+").map(value => value.trim()).filter(value => value && !["any", "anything", "everything", "flexitarian", "omnivore", "no specific diet", "none"].includes(value));
   const allergies = (profile?.allergies ?? []).map((value: string) => value.toLowerCase().replace(/s$/, "")).filter(Boolean);
   const religious = (profile?.dietReligious ?? []).join(" ").toLowerCase();
 
@@ -118,6 +164,27 @@ export function filterRecipesForProfile(recipes: any[], profile: any): any[] {
 
 export function filterRecipesByMaxTime(recipes: any[], maxTime: number): any[] {
   return recipes.filter(recipe => Number.isFinite(recipe?.time) && recipe.time <= maxTime);
+}
+
+const QUERY_FILLERS = new Set([
+  "a", "an", "and", "dish", "easy", "food", "for", "healthy", "high", "low",
+  "meal", "min", "minute", "minutes", "or", "over", "protein", "quick", "recipe",
+  "recipes", "something", "the", "under", "with", "cozy", "comforting",
+]);
+const SECONDARY_INGREDIENT = /\b(bouillon|broth|extract|flavou?r|seasoning|stock)\b/i;
+
+function searchTerms(query: string): string[] {
+  return [...new Set(query.toLowerCase().match(/[a-z0-9]+/g)?.filter(term => term.length > 1 && !QUERY_FILLERS.has(term)) ?? [])];
+}
+
+export function filterRecipesByQuery(recipes: any[], query: string): any[] {
+  const terms = searchTerms(query);
+  if (!terms.length) return recipes;
+  return recipes.filter(recipe => {
+    const title = String(recipe?.title ?? "").toLowerCase();
+    const ingredients = (recipe?.ingredients ?? []).map((ingredient: unknown) => String(ingredient).toLowerCase());
+    return terms.every(term => title.includes(term) || ingredients.some((ingredient: string) => ingredient.includes(term) && !SECONDARY_INGREDIENT.test(ingredient)));
+  });
 }
 
 const CATEGORY_TYPES: Record<string, string[]> = {
@@ -201,18 +268,20 @@ export function filterOutAccessoryTypes(recipes: any[]): any[] {
 
 export function filterRecipesWithCompleteInstructions(recipes: any[]): any[] {
   const placeholder = /\b(see|view|find)\b.*\b(full|original|source)\b.*\binstructions?\b/i;
-  return recipes.filter(recipe =>
-    Array.isArray(recipe?.steps) &&
-    recipe.steps.length > 0 &&
-    recipe.steps.some((step: any) => typeof step?.text === "string" && step.text.trim() && !placeholder.test(step.text))
-  );
+  return recipes.filter(recipe => {
+    if (!Array.isArray(recipe?.steps)) return false;
+    const usable = recipe.steps
+      .map((step: any) => typeof step?.text === "string" ? step.text.trim() : "")
+      .filter((text: string) => text && !placeholder.test(text));
+    return usable.length >= 2 || usable.some((text: string) => text.length >= 80);
+  });
 }
 
 export function normalizeSpoonacularRecipe(recipe: any, mood: string) {
   const nutrients = recipe.nutrition?.nutrients ?? [];
   const calories = Math.round(nutrients.find((nutrient: any) => nutrient.name === "Calories")?.amount ?? 0);
   const time = recipe.readyInMinutes ?? 30;
-  const steps = (recipe.analyzedInstructions ?? []).flatMap((section: any) => section?.steps ?? []).map((step: any) => {
+  const analyzedSteps = (recipe.analyzedInstructions ?? []).flatMap((section: any) => section?.steps ?? []).map((step: any) => {
     const text = String(step.step ?? "").trim();
     return {
       text,
@@ -223,6 +292,8 @@ export function normalizeSpoonacularRecipe(recipe: any, mood: string) {
       equipment: (step.equipment ?? []).map((item: any) => item.name).filter(Boolean),
     };
   }).filter((step: { text: string }) => step.text);
+  const fallbackSteps = analyzedSteps.length ? [] : instructionTextSteps(recipe.instructions).map(text => ({ text, title: text, detail: text, image: "", active: [], equipment: [] }));
+  const steps = analyzedSteps.length ? analyzedSteps : fallbackSteps;
   const ingredients = (recipe.extendedIngredients ?? []).map((ingredient: any) => ingredient.original).filter(Boolean);
 
   const normalized = {
@@ -253,11 +324,18 @@ export async function fetchTheMealDbRecipes(
   mood: string,
   limit = 10,
   fetcher: Fetcher = fetch,
+  options: { category?: string; cuisines?: string[] } = {},
 ) {
   const randomUrls = () => Array.from({ length: Math.min(limit, 10) }, () => `${MEALDB}/random.php`);
+  const requestedCategories = MEALDB_CATEGORY_FILTERS[(options.category ?? "").toLowerCase()] ?? [];
+  const requestedAreas = [...new Set((options.cuisines ?? []).filter(cuisine => MEALDB_AREAS.has(cuisine)))];
   const urls = query.trim()
     ? [`${MEALDB}/search.php?s=${encodeURIComponent(query.trim())}`]
-    : randomUrls();
+    : requestedAreas.length
+      ? requestedAreas.map(area => `${MEALDB}/filter.php?a=${encodeURIComponent(area)}`)
+      : requestedCategories.length
+        ? requestedCategories.map(category => `${MEALDB}/filter.php?c=${encodeURIComponent(category)}`)
+        : randomUrls();
 
   try {
     const load = async (requests: string[]) => {
@@ -265,10 +343,18 @@ export async function fetchTheMealDbRecipes(
       const payloads = await Promise.all(responses.filter(res => res.ok).map(res => res.json()));
       return payloads.flatMap(payload => Array.isArray(payload?.meals) ? payload.meals : []);
     };
-    let meals = await load(urls);
-    if (!meals.length && query.trim()) meals = await load(randomUrls());
+    const meals = await load(urls);
     const unique = [...new Map(meals.map(meal => [String(meal.idMeal), meal])).values()];
-    return unique.slice(0, limit).map(meal => normalizeMeal(meal, mood));
+    const summaries = unique.filter(meal => !String(meal.strInstructions ?? "").trim()).slice(0, Math.max(limit * 2, limit));
+    const details = summaries.length
+      ? await load(summaries.map(meal => `${MEALDB}/lookup.php?i=${encodeURIComponent(String(meal.idMeal))}`))
+      : [];
+    const detailedById = new Map(details.map(meal => [String(meal.idMeal), meal]));
+    const normalized = filterRecipesByQuery(unique
+      .map(meal => normalizeMeal(detailedById.get(String(meal.idMeal)) ?? meal, mood))
+      .filter(recipe => !options.category || filterRecipesByCategory([recipe], options.category).length)
+      .filter(recipe => !(options.cuisines?.length) || options.cuisines.some(cuisine => recipe.cuisine.toLowerCase() === cuisine.toLowerCase())), query);
+    return normalized.slice(0, limit);
   } catch {
     return [];
   }

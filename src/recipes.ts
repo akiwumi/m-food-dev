@@ -105,6 +105,7 @@ export async function fetchCuratedRecipes(
       const body = JSON.stringify({
         profile: recipeProfilePayload(profile),
         mood, energy, time, query, filters, history, offset, relax, curate,
+        variationSeed: typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
       });
 
       const post = (token: string) => fetch(ENDPOINT, {

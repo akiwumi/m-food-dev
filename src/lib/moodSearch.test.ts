@@ -17,19 +17,17 @@ describe("getMoodTags", () => {
 });
 
 describe("buildMoodSearchQuery", () => {
-  it("matches the documented example output", () => {
+  it("keeps provider title search separate from mood and structured filters", () => {
     expect(buildMoodSearchQuery({
       mood: "tired",
       cuisine: "Italian",
       maxCookingTime: 30,
       query: "pasta",
-    })).toBe(
-      "Italian low-effort quick easy nourishing restorative minimal-prep one-pot gentle-energy 30-minute pasta",
-    );
+    })).toBe("pasta");
   });
 
-  it("omits empty parts and keeps cuisine/time when no mood is set", () => {
-    expect(buildMoodSearchQuery({ cuisine: "Thai", maxCookingTime: 20 })).toBe("Thai 20-minute");
+  it("does not invent a title query from filters alone", () => {
+    expect(buildMoodSearchQuery({ cuisine: "Thai", maxCookingTime: 20 })).toBe("");
   });
 
   it("returns an empty string when nothing is provided", () => {

@@ -34,6 +34,8 @@ const FISH = /\b(fish|salmon|tuna|cod|haddock|trout|sardine|anchov|prawn|shrimp|
 const CUISINE_FAMILIES: Record<string, string[]> = {
   asian: ["asian", "chinese", "indian", "japanese", "korean", "thai", "vietnamese"],
 };
+const QUERY_FILLERS = new Set(["a", "an", "and", "dish", "easy", "food", "for", "healthy", "high", "low", "meal", "min", "minute", "minutes", "or", "over", "protein", "quick", "recipe", "recipes", "something", "the", "under", "with", "cozy", "comforting"]);
+const SECONDARY_INGREDIENT = /\b(bouillon|broth|extract|flavou?r|seasoning|stock)\b/i;
 
 function matchesCuisine(recipeCuisine: string, requestedCuisine: string) {
   const recipe = recipeCuisine.toLowerCase();
@@ -51,6 +53,14 @@ function matchesRequestedDiet(recipe: Recipe, requested?: string) {
   return true;
 }
 
+function matchesQuery(recipe: Recipe, query?: string) {
+  const terms = [...new Set((query ?? "").toLowerCase().match(/[a-z0-9]+/g)?.filter(term => term.length > 1 && !QUERY_FILLERS.has(term)) ?? [])];
+  if (!terms.length) return true;
+  const title = recipe.title.toLowerCase();
+  const ingredients = recipe.ingredients.map(ingredient => ingredient.toLowerCase());
+  return terms.every(term => title.includes(term) || ingredients.some(ingredient => ingredient.includes(term) && !SECONDARY_INGREDIENT.test(ingredient)));
+}
+
 export function finalizeSearchResults(recipes: Recipe[], profile: Profile, filters: RecipeFilters, limit = 8): Recipe[] {
   const seenIds = new Set<string>();
   const seenTitles = new Set<string>();
@@ -62,6 +72,7 @@ export function finalizeSearchResults(recipes: Recipe[], profile: Profile, filte
     const text = `${recipe.title} ${recipe.cuisine} ${recipe.ingredients.join(" ")}`.toLowerCase();
     const title = recipe.title.trim().toLowerCase().replace(/\s+/g, " ");
     if (seenIds.has(recipe.id) || seenTitles.has(title)) return false;
+    if (!matchesQuery(recipe, filters.query)) return false;
     if (filters.maxReadyTime && recipe.time > filters.maxReadyTime) return false;
     if (filters.cuisines?.length && !filters.cuisines.some(cuisine => matchesCuisine(recipe.cuisine, cuisine))) return false;
     if (allowedTypes && !(recipe.mealTypes ?? []).some(type => allowedTypes.includes(type.toLowerCase()))) return false;

@@ -63,7 +63,8 @@ const containsTerm = (text: string, term: string) => {
 };
 
 function supportsDiet(recipe: Recipe, diet: string) {
-  const constraints = diet.split("+").map(value => value.trim()).filter(value => !["Anything", "Everything", "Flexitarian"].includes(value));
+  const unrestricted = new Set(["", "any", "anything", "everything", "flexitarian", "omnivore", "no specific diet", "none"]);
+  const constraints = diet.split("+").map(value => value.trim()).filter(value => !unrestricted.has(value.toLowerCase()));
   const recipeDiets = recipe.diets.map(value => value.toLowerCase());
   return constraints.every(constraint => {
     const value = constraint.toLowerCase();
@@ -174,6 +175,7 @@ export function recommend(recipes: Recipe[], profile: Profile, mood: string, ene
 
 export function profileForDiners(profile: Profile, diners: Diner[]) {
   const allergies = [...new Set([...profile.allergies, ...diners.flatMap(d => d.allergies)])];
-  const diets = [...new Set([profile.diet, ...diners.map(d => d.diet)].filter(d => !["Anything", "Everything", "Flexitarian"].includes(d)))];
+  const unrestricted = new Set(["", "any", "anything", "everything", "flexitarian", "omnivore", "no specific diet", "none"]);
+  const diets = [...new Set([profile.diet, ...diners.map(d => d.diet)].filter(d => !unrestricted.has(d.toLowerCase())))];
   return { ...profile, allergies, diet: diets.length ? diets.join(" + ") : "Everything" };
 }

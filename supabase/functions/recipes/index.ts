@@ -29,7 +29,7 @@
 // sortDirection, ignorePantry, plus full recipe info/nutrition/instructions.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { applyCuratedRanking, dedupeRecipes, expandProviderCuisines, fetchTheMealDbRecipes, filterOutAccessoryTypes, filterRecipesByCategory, filterRecipesByMaxTime, filterRecipesForProfile, filterRecipesWithCompleteInstructions, normalizeSpoonacularRecipe } from "./provider.ts";
+import { applyCuratedRanking, dedupeRecipes, expandProviderCuisines, fetchTheMealDbRecipes, filterOutAccessoryTypes, filterRecipesByCategory, filterRecipesByMaxTime, filterRecipesByQuery, filterRecipesForProfile, filterRecipesWithCompleteInstructions, loosenProviderParams, normalizeSpoonacularRecipe, rotateRecipes } from "./provider.ts";
 import { bumpSearchCount, dairyFreeTag, dietTagsFor, getCachedRecipes, logSearch, normalizeMoodTag, saveRecipesToCache } from "./cache.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
@@ -71,7 +71,7 @@ function combineHardDiets(profileDiet: unknown, searchDiet: unknown): string {
     .filter((value): value is string => typeof value === "string")
     .flatMap(value => value.split("+"))
     .map(value => value.trim())
-    .filter(value => value && !["any", "anything", "everything", "flexitarian"].includes(value.toLowerCase()));
+    .filter(value => value && !["any", "anything", "everything", "flexitarian", "omnivore", "no specific diet", "none"].includes(value.toLowerCase()));
   return [...new Set(values)].join(" + ");
 }
 
@@ -413,7 +413,7 @@ Deno.serve(async (request) => {
         filterRecipesForProfile(safetyFilter(candidates, profile.allergies ?? []), hardProfile),
       )));
       if (safeCached.length >= 6) {
-        const top = safeCached.slice(0, 20);
+        const top = rotateRecipes(safeCached, String(body?.variationSeed ?? userId ?? moodTag)).slice(0, 20);
         const servedExternalIds = new Set(top.map((r: any) => String(r.id)));
         const servedDbIds = rows.filter(r => servedExternalIds.has(String((r.raw_data as any)?.id))).map(r => r.id);
         bumpSearchCount(servedDbIds);                       // fire-and-forget popularity
@@ -443,7 +443,7 @@ Deno.serve(async (request) => {
         return [];
       }
       const data = await res.json();
-      const normalized = (data.results ?? []).map((r: any) => normalizeSpoonacularRecipe(r, mood));
+      const normalized = filterRecipesByQuery((data.results ?? []).map((r: any) => normalizeSpoonacularRecipe(r, mood)), query);
       spoonCount = Math.max(spoonCount, normalized.length);
       const byProfile = filterRecipesForProfile(safetyFilter(normalized, profile.allergies ?? []), hardProfile);
       const byTime = Number.isFinite(maxTimeCap) ? filterRecipesByMaxTime(byProfile, maxTimeCap) : byProfile;
@@ -455,15 +455,10 @@ Deno.serve(async (request) => {
     let safe = await spoon(params, maxTime, category);
     let relaxed = false;
 
-    // Attempt 2 — loosen QUANTITATIVE limits (time, calories, protein, fibre,
-    // sat-fat, required ingredients, equipment, servings, free-text query) but
-    // KEEP cuisine, course/type, diet, allergens and exclusions — so a relaxed
-    // result still matches the kind of food the user asked for, never random.
-    // Always tried when strict returns nothing, regardless of relax flag, because
-    // categorical filters are still honoured.
-    if (!safe.length) {
-      const loose = new URLSearchParams(params);
-      for (const key of ["query", "maxReadyTime", "includeIngredients", "equipment", "minServings", "minProtein", "maxCalories", "minFiber", "maxSaturatedFat"]) loose.delete(key);
+    // The mood feed may loosen quantitative limits to keep suggestions flowing.
+    // Explicit Search-screen requests use relax=false and keep every filter exact.
+    if (!safe.length && relax) {
+      const loose = loosenProviderParams(params);
       safe = await spoon(loose, Infinity, category);
       relaxed = safe.length > 0;
     }
@@ -474,20 +469,30 @@ Deno.serve(async (request) => {
       // Write-through: every live result grows the owned cache (roadmap Phase 2).
       saveRecipesToCache(safe, moodTag, dietTags);
       logSearch({ userId, moodTag, dietTags, query, resultIds: [], servedFrom: "api" });
-      const curated = shouldCurate ? await curate(safe, profile, mood, history) : safe;
+      // Spoonacular is deliberately over-fetched so enough recipes survive the
+      // safety and instruction checks. Return one 20-item page so offset=20
+      // starts after this page instead of overlapping an unseen 100-item window.
+      const page = safe.slice(0, 20);
+      const curated = shouldCurate ? await curate(page, profile, mood, history) : page;
       return Response.json({ provider: "spoonacular", relaxed, curated: shouldCurate, recipes: curated }, { headers: headers(origin) });
     }
 
-    // Both Spoonacular attempts empty (or it errored). For the mood feed (relax),
-    // fall back to TheMealDB to keep results flowing. For an explicit filtered
-    // search (relax=false) we SKIP it — TheMealDB can't honor cuisine/nutrition
-    // filters, so returning its results would silently ignore the user's filters.
-    // The client then shows "No exact matches" (or its own filtered offline set).
-    if (relax) {
-      const mealdbRecipes = await fetchTheMealDbRecipes(query, mood);
+    // TheMealDB can honor text, course, cuisine, diet, ingredient and basic time
+    // filters after hydration. Nutrition/equipment/serving filters need data it
+    // does not expose, so strict searches with those constraints stay empty.
+    const mealDbCompatible = !Number.isFinite(filters.maxCalories) && !Number.isFinite(filters.minProtein) &&
+      !(Array.isArray(filters.equipment) && filters.equipment.length) && !Number.isFinite(filters.minServings);
+    if (relax || mealDbCompatible) {
+      const mealdbRecipes = await fetchTheMealDbRecipes(query, mood, 20, fetch, { category, cuisines });
       mealdbCount = mealdbRecipes.length;
-      const mealdbCategoryFiltered = filterRecipesByCategory(filterRecipesForProfile(safetyFilter(mealdbRecipes, profile.allergies ?? []), hardProfile), category);
-      const fallback = dedupeRecipes(filterRecipesWithCompleteInstructions(category ? mealdbCategoryFiltered : filterOutAccessoryTypes(mealdbCategoryFiltered))).slice(0, 8);
+      const mealdbCategoryFiltered = filterRecipesByMaxTime(filterRecipesByCategory(filterRecipesForProfile(safetyFilter(mealdbRecipes, profile.allergies ?? []), hardProfile), category), maxTime);
+      const fallbackFiltered = mealdbCategoryFiltered.filter((recipe: any) => {
+        const text = `${recipe.title ?? ""} ${(recipe.ingredients ?? []).join(" ")}`.toLowerCase();
+        const include = Array.isArray(filters.includeIngredients) ? filters.includeIngredients : [];
+        const exclude = Array.isArray(filters.excludeIngredients) ? filters.excludeIngredients : [];
+        return include.every((item: string) => text.includes(item.toLowerCase())) && !exclude.some((item: string) => text.includes(item.toLowerCase()));
+      });
+      const fallback = dedupeRecipes(filterRecipesWithCompleteInstructions(category ? fallbackFiltered : filterOutAccessoryTypes(fallbackFiltered))).slice(0, 20);
       mealdbSafeCount = fallback.length;
       console.log(`[recipes] themealdb: total=${mealdbCount} safe=${mealdbSafeCount}`);
       if (fallback.length) {
@@ -506,13 +511,19 @@ Deno.serve(async (request) => {
   } catch (e) {
     const errMsg = e instanceof Error ? e.message : String(e);
     console.error(`[recipes] exception: ${errMsg}`);
-    // Same rule as above: only substitute TheMealDB for the relaxable mood feed,
-    // never for an explicit filtered search.
-    if (relax) try {
-      const mealdbRecipes = await fetchTheMealDbRecipes(query, mood);
+    const mealDbCompatible = !Number.isFinite(filters.maxCalories) && !Number.isFinite(filters.minProtein) &&
+      !(Array.isArray(filters.equipment) && filters.equipment.length) && !Number.isFinite(filters.minServings);
+    if (relax || mealDbCompatible) try {
+      const mealdbRecipes = await fetchTheMealDbRecipes(query, mood, 20, fetch, { category, cuisines });
       mealdbCount = mealdbRecipes.length;
-      const mealdbCategoryFiltered2 = filterRecipesByCategory(filterRecipesForProfile(safetyFilter(mealdbRecipes, profile.allergies ?? []), hardProfile), category);
-      const fallback = dedupeRecipes(filterRecipesWithCompleteInstructions(category ? mealdbCategoryFiltered2 : filterOutAccessoryTypes(mealdbCategoryFiltered2))).slice(0, 8);
+      const mealdbCategoryFiltered2 = filterRecipesByMaxTime(filterRecipesByCategory(filterRecipesForProfile(safetyFilter(mealdbRecipes, profile.allergies ?? []), hardProfile), category), maxTime);
+      const fallbackFiltered2 = mealdbCategoryFiltered2.filter((recipe: any) => {
+        const text = `${recipe.title ?? ""} ${(recipe.ingredients ?? []).join(" ")}`.toLowerCase();
+        const include = Array.isArray(filters.includeIngredients) ? filters.includeIngredients : [];
+        const exclude = Array.isArray(filters.excludeIngredients) ? filters.excludeIngredients : [];
+        return include.every((item: string) => text.includes(item.toLowerCase())) && !exclude.some((item: string) => text.includes(item.toLowerCase()));
+      });
+      const fallback = dedupeRecipes(filterRecipesWithCompleteInstructions(category ? fallbackFiltered2 : filterOutAccessoryTypes(fallbackFiltered2))).slice(0, 20);
       mealdbSafeCount = fallback.length;
       console.log(`[recipes] themealdb fallback after exception: total=${mealdbCount} safe=${mealdbSafeCount}`);
       if (fallback.length) {

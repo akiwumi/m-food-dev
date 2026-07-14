@@ -66,7 +66,7 @@ export function SearchScreen({
       maxCalories: maxCalories || undefined,
       minProtein: minProtein || undefined,
     };
-    onSearch({ query: searchQuery, filters });
+    onSearch({ query: searchQuery, mood: selectedMood?.label, filters });
   };
 
   const pickSuggestion = (r: Recipe) => {

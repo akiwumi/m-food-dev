@@ -83,4 +83,14 @@ describe("finalizeSearchResults", () => {
     expect(results.map(result => result.id)).toEqual(["thai", "chinese"]);
   });
 
+  it("applies the user's text query to offline fallback recipes", () => {
+    const results = finalizeSearchResults([
+      recipe({ id: "chicken", title: "Chicken Traybake", ingredients: ["chicken thighs"] }),
+      recipe({ id: "turkey", title: "Turkey Pie", ingredients: ["chicken stock", "turkey"] }),
+      recipe({ id: "pasta", title: "Tomato Pasta", ingredients: ["tomatoes", "pasta"] }),
+    ], defaultProfile, { query: "chicken" }, Infinity);
+
+    expect(results.map(result => result.id)).toEqual(["chicken"]);
+  });
+
 });

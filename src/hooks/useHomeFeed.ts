@@ -118,7 +118,7 @@ export function useHomeFeed(
   // simply revealing more of the local ranking when the backend isn't available.
   const loadMore = async () => {
     setCurating(true);
-    const nextOffset = moreOffset + 10;
+    const nextOffset = moreOffset + 20;
     setMoreOffset(nextOffset);
     const startedAt = performance.now();
     try {

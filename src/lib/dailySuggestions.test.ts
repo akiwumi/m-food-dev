@@ -44,6 +44,11 @@ describe("deriveDailySuggestions", () => {
     expect(picks.map(r => r.id)).toEqual(["vegan"]);
   });
 
+  it("keeps the full catalog available to an omnivore", () => {
+    const catalog = [makeRecipe("chicken", "British"), makeRecipe("vegan", "Indian", { diets: ["Vegan"] })];
+    expect(deriveDailySuggestions([], [], catalog, { ...profile, diet: "Omnivore" }, 5)).toHaveLength(2);
+  });
+
   it("caps the result at `count`", () => {
     const catalog = Array.from({ length: 10 }, (_, i) => makeRecipe(`r${i}`, `Cuisine${i}`));
     expect(deriveDailySuggestions([], [], catalog, profile, 3)).toHaveLength(3);

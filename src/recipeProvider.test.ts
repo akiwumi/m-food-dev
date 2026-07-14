@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyCuratedRanking, dedupeRecipes, expandProviderCuisines, fetchTheMealDbRecipes, filterRecipesByCategory, filterRecipesByMaxTime, filterRecipesForProfile, filterRecipesWithCompleteInstructions, normalizeSpoonacularRecipe } from "../supabase/functions/recipes/provider";
+import { applyCuratedRanking, dedupeRecipes, expandProviderCuisines, fetchTheMealDbRecipes, filterRecipesByCategory, filterRecipesByMaxTime, filterRecipesByQuery, filterRecipesForProfile, filterRecipesWithCompleteInstructions, loosenProviderParams, normalizeSpoonacularRecipe, rotateRecipes } from "../supabase/functions/recipes/provider";
 
 describe("fetchTheMealDbRecipes", () => {
   it("returns normalized real recipes when the primary provider is unavailable", async () => {
@@ -43,7 +43,7 @@ describe("fetchTheMealDbRecipes", () => {
     expect(recipes[0].tags.cookingStyle).toContain("baked");
   });
 
-  it("uses random real recipes when a natural-language search has no direct match", async () => {
+  it("does not replace an unmatched text search with unrelated random meals", async () => {
     const calls: string[] = [];
     const fetcher: typeof fetch = async input => {
       const url = String(input);
@@ -56,9 +56,51 @@ describe("fetchTheMealDbRecipes", () => {
 
     const recipes = await fetchTheMealDbRecipes("something cozy and restorative", "Cozy", 2, fetcher);
 
-    expect(recipes).toHaveLength(1);
-    expect(recipes[0].title).toBe("Fallback Meal");
-    expect(calls.some(url => url.includes("random.php"))).toBe(true);
+    expect(recipes).toEqual([]);
+    expect(calls.some(url => url.includes("random.php"))).toBe(false);
+  });
+
+  it("uses TheMealDB category endpoint and hydrates dessert instructions", async () => {
+    const calls: string[] = [];
+    const fetcher: typeof fetch = async input => {
+      const url = String(input);
+      calls.push(url);
+      if (url.includes("filter.php?c=Dessert")) return new Response(JSON.stringify({ meals: [{ idMeal: "42", strMeal: "Chocolate Tart", strMealThumb: "https://example.com/tart.jpg" }] }), { status: 200 });
+      if (url.includes("lookup.php?i=42")) return new Response(JSON.stringify({ meals: [{
+        idMeal: "42", strMeal: "Chocolate Tart", strMealThumb: "https://example.com/tart.jpg",
+        strArea: "French", strCategory: "Dessert",
+        strInstructions: "Heat the oven to 180C. Mix the filling until smooth. Bake for 25 minutes.",
+        strIngredient1: "Chocolate", strMeasure1: "200g",
+      }] }), { status: 200 });
+      return new Response(JSON.stringify({ meals: null }), { status: 200 });
+    };
+
+    const recipes = await fetchTheMealDbRecipes("", "Indulge", 10, fetcher, { category: "dessert" });
+
+    expect(calls.some(url => url.includes("filter.php?c=Dessert"))).toBe(true);
+    expect(calls.some(url => url.includes("lookup.php?i=42"))).toBe(true);
+    expect(recipes[0]).toMatchObject({ title: "Chocolate Tart", mealTypes: ["dessert"] });
+    expect(recipes[0].steps.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("uses selected cuisines before broad fallback categories", async () => {
+    const calls: string[] = [];
+    const fetcher: typeof fetch = async input => {
+      const url = String(input);
+      calls.push(url);
+      if (url.includes("filter.php?a=French")) return new Response(JSON.stringify({ meals: [{ idMeal: "43", strMeal: "French Tart" }] }), { status: 200 });
+      if (url.includes("lookup.php?i=43")) return new Response(JSON.stringify({ meals: [{
+        idMeal: "43", strMeal: "French Tart", strArea: "French", strCategory: "Dessert",
+        strInstructions: "Prepare the pastry. Add the filling. Bake until golden.",
+      }] }), { status: 200 });
+      return new Response(JSON.stringify({ meals: null }), { status: 200 });
+    };
+
+    const recipes = await fetchTheMealDbRecipes("", "Indulge", 10, fetcher, { category: "dessert", cuisines: ["French"] });
+
+    expect(calls.some(url => url.includes("filter.php?a=French"))).toBe(true);
+    expect(calls.some(url => url.includes("filter.php?c=Dessert"))).toBe(false);
+    expect(recipes.map(recipe => recipe.title)).toEqual(["French Tart"]);
   });
 
   it("maps Spoonacular step images, active ingredients, and equipment", () => {
@@ -105,6 +147,50 @@ describe("fetchTheMealDbRecipes", () => {
     ]);
   });
 
+  it("extracts detailed Spoonacular steps when analyzed instructions are absent", () => {
+    const recipe = normalizeSpoonacularRecipe({
+      id: 10,
+      title: "Chocolate Cake",
+      instructions: "<ol><li>Heat the oven to 180C and grease the tin.</li><li>Whisk the batter until smooth.</li><li>Bake for 30 minutes, then cool.</li></ol>",
+      extendedIngredients: [{ original: "200g chocolate" }],
+    }, "Indulge");
+
+    expect(recipe.steps.map((step: { text: string }) => step.text)).toEqual([
+      "Heat the oven to 180C and grease the tin.",
+      "Whisk the batter until smooth.",
+      "Bake for 30 minutes, then cool.",
+    ]);
+    expect(filterRecipesWithCompleteInstructions([recipe])).toHaveLength(1);
+  });
+
+  it("loosens only quantitative provider filters and preserves the requested dish", () => {
+    const params = new URLSearchParams({ query: "chocolate cake", cuisine: "French", type: "dessert", maxReadyTime: "30", maxCalories: "500" });
+    const loose = loosenProviderParams(params);
+
+    expect(loose.get("query")).toBe("chocolate cake");
+    expect(loose.get("cuisine")).toBe("French");
+    expect(loose.get("type")).toBe("dessert");
+    expect(loose.has("maxReadyTime")).toBe(false);
+    expect(loose.has("maxCalories")).toBe(false);
+  });
+
+  it("keeps concrete text searches relevant instead of matching stock or broth", () => {
+    const recipes = [
+      { title: "Chicken Enchiladas", ingredients: ["2 chicken breasts"] },
+      { title: "Green Enchiladas", ingredients: ["500g shredded chicken"] },
+      { title: "Turkey Pot Pie", ingredients: ["2 cups chicken broth", "turkey"] },
+      { title: "Garlic Shrimp", ingredients: ["chicken stock", "shrimp"] },
+    ];
+
+    expect(filterRecipesByQuery(recipes, "chicken").map(recipe => recipe.title)).toEqual(["Chicken Enchiladas", "Green Enchiladas"]);
+  });
+
+  it("rotates cached recipes with a request seed without losing any", () => {
+    const recipes = [{ id: "1" }, { id: "2" }, { id: "3" }];
+    expect(rotateRecipes(recipes, "a")).not.toEqual(rotateRecipes(recipes, "b"));
+    expect(new Set(rotateRecipes(recipes, "a").map(recipe => recipe.id))).toEqual(new Set(["1", "2", "3"]));
+  });
+
   it("enforces the selected maximum cook time after provider results return", () => {
     const recipes = [
       { title: "Fast", time: 15 },
@@ -144,6 +230,15 @@ describe("fetchTheMealDbRecipes", () => {
     ], { diet: "Pescatarian", allergies: [], dietReligious: [] });
 
     expect(safe.map(recipe => recipe.title)).toEqual(["Salmon bowl", "Tomato pasta"]);
+  });
+
+  it("treats the onboarding Omnivore label as unrestricted", () => {
+    const recipes = [
+      { title: "Chicken traybake", ingredients: ["chicken"], diets: [] },
+      { title: "Bean stew", ingredients: ["beans"], diets: ["Vegan"] },
+    ];
+
+    expect(filterRecipesForProfile(recipes, { diet: "Omnivore", allergies: [], dietReligious: [] })).toEqual(recipes);
   });
 
   it("never returns meat to a vegetarian even when the provider labels it vegetarian", () => {
@@ -216,11 +311,13 @@ describe("fetchTheMealDbRecipes", () => {
   it("rejects recipes with missing or placeholder-only instructions", () => {
     const recipes = [
       { title: "Complete", steps: [{ text: "Chop onions." }, { text: "Cook until soft." }] },
+      { title: "Detailed single method", steps: [{ text: "Whisk the eggs with the milk, pour them into a warm pan, and fold slowly until softly set but still glossy." }] },
+      { title: "Too vague", steps: [{ text: "Cook it." }] },
       { title: "Missing", steps: [] },
       { title: "Placeholder", steps: [{ text: "See full instructions on the recipe source." }] },
     ];
 
-    expect(filterRecipesWithCompleteInstructions(recipes).map(recipe => recipe.title)).toEqual(["Complete"]);
+    expect(filterRecipesWithCompleteInstructions(recipes).map(recipe => recipe.title)).toEqual(["Complete", "Detailed single method"]);
   });
 
   it("enforces every restrictive household diet server-side", () => {

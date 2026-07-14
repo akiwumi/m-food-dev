@@ -16,23 +16,9 @@ export function getMoodTags(mood: Mood): string[] {
 }
 
 export function buildMoodSearchQuery({
-  mood,
-  cuisine,
-  maxCookingTime,
   query
 }: BuildMoodSearchQueryOptions): string {
-  const moodTags = mood ? getMoodTags(mood) : [];
-
-  const parts = [
-    cuisine,
-    ...moodTags,
-    maxCookingTime ? `${maxCookingTime}-minute` : undefined,
-    query
-  ];
-
-  return parts
-    .filter(Boolean)
-    .map((part) => String(part).trim())
-    .filter((part) => part.length > 0)
-    .join(" ");
+  // Spoonacular treats `query` as a title/keyword match. Mood, cuisine, and
+  // timing travel as separate structured fields so they cannot corrupt it.
+  return String(query ?? "").trim();
 }

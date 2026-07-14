@@ -32,7 +32,7 @@ export function deriveDailySuggestions(
 
   const pool = catalog.filter(r =>
     r.status === "published" &&
-    (!profile.diet || profile.diet === "Everything" || profile.diet === "Any" || r.diets.includes(profile.diet)) &&
+    (!profile.diet || ["any", "anything", "everything", "flexitarian", "omnivore", "no specific diet", "none"].includes(profile.diet.toLowerCase()) || r.diets.includes(profile.diet)) &&
     !profile.allergies.some(a => r.allergens.map(x => x.toLowerCase()).includes(a.toLowerCase())),
   );
 

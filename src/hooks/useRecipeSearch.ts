@@ -28,6 +28,18 @@ export function useRecipeSearch(
   const activeSearchAbort = useRef<AbortController | null>(null);
 
   const runSearch = async (request: SearchRequest, nextPage = false) => {
+    // Each provider page contains 20 recipes while the UI reveals five at a
+    // time. Use the buffered candidates first; fetch the next provider page only
+    // after all 20 have been shown.
+    if (nextPage) {
+      const bufferedResults = appendUniqueRecipes(searchResults, searchCandidates, RESULT_BATCH_SIZE);
+      if (bufferedResults.length > searchResults.length) {
+        setSearchResults(bufferedResults);
+        setPage("results");
+        return;
+      }
+    }
+
     activeSearchAbort.current?.abort();
     const searchId = activeSearchId.current + 1;
     activeSearchId.current = searchId;
@@ -58,27 +70,23 @@ export function useRecipeSearch(
 
       // Explicit search honors the filters exactly — relax:false tells the backend
       // not to silently drop cuisine/course/time to force a result.
-      const live = await fetchCuratedRecipes(sharedProfile, mood, 50, request.filters.maxReadyTime ?? 60, request.query, request.filters, foodHistory, offset, false, false, controller.signal);
+      const live = await fetchCuratedRecipes(sharedProfile, request.mood || mood, 50, request.filters.maxReadyTime ?? 60, request.query, request.filters, foodHistory, offset, false, false, controller.signal);
       if (!isActiveSearch()) return;
       const liveCandidates = finalizeSearchResults(live ?? [], sharedProfile, request.filters, Infinity);
+      const pageCandidates = liveCandidates.length ? liveCandidates : offlineCandidates;
       const strictCandidates = appendUniqueRecipes(
         nextPage ? searchCandidates : [],
-        [...liveCandidates, ...offlineCandidates],
+        pageCandidates,
         Infinity,
       );
-      // When every strict filter combined yields nothing, fall back to a
-      // diet-only pass over the bundled catalog so the user always sees
-      // something (diet is the only safety-critical filter, so it's kept).
-      const relaxedFallback = !nextPage && !strictCandidates.length
-        ? finalizeSearchResults(bundledRecipes, sharedProfile, { diet: request.filters.diet }, Infinity)
-        : [];
-      const candidates = strictCandidates.length ? strictCandidates : relaxedFallback;
-      const isRelaxed = relaxedFallback.length > 0 && !strictCandidates.length;
+      // Never replace an exact filtered search with unrelated local recipes.
+      // The bundled candidates above already obey every requested filter.
+      const candidates = strictCandidates;
       const nextResults = nextPage
         ? appendUniqueRecipes(searchResults, candidates, RESULT_BATCH_SIZE)
         : takeUniqueBatch(candidates);
-      const fallbackUsed = !liveCandidates.length && (offlineCandidates.length > 0 || relaxedFallback.length > 0);
-      setSearchRelaxed(isRelaxed);
+      const fallbackUsed = !liveCandidates.length && offlineCandidates.length > 0;
+      setSearchRelaxed(false);
       setSearchCandidates(candidates);
       setSearchResults(nextResults);
       // Slice 0 telemetry: operational only, fire-and-forget (never awaited).

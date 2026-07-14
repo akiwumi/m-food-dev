@@ -29,6 +29,11 @@ describe("recommendation safety", () => {
     expect(safe.every(recipe => recipe.diets.includes("Gluten-free"))).toBe(true);
   });
 
+  it("does not require provider recipes to carry an Omnivore tag", () => {
+    const safe = safeRecipes(fixture, { ...defaultProfile, diet: "Omnivore", equipment: ["Stovetop", "Oven", "Blender"] });
+    expect(safe.map(recipe => recipe.id)).toEqual(["r1", "r2"]);
+  });
+
   it("rejects meat recipes mislabeled vegetarian", () => {
     const safe = safeRecipes(fixture, { ...defaultProfile, diet: "Vegetarian", equipment: ["Stovetop", "Oven", "Blender"] });
     expect(safe.map(recipe => recipe.title)).toEqual(["Pasta"]);
