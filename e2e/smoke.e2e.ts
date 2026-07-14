@@ -49,3 +49,25 @@ test("quick-start activation flow renders", async ({ page }) => {
   await page.goto("/?testState=quick-start");
   await expect(page.getByRole("heading", { name: /Tell me how dinner feels/i })).toBeVisible();
 });
+
+test("community post composer accepts touch input", async ({ page, browserName }) => {
+  test.skip(browserName !== "webkit", "iOS-specific keyboard focus regression");
+  await page.goto("/?testState=home");
+  await page.getByRole("button", { name: "Community" }).click();
+  await page.getByRole("button", { name: "Post" }).click();
+
+  const composer = page.getByRole("textbox", { name: /Share a cook, recipe, or tip/i });
+  await composer.tap();
+  await expect(composer).toBeFocused();
+  await composer.pressSequentially("Dinner turned out beautifully");
+  await expect(composer).toHaveValue("Dinner turned out beautifully");
+
+  // WKWebView needs focus to happen inside the touch gesture to reliably show
+  // the software keyboard. Keep that timing guarantee separate from hit testing.
+  await composer.blur();
+  await composer.dispatchEvent("touchstart", {
+    touches: [{ clientX: 40, clientY: 40 }],
+    changedTouches: [{ clientX: 40, clientY: 40 }],
+  });
+  await expect(composer).toBeFocused();
+});

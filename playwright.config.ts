@@ -21,6 +21,7 @@ export default defineConfig({
     // MoodFood is mobile-first — a narrow viewport so the bottom nav (not the
     // desktop sidebar) is the active chrome, matching the intended UX.
     { name: "mobile-chromium", use: { ...devices["Desktop Chrome"], viewport: { width: 390, height: 844 } } },
+    { name: "mobile-webkit", use: { ...devices["iPhone 13"] } },
   ],
   webServer: {
     command: `npm run dev -- --port ${PORT} --strictPort`,

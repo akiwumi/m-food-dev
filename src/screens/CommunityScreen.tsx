@@ -103,7 +103,7 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
 
   const composerEl = composer && (
     <section className="composer">
-      <div><Avatar name={profile.name} image={profile.avatar} /><textarea maxLength={1000} value={text} onChange={e => setText(e.target.value)} placeholder="Share a cook, recipe, or tip..." /></div>
+      <div><Avatar name={profile.name} image={profile.avatar} /><textarea maxLength={1000} value={text} onTouchStart={e => e.currentTarget.focus()} onChange={e => setText(e.target.value)} placeholder="Share a cook, recipe, or tip..." /></div>
       {image && <img src={image} alt="Post preview" />}
       {recipeId && findRecipe(recipeId) && <div className="composer-recipe"><ChefHat size={15} /><span>Saved recipe <b>{findRecipe(recipeId)!.title}</b></span><button onClick={() => setRecipeId("")} aria-label="Remove saved recipe link"><X size={14} /></button></div>}
       <select value={recipeId} onChange={e => setRecipeId(e.target.value)}>
