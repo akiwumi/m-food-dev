@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   communityReady, fetchFeed, listFriends, listFriendRequests,
-  createPost, setLike, addComment,
-  type FeedPost, type Friend, type FriendRequest, type PostVisibility,
+  createPost, setLike, setPostReaction, addComment,
+  type FeedPost, type Friend, type FriendRequest, type PostReaction, type PostVisibility,
 } from "../community";
 
 // Drives the real (Supabase-backed) community: the friends-visible feed, the
@@ -44,6 +44,21 @@ export function useCommunity() {
     await setLike(postId, liked);
   }, []);
 
+  const react = useCallback(async (postId: string, reaction: PostReaction) => {
+    let nextReaction: PostReaction | undefined;
+    setFeed(prev => prev.map(p => {
+      if (p.id !== postId) return p;
+      const previous = p.myReaction;
+      nextReaction = previous === reaction ? undefined : reaction;
+      const reactionCounts = { ...p.reactionCounts };
+      if (previous) reactionCounts[previous] = Math.max(0, reactionCounts[previous] - 1);
+      if (nextReaction) reactionCounts[nextReaction] += 1;
+      const likeCount = reactionCounts.like + reactionCounts.love + reactionCounts.applaud;
+      return { ...p, myReaction: nextReaction, likedByMe: !!nextReaction, likeCount, reactionCounts };
+    }));
+    await setPostReaction(postId, nextReaction);
+  }, []);
+
   const publish = useCallback(async (input: { body: string; imageDataUrl?: string; recipeRef?: string; recipeTitle?: string; visibility?: PostVisibility }) => {
     const ok = await createPost(input);
     if (ok) await refreshFeed();
@@ -56,5 +71,5 @@ export function useCommunity() {
     return ok;
   }, []);
 
-  return { ready, loading, feed, friends, requests, refreshFeed, refreshFriends, toggleLike, publish, comment };
+  return { ready, loading, feed, friends, requests, refreshFeed, refreshFriends, toggleLike, react, publish, comment };
 }

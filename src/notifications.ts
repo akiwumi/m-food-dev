@@ -20,7 +20,7 @@ export type InboxItem = {
   scheduledFor?: string;       // ISO, set while still pending
   status: "scheduled" | "sent";
   read: boolean;
-  tag: "welcome" | "confirm" | "reminder" | "receipt";
+  tag: "welcome" | "confirm" | "reminder" | "receipt" | "post" | "message";
 };
 
 const INBOX_KEY = "moodfood-inbox";
@@ -59,6 +59,27 @@ export function sendWelcomeEmail(email: string, name: string) {
     body: `Hi ${name || "there"}, your email is confirmed. MoodFood matches meals to how you feel, your tastes, and your safety needs. Let's get cooking.`,
   });
   writeInbox(items);
+}
+
+export function notifyCommunityPost(author: string, preview: string) {
+  const now = new Date().toISOString();
+  const body = preview.trim()
+    ? preview.trim()
+    : `${author || "Someone"} shared a new community post.`;
+  writeInbox(add(readInbox(), {
+    kind: "push", tag: "post", status: "sent", createdAt: now,
+    subject: `${author || "Someone"} posted in Community`,
+    body,
+  }));
+}
+
+export function notifyCommunityMessage(author: string, preview: string) {
+  const now = new Date().toISOString();
+  writeInbox(add(readInbox(), {
+    kind: "push", tag: "message", status: "sent", createdAt: now,
+    subject: `${author || "Someone"} replied in Community`,
+    body: preview.trim() || "You have a new community reply.",
+  }));
 }
 
 // Called when the free trial starts. Schedules the day-before reminder; the

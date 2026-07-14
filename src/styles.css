@@ -574,6 +574,17 @@ form,.search-box,.search-actions,.search-filters,.entry{max-width:100%;min-width
 .community-intro .secondary{background:transparent;color:#fff;border:1px solid #ffffff66;min-height:42px;padding:0 12px;display:flex;align-items:center;gap:5px}
 .visibility-toggle{border:1px solid var(--line);background:var(--cream);border-radius:10px;padding:0 10px;min-height:40px;display:flex;align-items:center;gap:5px;font-size:10px;font-weight:700;color:var(--olive)}
 .linked-recipe.static{cursor:default}
+.community .ci-actions button,.composer footer .primary,.composer footer label,.visibility-toggle{min-height:34px;border-radius:10px;font-size:10px}
+.community .ci-actions .primary{padding:0 12px}
+.community .ci-actions svg,.composer footer svg,.social-actions svg{width:15px;height:15px}
+.composer footer{gap:6px;flex-wrap:wrap}
+.composer footer label{border:1px solid var(--line);background:var(--cream);padding:0 10px}
+.social-actions{gap:6px;border-bottom:1px solid var(--line);padding:8px 0;margin-top:8px;flex-wrap:wrap}
+.social-actions button{min-width:48px;min-height:32px;border:1px solid var(--line);background:var(--cream);border-radius:10px;padding:0 8px;justify-content:center;font-size:11px;font-weight:700}
+.social-actions button[aria-pressed=true]{background:var(--olive);border-color:var(--olive);color:#fff}
+.comment{display:flex;align-items:flex-start;gap:8px;background:var(--cream);padding:8px!important;border-radius:12px;margin:7px 0!important}
+.comment .avatar-img,.comment .avatar-fallback{width:28px;height:28px;font-size:8px;flex-shrink:0}
+.comment p{margin:0;font-size:10px!important;line-height:1.45}
 .library-actions{display:flex;gap:8px;align-items:center;margin-top:8px}
 .library-actions .primary{flex:1}
 .icon-only{min-width:44px;display:grid;place-items:center;padding:0}

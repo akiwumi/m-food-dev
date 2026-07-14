@@ -71,6 +71,7 @@ export type Profile = {
   location: string;
   profileVisibility: "connections" | "public" | "private";
   shareCookedMeals: boolean;
+  communityPostNotifications: boolean;
 };
 
 export const defaultProfile: Profile = {
@@ -140,11 +141,18 @@ export const defaultProfile: Profile = {
   location: "",
   profileVisibility: "connections",
   shareCookedMeals: true,
+  communityPostNotifications: true,
 };
+
+export type ReactionKind = "like" | "love" | "applaud";
+export type ReactionCounts = Record<ReactionKind, string[]>;
 
 export type SocialPost = {
   id: string; author: string; avatar: string; text: string; image: string;
-  recipeId?: string; createdAt: string; likes: string[]; comments: { author: string; text: string }[];
+  recipeId?: string; createdAt: string;
+  likes?: string[];
+  reactions?: ReactionCounts;
+  comments: { author: string; avatar?: string; text: string }[];
 };
 
 export type Diner = {

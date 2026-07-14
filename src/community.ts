@@ -15,8 +15,10 @@ export type FeedPost = {
   id: string; authorId: string; authorName: string; authorAvatar: string;
   body: string; image: string; recipeRef?: string; recipeTitle?: string; visibility: string; createdAt: string;
   likeCount: number; likedByMe: boolean; commentCount: number;
+  reactionCounts: Record<PostReaction, number>; myReaction?: PostReaction;
 };
 export type FeedComment = { id: string; authorId: string; authorName: string; authorAvatar: string; body: string; createdAt: string };
+export type PostReaction = "like" | "love" | "applaud";
 
 export type PostVisibility = "connections" | "public";
 const POST_IMAGES = "post-images";
@@ -100,6 +102,12 @@ export async function fetchFeed(limit = 50): Promise<FeedPost[]> {
     recipeRef: r.recipe_ref ? str(r.recipe_ref) : undefined, recipeTitle: r.recipe_title ? str(r.recipe_title) : undefined,
     visibility: str(r.visibility), createdAt: str(r.created_at),
     likeCount: num(r.like_count), likedByMe: !!r.liked_by_me, commentCount: num(r.comment_count),
+    reactionCounts: {
+      like: num(r.like_reaction_count ?? r.like_count),
+      love: num(r.love_reaction_count),
+      applaud: num(r.applaud_reaction_count),
+    },
+    myReaction: reaction(str(r.my_reaction)) ?? (r.liked_by_me ? "like" : undefined),
   }));
 }
 
@@ -137,6 +145,20 @@ export async function setLike(postId: string, liked: boolean): Promise<void> {
   if (!supabase || !s) return;
   if (liked) await supabase.from("post_likes").insert({ post_id: postId, user_id: s.user.id });
   else await supabase.from("post_likes").delete().eq("post_id", postId).eq("user_id", s.user.id);
+}
+
+export async function setPostReaction(postId: string, next?: PostReaction): Promise<void> {
+  const s = await session();
+  if (!supabase || !s) return;
+  if (!next) {
+    await supabase.from("post_likes").delete().eq("post_id", postId).eq("user_id", s.user.id);
+    return;
+  }
+  await supabase.from("post_likes").upsert({
+    post_id: postId,
+    user_id: s.user.id,
+    reaction: next,
+  }, { onConflict: "post_id,user_id" });
 }
 
 export async function fetchComments(postId: string): Promise<FeedComment[]> {
@@ -234,3 +256,6 @@ export async function syncSavedRecipes(rows: SavedRow[]): Promise<void> {
 type Row = Record<string, unknown>;
 const str = (v: unknown): string => (v == null ? "" : String(v));
 const num = (v: unknown): number => (typeof v === "number" ? v : Number(v) || 0);
+const reaction = (v: string): PostReaction | undefined => (
+  v === "like" || v === "love" || v === "applaud" ? v : undefined
+);
