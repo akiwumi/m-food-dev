@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { Plus, UserPlus, Users } from "lucide-react";
 import { TopBar } from "../components/AppChrome";
 import { CommunityComposer } from "../components/community/CommunityComposer";
@@ -32,7 +33,8 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
   const community = useCommunity();
   const seenRealPostIds = useRef<Set<string> | null>(null);
   const feedScroll = useRef(0);
-  const identity = profile.email || profile.name || "pilot";
+  const detailRequestId = useRef(0);
+  const identity = community.userId || profile.email || profile.name || "pilot";
   const actor = profile.name || "You";
   const [composerOpen, setComposerOpen] = useState(false);
   const [text, setText] = useState("");
@@ -41,6 +43,7 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
   const [visibility, setVisibility] = useState<PostVisibility>("connections");
   const [publishError, setPublishError] = useState("");
   const [posting, setPosting] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
   const [selectedPostId, setSelectedPostId] = useState("");
   const [detailComments, setDetailComments] = useState<CommunityCommentView[]>([]);
   const [reply, setReply] = useState("");
@@ -156,6 +159,12 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
     setComposerOpen(false);
   };
 
+  const openComposer = () => {
+    setStatusMessage("");
+    flushSync(() => setComposerOpen(true));
+    document.getElementById("community-post-message")?.focus();
+  };
+
   const publish = async () => {
     const safeText = cleanText(text, 1000);
     if (!safeText && !image && !recipeId) return;
@@ -175,6 +184,7 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
       notifyCommunityPost(actor, safeText || recipe?.title || "A saved recipe was shared.");
       refreshNotifications();
     }
+    setStatusMessage("Post published.");
     resetComposer();
   };
 
@@ -198,12 +208,15 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
   };
 
   const openPost = async (postId: string) => {
+    const requestId = ++detailRequestId.current;
     feedScroll.current = window.scrollY;
     setSelectedPostId(postId);
+    setDetailComments([]);
     setReply("");
     setReplyError("");
     if (community.ready) {
       const comments = await fetchComments(postId);
+      if (detailRequestId.current !== requestId) return;
       setDetailComments(comments.map(comment => ({ id: comment.id, authorName: comment.authorName, authorAvatar: comment.authorAvatar, body: comment.body, createdAt: comment.createdAt })));
     } else {
       const post = posts.find(candidate => candidate.id === postId);
@@ -212,12 +225,14 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
   };
 
   const closePost = () => {
+    detailRequestId.current += 1;
     setSelectedPostId("");
     requestAnimationFrame(() => window.scrollTo({ top: feedScroll.current }));
   };
 
   const submitReply = async () => {
     if (!selectedPost) return;
+    const requestId = detailRequestId.current;
     const body = cleanText(reply, 500);
     if (!body) return;
     setSubmittingReply(true);
@@ -230,7 +245,7 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
         return;
       }
       const comments = await fetchComments(selectedPost.id);
-      setDetailComments(comments.map(comment => ({ id: comment.id, authorName: comment.authorName, authorAvatar: comment.authorAvatar, body: comment.body, createdAt: comment.createdAt })));
+      if (detailRequestId.current === requestId) setDetailComments(comments.map(comment => ({ id: comment.id, authorName: comment.authorName, authorAvatar: comment.authorAvatar, body: comment.body, createdAt: comment.createdAt })));
     } else {
       const nextComment = { author: actor, avatar: profile.avatar, text: body };
       setPosts(posts.map(post => post.id === selectedPost.id ? { ...post, comments: [...post.comments, nextComment] } : post));
@@ -251,13 +266,14 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
       <TopBar title="Community" />
       <div className="community-feed-toolbar">
         <button type="button" onClick={goFriends}><UserPlus />Friends</button>
-        <button type="button" className="primary" onClick={() => setComposerOpen(true)}><Plus />Post</button>
+        <button type="button" className="primary" onClick={openComposer}><Plus />Post</button>
       </div>
+      {statusMessage && <p className="community-status" role="status">{statusMessage}</p>}
       <TrendingRail items={trending} openRecipe={openRecipe} dismiss={dismissRecipe} />
       <section className="community-feed-list" aria-label="Community posts">
         {community.loading && !liveFeed.length && <p className="quiet">Loading your community...</p>}
         {!community.loading && !liveFeed.length && (
-          <div className="community-feed-empty"><Users /><h2>Your feed is quiet</h2><p>Add friends or share the first dish.</p><button type="button" onClick={() => setComposerOpen(true)}><Plus />Create post</button></div>
+          <div className="community-feed-empty"><Users /><h2>Your feed is quiet</h2><p>Add friends or share the first dish.</p><button type="button" onClick={openComposer}><Plus />Create post</button></div>
         )}
         {liveFeed.map(post => (
           <CommunityFeedItem
@@ -265,12 +281,13 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
             item={post}
             openPost={() => void openPost(post.id)}
             openAuthor={() => post.authorId && openMember(post.authorId)}
+            openRecipe={openRecipe}
             onReact={reaction => react(post.id, reaction)}
           />
         ))}
       </section>
 
-      <button type="button" className="community-floating-post" onClick={() => setComposerOpen(true)} aria-label="Create post"><Plus /></button>
+      <button type="button" className="community-floating-post" onClick={openComposer} aria-label="Create post"><Plus /></button>
       <CommunityComposer
         open={composerOpen}
         profile={profile}
@@ -283,6 +300,7 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
         recipes={linkOptions.filter((recipe): recipe is Recipe => !!recipe)}
         visibility={visibility}
         setVisibility={setVisibility}
+        showVisibility={community.ready === true}
         posting={posting}
         error={publishError}
         upload={file => void upload(file)}

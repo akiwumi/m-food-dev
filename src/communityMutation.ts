@@ -33,3 +33,22 @@ export const COMMUNITY_UPLOAD_ERROR: CommunityMutationFailure = {
   code: "upload",
   message: "The photo could not be uploaded. Your draft is safe; retry or remove the photo.",
 };
+
+export function applyPostReaction(post: FeedPost, requested: PostReaction): { post: FeedPost; nextReaction?: PostReaction } {
+  const previous = post.myReaction;
+  const nextReaction = previous === requested ? undefined : requested;
+  const reactionCounts = { ...post.reactionCounts };
+  if (previous) reactionCounts[previous] = Math.max(0, reactionCounts[previous] - 1);
+  if (nextReaction) reactionCounts[nextReaction] += 1;
+  return {
+    nextReaction,
+    post: {
+      ...post,
+      myReaction: nextReaction,
+      likedByMe: !!nextReaction,
+      likeCount: reactionCounts.like + reactionCounts.love + reactionCounts.applaud,
+      reactionCounts,
+    },
+  };
+}
+import type { FeedPost, PostReaction } from "./community";

@@ -17,6 +17,7 @@ type Props = {
   recipes: Recipe[];
   visibility: PostVisibility;
   setVisibility: (value: PostVisibility) => void;
+  showVisibility: boolean;
   posting: boolean;
   error: string;
   upload: (file?: File) => void;
@@ -34,20 +35,23 @@ export function CommunityComposer(props: Props) {
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const frame = requestAnimationFrame(() => textareaRef.current?.focus());
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") props.close(); };
+    document.addEventListener("keydown", closeOnEscape);
     return () => {
       cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", closeOnEscape);
       document.body.style.overflow = previousOverflow;
     };
   }, [props.open]);
 
   if (!props.open) return null;
   return (
-    <section className="community-composer-screen" aria-label="Create a community post">
+    <section className="community-composer-screen" role="dialog" aria-modal="true" aria-label="Create a community post">
       <header>
-        <button type="button" className="community-icon-button" onClick={props.close} aria-label="Close post composer"><X /></button>
+        <button type="button" className="community-cancel-button" onClick={props.close}>Cancel</button>
         <h1>New post</h1>
         <button type="button" className="community-share-button" onClick={props.publish} disabled={!canPublish}>
-          <Send />{props.posting ? "Sharing" : "Share"}
+          <Send />{props.posting ? "Publishing" : "Publish"}
         </button>
       </header>
 
@@ -57,6 +61,7 @@ export function CommunityComposer(props: Props) {
           <div><b>{props.profile.name || "You"}</b><span>Share with your cooking community</span></div>
         </div>
         <textarea
+          id="community-post-message"
           ref={textareaRef}
           inputMode="text"
           enterKeyHint="enter"
@@ -93,10 +98,10 @@ export function CommunityComposer(props: Props) {
           </select>
         </label>
 
-        <div className="community-visibility" aria-label="Post visibility">
+        {props.showVisibility && <div className="community-visibility" aria-label="Post visibility">
           <button type="button" aria-pressed={props.visibility === "connections"} onClick={() => props.setVisibility("connections")}><Users />Friends</button>
           <button type="button" aria-pressed={props.visibility === "public"} onClick={() => props.setVisibility("public")}><Globe2 />Public</button>
-        </div>
+        </div>}
         {props.error && <p className="community-publish-error" role="alert">{props.error}</p>}
       </div>
 

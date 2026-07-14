@@ -42,6 +42,10 @@ export async function communityReady(): Promise<boolean> {
   return (await session()) !== null;
 }
 
+export async function communityUserId(): Promise<string> {
+  return (await session())?.user.id ?? "";
+}
+
 // Upload the user's profile photo to the public avatars bucket and return its
 // public URL (stored in profiles.avatar_url so it shows in search + the feed).
 // Returns "" when there's no backend/session or the upload fails.

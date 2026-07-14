@@ -1,24 +1,13 @@
--- 023_post_reactions.sql — upgrade the single "like" table into one reaction
--- per user per post. Existing likes become "like"; the primary key stays
--- (post_id, user_id), so changing reaction type is an update, not extra rows.
-
-alter table public.post_likes
-  add column if not exists reaction text not null default 'like';
-
-alter table public.post_likes
-  drop constraint if exists post_likes_reaction_check;
-
-alter table public.post_likes
-  add constraint post_likes_reaction_check
-  check (reaction in ('like', 'love', 'applaud'));
-
-drop policy if exists "likes own update" on public.post_likes;
-create policy "likes own update" on public.post_likes for update
-  to authenticated
-  using (auth.uid() = user_id and public.can_view_community_post(post_id))
-  with check (auth.uid() = user_id and public.can_view_community_post(post_id));
-
+-- Narrow the broad table grants from the publishing contract. RLS limits rows,
+-- while column grants prevent owned rows being retargeted across relationships.
+revoke update on public.community_posts from authenticated;
+revoke update on public.post_comments from authenticated;
+revoke update on public.post_likes from authenticated;
 grant update (reaction) on public.post_likes to authenticated;
+
+-- Some environments may have recorded migration 023 before its feed return
+-- shape was repaired. Recreate the RPC in a fresh migration for every install.
+drop function if exists public.community_feed(int);
 
 create or replace function public.community_feed(limit_n int default 50)
 returns table (

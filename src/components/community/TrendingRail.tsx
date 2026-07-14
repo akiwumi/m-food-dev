@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Flame, X } from "lucide-react";
 import type { Recipe } from "../../data";
 import type { TrendingRecipe } from "../../communityRanking";
@@ -9,6 +10,7 @@ export function TrendingRail({ items, openRecipe, dismiss }: {
   openRecipe: (recipe: Recipe) => void;
   dismiss: (recipeId: string) => void;
 }) {
+  const [confirmId, setConfirmId] = useState("");
   if (!items.length) return null;
   return (
     <section className="community-trending" aria-labelledby="community-trending-title">
@@ -26,10 +28,17 @@ export function TrendingRail({ items, openRecipe, dismiss }: {
             <button
               type="button"
               className="community-trending-dismiss"
-              onClick={() => dismiss(item.recipe.id)}
+              onClick={() => setConfirmId(item.recipe.id)}
               aria-label={`Not interested in ${item.recipe.title}`}
               title="Not interested"
             ><X /></button>
+            {confirmId === item.recipe.id && (
+              <div className="community-trending-confirm">
+                <span>See fewer dishes like this?</span>
+                <button type="button" onClick={() => { dismiss(item.recipe.id); setConfirmId(""); }}>Not interested</button>
+                <button type="button" onClick={() => setConfirmId("")}>Keep</button>
+              </div>
+            )}
           </article>
         ))}
       </div>

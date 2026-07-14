@@ -66,7 +66,7 @@ describe("rankTrendingRecipes", () => {
     const ranked = rankTrendingRecipes(
       posts,
       catalog,
-      { ...defaultProfile, cuisines: ["Thai"], proteins: [], vegetables: [], carbs: [], comfortFoods: [], equipment: ["Stovetop"] },
+      { ...defaultProfile, cuisines: ["Thai"], proteins: [], vegetables: [], carbs: [], comfortFoods: [], mealTypes: [], weeknightTime: "", equipment: ["Stovetop"] },
       new Set(),
       5,
       new Date("2026-07-14T18:00:00.000Z"),
@@ -104,5 +104,29 @@ describe("rankTrendingRecipes", () => {
 
     expect(ranked).toHaveLength(2);
     expect(ranked.every(item => item.communityPosts === 0)).toBe(true);
+  });
+
+  it("keeps community candidates ahead of catalog fallback", () => {
+    const catalog = [
+      recipe("community", "Community dish", { cuisine: "Italian" }),
+      recipe("fallback", "Thai tofu breakfast", { cuisine: "Thai", mealTypes: ["breakfast"], ingredients: ["tofu", "rice"] }),
+    ];
+    const profile = { ...defaultProfile, cuisines: ["Thai"], proteins: ["Tofu"], mealTypes: ["Breakfast"], equipment: ["Stovetop"] };
+    const ranked = rankTrendingRecipes([post("p1", "community")], catalog, profile, new Set(), 2);
+    expect(ranked.map(item => item.recipe.id)).toEqual(["community", "fallback"]);
+  });
+
+  it("uses preferred meal types to order catalog fallback", () => {
+    const catalog = [
+      recipe("dinner", "Dinner rice", { mealTypes: ["dinner"] }),
+      recipe("breakfast", "Breakfast rice", { mealTypes: ["breakfast"] }),
+    ];
+    const profile = { ...defaultProfile, cuisines: [], proteins: [], vegetables: [], carbs: [], comfortFoods: [], mealTypes: ["Breakfast"], equipment: ["Stovetop"] };
+    expect(rankTrendingRecipes([], catalog, profile, new Set(), 2)[0].recipe.id).toBe("breakfast");
+  });
+
+  it("keeps legacy relative timestamps from producing NaN scores", () => {
+    const ranked = rankTrendingRecipes([post("p1", "legacy", { createdAt: "Just now" })], [recipe("legacy", "Legacy post")], { ...defaultProfile, equipment: ["Stovetop"] }, new Set());
+    expect(Number.isFinite(ranked[0].score)).toBe(true);
   });
 });

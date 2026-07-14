@@ -75,9 +75,17 @@ describe("client security controls", () => {
   });
 
   it("recreates the community feed RPC when its return shape changes", () => {
-    const migration = readFileSync("supabase/migrations/023_post_reactions.sql", "utf8");
+    const migration = readFileSync("supabase/migrations/20260714170830_harden_community_contract.sql", "utf8");
     expect(migration).toContain("drop function if exists public.community_feed(int)");
     expect(migration).toContain("create or replace function public.community_feed");
+  });
+
+  it("repairs historical RPC installs and narrows community update grants", () => {
+    const migration = readFileSync("supabase/migrations/20260714170830_harden_community_contract.sql", "utf8");
+    expect(migration).toContain("revoke update on public.post_comments from authenticated");
+    expect(migration).toContain("revoke update on public.community_posts from authenticated");
+    expect(migration).toContain("grant update (reaction) on public.post_likes to authenticated");
+    expect(migration).toContain("drop function if exists public.community_feed(int)");
   });
 
   it("uses function-level auth for asymmetric Supabase user tokens", () => {

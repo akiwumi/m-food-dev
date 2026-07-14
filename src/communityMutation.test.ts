@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { classifyCommunityError } from "./communityMutation";
+import { applyPostReaction, classifyCommunityError } from "./communityMutation";
+import type { FeedPost } from "./community";
 
 describe("classifyCommunityError", () => {
   test("identifies an expired session", () => {
@@ -32,5 +33,26 @@ describe("classifyCommunityError", () => {
       code: "offline",
       message: "No connection. Your draft is safe; retry when you're online.",
     });
+  });
+});
+
+describe("applyPostReaction", () => {
+  const post: FeedPost = {
+    id: "post-1", authorId: "author", authorName: "Author", authorAvatar: "", body: "", image: "",
+    visibility: "public", createdAt: "2026-07-14T12:00:00Z", likeCount: 1, likedByMe: true, commentCount: 0,
+    reactionCounts: { like: 1, love: 0, applaud: 0 }, myReaction: "like",
+  };
+
+  test("derives the persisted reaction and optimistic post before scheduling state", () => {
+    const next = applyPostReaction(post, "love");
+    expect(next.nextReaction).toBe("love");
+    expect(next.post.reactionCounts).toEqual({ like: 0, love: 1, applaud: 0 });
+    expect(next.post.likeCount).toBe(1);
+  });
+
+  test("tapping the active reaction removes it", () => {
+    const next = applyPostReaction(post, "like");
+    expect(next.nextReaction).toBeUndefined();
+    expect(next.post.likeCount).toBe(0);
   });
 });

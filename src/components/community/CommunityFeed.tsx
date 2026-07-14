@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { ArrowLeft, ChefHat, Hand, Heart, MessageCircle, Send, ThumbsUp } from "lucide-react";
 import type { Recipe } from "../../data";
 import type { Profile, ReactionKind } from "../../store";
@@ -43,7 +44,7 @@ export function PostReactionBar({ active, counts, comments, onReact, onComments 
   counts: Record<ReactionKind, number>;
   comments: number;
   onReact: (reaction: ReactionKind) => void;
-  onComments: () => void;
+  onComments?: () => void;
 }) {
   return (
     <div className="community-reactions">
@@ -53,18 +54,21 @@ export function PostReactionBar({ active, counts, comments, onReact, onComments 
           <span>{counts[kind]}</span>
         </button>
       ))}
-      <button type="button" onClick={onComments} aria-label={`${comments} comments`}><MessageCircle /><span>{comments}</span></button>
+      {onComments
+        ? <button type="button" onClick={onComments} aria-label={`${comments} comments`}><MessageCircle /><span>{comments}</span></button>
+        : <span className="community-comment-count"><MessageCircle /><span>{comments}</span></span>}
     </div>
   );
 }
 
-export function CommunityFeedItem({ item, openPost, openAuthor, onReact }: {
+export function CommunityFeedItem({ item, openPost, openAuthor, openRecipe, onReact }: {
   item: CommunityFeedView;
   openPost: () => void;
   openAuthor: () => void;
+  openRecipe: (recipe: Recipe) => void;
   onReact: (reaction: ReactionKind) => void;
 }) {
-  const thumbnail = item.image || item.recipe?.image;
+  const thumbnail = item.image;
   return (
     <article className="community-feed-item">
       <header>
@@ -75,12 +79,16 @@ export function CommunityFeedItem({ item, openPost, openAuthor, onReact }: {
       </header>
       <button type="button" className="community-feed-open" onClick={openPost}>
         <span className="community-feed-copy">
-          <b>{item.recipeTitle || item.body.slice(0, 72) || "A new community post"}</b>
+          <b>{item.body.slice(0, 72) || item.recipeTitle || "A new community post"}</b>
           {item.body && <span>{item.body}</span>}
-          {item.recipeTitle && <small><ChefHat />Saved recipe</small>}
         </span>
         {thumbnail && <img src={thumbnail} alt="" />}
       </button>
+      {item.recipe && (
+        <button type="button" className="community-feed-recipe-action" onClick={() => item.recipe && openRecipe(item.recipe)}>
+          <img src={item.recipe.image} alt="" /><span><small>SAVED RECIPE</small><b>{item.recipe.title}</b></span><ChefHat />
+        </button>
+      )}
       <PostReactionBar active={item.activeReaction} counts={item.reactionCounts} comments={item.commentCount} onReact={onReact} onComments={openPost} />
     </article>
   );
@@ -101,8 +109,13 @@ export function CommunityPostDetail({ item, profile, comments, draft, setDraft, 
   submit: () => void;
 }) {
   const hero = item.image || item.recipe?.image;
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") close(); };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [close]);
   return (
-    <section className="community-post-detail" aria-label="Community post detail">
+    <section className="community-post-detail" role="dialog" aria-modal="true" aria-label="Community post detail">
       <header className="community-post-detail-bar">
         <button type="button" onClick={close} aria-label="Back to community"><ArrowLeft /></button>
         <h1>Post</h1>
@@ -124,7 +137,7 @@ export function CommunityPostDetail({ item, profile, comments, draft, setDraft, 
             </button>
           )}
           {!item.recipe && item.recipeTitle && <div className="community-detail-recipe unavailable"><ChefHat /><span><small>SAVED RECIPE</small><b>{item.recipeTitle}</b></span></div>}
-          <PostReactionBar active={item.activeReaction} counts={item.reactionCounts} comments={item.commentCount} onReact={onReact} onComments={() => undefined} />
+          <PostReactionBar active={item.activeReaction} counts={item.reactionCounts} comments={item.commentCount} onReact={onReact} />
 
           <section className="community-comments" aria-labelledby="community-comments-title">
             <h2 id="community-comments-title">Conversation <span>{comments.length || item.commentCount}</span></h2>

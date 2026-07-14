@@ -8,6 +8,9 @@ describe("community mobile UI contract", () => {
     expect(source).toContain('inputMode="text"');
     expect(source).toContain('enterKeyHint="enter"');
     expect(source).toContain("textareaRef.current?.focus()");
+    const screen = readFileSync("src/screens/CommunityScreen.tsx", "utf8");
+    expect(screen).toContain("flushSync");
+    expect(screen).toContain('getElementById("community-post-message")?.focus()');
     expect(source).not.toContain("onTouchStart");
   });
 
@@ -15,6 +18,7 @@ describe("community mobile UI contract", () => {
     const source = readFileSync("src/components/community/TrendingRail.tsx", "utf8");
     expect(source).toContain("Popular with your people");
     expect(source).toContain("Not interested in");
+    expect(source).toContain('>Not interested</button>');
     expect(source).toContain("openRecipe(item.recipe)");
   });
 
@@ -24,6 +28,7 @@ describe("community mobile UI contract", () => {
     expect(source).toContain("REACTIONS.map");
     expect(source).toContain('className="community-post-detail"');
     expect(source).toContain("Reply as");
+    expect(source).toContain("openRecipe(item.recipe)");
   });
 
   it("lets the user silence post notifications and reset hidden dishes", () => {

@@ -55,6 +55,8 @@ function profileAffinity(recipe: Recipe, profile: Profile): number {
 
   const profileMoods = profile.cookingMoods.map(normalize);
   if (recipe.moods.some(mood => profileMoods.includes(normalize(mood)))) score += 2;
+  const preferredMeals = profile.mealTypes.map(normalize);
+  if (recipe.mealTypes?.some(meal => preferredMeals.includes(normalize(meal)))) score += 4;
   const timeBudget = Number(profile.weeknightTime.match(/\d+/)?.[0] ?? 0);
   if (timeBudget > 0 && recipe.time <= timeBudget) score += 2;
   if (recipe.difficulty === "Easy" && /beginner|learning|simple/i.test(profile.skill)) score += 2;
@@ -62,8 +64,9 @@ function profileAffinity(recipe: Recipe, profile: Profile): number {
 }
 
 function postPopularity(post: FeedPost, now: Date): number {
-  const ageDays = Math.max(0, (now.getTime() - new Date(post.createdAt).getTime()) / 86_400_000);
-  const recency = Math.max(0, 8 - ageDays / 3);
+  const createdAt = new Date(post.createdAt).getTime();
+  const ageDays = Number.isFinite(createdAt) ? Math.max(0, (now.getTime() - createdAt) / 86_400_000) : Infinity;
+  const recency = Number.isFinite(ageDays) ? Math.max(0, 8 - ageDays / 3) : 0;
   const reactions = post.reactionCounts.like + post.reactionCounts.love * 2 + post.reactionCounts.applaud * 1.5;
   return 8 + reactions + post.commentCount * 2 + recency;
 }
@@ -89,7 +92,7 @@ export function rankTrendingRecipes(
     popularity.set(post.recipeRef, current);
   }
 
-  return eligible
+  const scored = eligible
     .map(recipe => {
       const community = popularity.get(recipe.id) ?? { score: 0, posts: 0 };
       const affinity = profileAffinity(recipe, profile);
@@ -97,7 +100,9 @@ export function rankTrendingRecipes(
         ? affinity >= 6 ? "Popular and picked for you" : "Popular in your community"
         : affinity >= 6 ? "Picked from your food profile" : "Trending now";
       return { recipe, score: community.score + affinity, communityPosts: community.posts, reason } as TrendingRecipe;
-    })
-    .sort((a, b) => b.score - a.score || b.communityPosts - a.communityPosts || a.recipe.title.localeCompare(b.recipe.title))
-    .slice(0, Math.max(0, count));
+    });
+  const byScore = (a: TrendingRecipe, b: TrendingRecipe) => b.score - a.score || a.recipe.title.localeCompare(b.recipe.title);
+  const community = scored.filter(item => item.communityPosts > 0).sort(byScore);
+  const fallback = scored.filter(item => item.communityPosts === 0).sort(byScore);
+  return [...community, ...fallback].slice(0, Math.max(0, count));
 }
