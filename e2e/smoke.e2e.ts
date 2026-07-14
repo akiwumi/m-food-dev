@@ -1,5 +1,33 @@
 import { test, expect } from "@playwright/test";
 
+async function mockLiveRecipeProvider(page: import("@playwright/test").Page) {
+  await page.addInitScript(() => {
+    window.__MOODFOOD_TEST_LIVE_RECIPES__ = [{
+      id: "spoonacular-e2e-1",
+      title: "Live Lemon Herb Chicken",
+      image: "https://img.spoonacular.com/recipes/716429-636x393.jpg",
+      time: 30,
+      difficulty: "Easy",
+      calories: 420,
+      moods: ["Tired"],
+      reason: "A current Spoonacular dinner matched to this check-in.",
+      ingredients: ["2 chicken breasts", "1 lemon", "2 tbsp olive oil", "fresh herbs"],
+      steps: [
+        { text: "Heat the oven to 200C and season the chicken with salt, pepper, lemon, and herbs." },
+        { text: "Roast for 22 minutes until cooked through, then rest for 5 minutes before serving." },
+      ],
+      cuisine: "Mediterranean",
+      mealTypes: ["main course", "dinner"],
+      diets: [],
+      allergens: [],
+      equipment: [],
+      status: "published",
+      provider: "Spoonacular",
+      sourceUrl: "https://spoonacular.com/recipes/live-lemon-herb-chicken-1",
+    }];
+  });
+}
+
 // Smoke coverage of the core happy paths, driven through the dev test-state hooks.
 // These would have caught most of the recent saved-recipes regressions.
 
@@ -10,6 +38,7 @@ test("welcome screen loads for a first-time visitor", async ({ page }) => {
 });
 
 test("home check-in produces recipe picks", async ({ page }) => {
+  await mockLiveRecipeProvider(page);
   await page.goto("/?testState=home");
   await expect(page.getByRole("heading", { name: /How does dinner feel tonight/i })).toBeVisible();
   // Pick a meal type (required to enable "Choose") and run the check-in.
@@ -19,6 +48,7 @@ test("home check-in produces recipe picks", async ({ page }) => {
 });
 
 test("opening a pick shows the recipe detail", async ({ page }) => {
+  await mockLiveRecipeProvider(page);
   await page.goto("/?testState=home");
   await page.locator(".meal-category-pills button", { hasText: "Dinner" }).click();
   await page.getByRole("button", { name: /^Choose/ }).click();
@@ -33,6 +63,7 @@ test("opening a pick shows the recipe detail", async ({ page }) => {
 });
 
 test("saving a pick persists it to the Saved tab", async ({ page }) => {
+  await mockLiveRecipeProvider(page);
   await page.goto("/?testState=home");
   await page.locator(".meal-category-pills button", { hasText: "Dinner" }).click();
   await page.getByRole("button", { name: /^Choose/ }).click();

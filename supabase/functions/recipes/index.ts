@@ -29,8 +29,8 @@
 // sortDirection, ignorePantry, plus full recipe info/nutrition/instructions.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { applyCuratedRanking, dedupeRecipes, expandProviderCuisines, fetchTheMealDbRecipes, filterOutAccessoryTypes, filterRecipesByCategory, filterRecipesByMaxTime, filterRecipesByQuery, filterRecipesForProfile, filterRecipesWithCompleteInstructions, loosenProviderParams, normalizeSpoonacularRecipe, rotateRecipes } from "./provider.ts";
-import { bumpSearchCount, dairyFreeTag, dietTagsFor, getCachedRecipes, logSearch, normalizeMoodTag, saveRecipesToCache } from "./cache.ts";
+import { applyCuratedRanking, dedupeRecipes, expandProviderCuisines, fetchTheMealDbRecipes, filterOutAccessoryTypes, filterRecipesByCategory, filterRecipesByMaxTime, filterRecipesByQuery, filterRecipesForProfile, filterRecipesWithCompleteInstructions, loosenProviderParams, normalizeCourseSearchIntent, normalizeSpoonacularRecipe, rotateRecipes } from "./provider.ts";
+import { dairyFreeTag, dietTagsFor, logSearch, normalizeMoodTag, saveRecipesToCache } from "./cache.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
@@ -291,8 +291,12 @@ Deno.serve(async (request) => {
   const history = body?.history ?? {};
   const mood = typeof body?.mood === "string" ? body.mood : "Cozy";
   const time = Number.isFinite(body?.time) ? Math.max(10, Math.min(180, body.time)) : 45;
-  const query = typeof body?.query === "string" ? body.query.slice(0, 80)
+  const rawQuery = typeof body?.query === "string" ? body.query.slice(0, 80)
     : typeof filters?.query === "string" ? filters.query.slice(0, 80) : "";
+  const requestedCategory = typeof filters.type === "string" ? filters.type : "";
+  const searchIntent = normalizeCourseSearchIntent(rawQuery, requestedCategory);
+  const query = searchIntent.query;
+  const category = searchIntent.category;
   const num = (v: unknown, lo: number, hi: number) => Number.isFinite(v) ? Math.max(lo, Math.min(hi, Math.round(v as number))) : null;
   const maxTime = num(filters.maxReadyTime, 5, 180) ?? time;
   // relax=false (explicit filtered search) means "honor the filters exactly, even
@@ -344,7 +348,6 @@ Deno.serve(async (request) => {
   if (cuisines.length) params.set("cuisine", cuisines.slice(0, 8).join(","));
 
   // Meal type: explicit search selection only (same hard-filter reasoning).
-  const category = typeof filters.type === "string" ? filters.type : "";
   const type = mapMealType(category);
   if (type) params.set("type", type);
 
@@ -380,51 +383,11 @@ Deno.serve(async (request) => {
   if (minProtein) targets.minProtein = String(minProtein);
   for (const [k, v] of Object.entries(targets)) params.set(k, v);
 
-  // ── Recipe DB cache (roadmap Phase 2) ──────────────────────────────────────
-  // Canonical cache key: a normalized mood tag + diet tags (the 7×6 seed
-  // vocabulary). Allergens are per-user and NOT in the key, so cached rows are
-  // re-run through the same safety/diet filter as live results before serving.
+  // Keep writing provider results to the owned recipe store for analytics and
+  // future migrations, but never read it on the user-facing search path. Every
+  // response below comes directly from Spoonacular or live TheMealDB fallback.
   const moodTag = normalizeMoodTag(mood);
   const dietTags = [...dietTagsFor(hardProfile.diet), ...dairyFreeTag(intolerances)];
-  // Only the relaxable mood feed (no free-text query, no fine-grained filters, no
-  // pagination) is cacheable — the cache can't honour cuisine/time/nutrient/
-  // ingredient filters, and serving it anyway would silently ignore them. Explicit
-  // filtered searches always go to the provider (but their results still write
-  // through to the cache below).
-  const offsetReq = num(body?.offset, 0, 900) ?? 0;
-  const hasFineFilters = Boolean(
-    query ||
-    (Array.isArray(filters.cuisines) && filters.cuisines.length) ||
-    (typeof filters.type === "string" && filters.type) ||
-    (Array.isArray(filters.includeIngredients) && filters.includeIngredients.length) ||
-    (Array.isArray(filters.excludeIngredients) && filters.excludeIngredients.length) ||
-    (Array.isArray(filters.equipment) && filters.equipment.length) ||
-    Number.isFinite(filters.minServings) || Number.isFinite(filters.maxCalories) ||
-    Number.isFinite(filters.minProtein) || Number.isFinite(filters.maxReadyTime) ||
-    offsetReq > 0,
-  );
-  const cacheable = relax && !hasFineFilters;
-
-  if (cacheable) {
-    const rows = await getCachedRecipes(moodTag, dietTags, 60);
-    if (rows.length) {
-      const candidates = rows.map(r => r.raw_data).filter(Boolean);
-      const safeCached = dedupeRecipes(filterRecipesWithCompleteInstructions(filterOutAccessoryTypes(
-        filterRecipesForProfile(safetyFilter(candidates, profile.allergies ?? []), hardProfile),
-      )));
-      if (safeCached.length >= 6) {
-        const top = rotateRecipes(safeCached, String(body?.variationSeed ?? userId ?? moodTag)).slice(0, 20);
-        const servedExternalIds = new Set(top.map((r: any) => String(r.id)));
-        const servedDbIds = rows.filter(r => servedExternalIds.has(String((r.raw_data as any)?.id))).map(r => r.id);
-        bumpSearchCount(servedDbIds);                       // fire-and-forget popularity
-        logSearch({ userId, moodTag, dietTags, query, resultIds: servedDbIds, servedFrom: "cache" });
-        console.log(`[recipes] cache hit: matched=${rows.length} safe=${safeCached.length} served=${top.length}`);
-        const curated = shouldCurate ? await curate(top, profile, mood, history) : top;
-        return Response.json({ provider: "cache", relaxed: false, curated: shouldCurate, recipes: curated }, { headers: headers(origin) });
-      }
-    }
-    console.log(`[recipes] cache miss: mood=${moodTag} diets=${JSON.stringify(dietTags)} rows=${rows.length}`);
-  }
 
   let spoonStatus = 0, spoonCount = 0, spoonSafeCount = 0;
   let mealdbCount = 0, mealdbSafeCount = 0;
@@ -473,7 +436,11 @@ Deno.serve(async (request) => {
       // safety and instruction checks. Return one 20-item page so offset=20
       // starts after this page instead of overlapping an unseen 100-item window.
       const page = safe.slice(0, 20);
-      const curated = shouldCurate ? await curate(page, profile, mood, history) : page;
+      const requestedSort = String(filters.sort ?? profile.rankingPreference ?? "Most popular").toLowerCase();
+      const variedPage = ["most popular", "popularity", "surprise me", "random"].includes(requestedSort)
+        ? rotateRecipes(page, String(body?.variationSeed ?? `${userId}-${Date.now()}`))
+        : page;
+      const curated = shouldCurate ? await curate(variedPage, profile, mood, history) : variedPage;
       return Response.json({ provider: "spoonacular", relaxed, curated: shouldCurate, recipes: curated }, { headers: headers(origin) });
     }
 
@@ -492,7 +459,10 @@ Deno.serve(async (request) => {
         const exclude = Array.isArray(filters.excludeIngredients) ? filters.excludeIngredients : [];
         return include.every((item: string) => text.includes(item.toLowerCase())) && !exclude.some((item: string) => text.includes(item.toLowerCase()));
       });
-      const fallback = dedupeRecipes(filterRecipesWithCompleteInstructions(category ? fallbackFiltered : filterOutAccessoryTypes(fallbackFiltered))).slice(0, 20);
+      const fallback = rotateRecipes(
+        dedupeRecipes(filterRecipesWithCompleteInstructions(category ? fallbackFiltered : filterOutAccessoryTypes(fallbackFiltered))).slice(0, 20),
+        String(body?.variationSeed ?? `${userId}-${Date.now()}`),
+      );
       mealdbSafeCount = fallback.length;
       console.log(`[recipes] themealdb: total=${mealdbCount} safe=${mealdbSafeCount}`);
       if (fallback.length) {
@@ -523,7 +493,10 @@ Deno.serve(async (request) => {
         const exclude = Array.isArray(filters.excludeIngredients) ? filters.excludeIngredients : [];
         return include.every((item: string) => text.includes(item.toLowerCase())) && !exclude.some((item: string) => text.includes(item.toLowerCase()));
       });
-      const fallback = dedupeRecipes(filterRecipesWithCompleteInstructions(category ? fallbackFiltered2 : filterOutAccessoryTypes(fallbackFiltered2))).slice(0, 20);
+      const fallback = rotateRecipes(
+        dedupeRecipes(filterRecipesWithCompleteInstructions(category ? fallbackFiltered2 : filterOutAccessoryTypes(fallbackFiltered2))).slice(0, 20),
+        String(body?.variationSeed ?? `${userId}-${Date.now()}`),
+      );
       mealdbSafeCount = fallback.length;
       console.log(`[recipes] themealdb fallback after exception: total=${mealdbCount} safe=${mealdbSafeCount}`);
       if (fallback.length) {

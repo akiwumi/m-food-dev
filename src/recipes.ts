@@ -3,6 +3,12 @@ import { cookingMoods, type Recipe } from "./data";
 import type { Profile } from "./store";
 import type { RecipeFilters } from "./searchFilters";
 
+declare global {
+  interface Window {
+    __MOODFOOD_TEST_LIVE_RECIPES__?: Recipe[];
+  }
+}
+
 // Fetches real recipes from the `recipes` edge function (Spoonacular/TheMealDB +
 // hard safety filter). AI curation (OpenAI ranking) is OPT-IN via `curate` — off
 // by default for normal search, which is ranked deterministically by the caller
@@ -95,6 +101,12 @@ export async function fetchCuratedRecipes(
   curate = false,
   signal?: AbortSignal,
 ): Promise<Recipe[] | null> {
+  // Playwright injects provider-shaped recipes in development so mobile flows
+  // exercise the live-only client path without requiring production credentials.
+  // Vite removes this branch from production builds (`DEV` is statically false).
+  if (import.meta.env.DEV && typeof window !== "undefined" && Array.isArray(window.__MOODFOOD_TEST_LIVE_RECIPES__)) {
+    return window.__MOODFOOD_TEST_LIVE_RECIPES__;
+  }
   if (!supabase) { console.info("[recipes] Supabase not configured (.env.local), showing local recipes."); return null; }
 
   const run = async (): Promise<Recipe[] | null> => {

@@ -38,6 +38,7 @@ export type Recipe = {
   tags?: RecipeTags;
   video?: string;        // YouTube embed URL when a cooking video is available
   sourceUrl?: string;    // original recipe URL (for attribution / full method)
+  provider?: "Spoonacular" | "TheMealDB";
 };
 
 export const moods = [

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyCuratedRanking, dedupeRecipes, expandProviderCuisines, fetchTheMealDbRecipes, filterRecipesByCategory, filterRecipesByMaxTime, filterRecipesByQuery, filterRecipesForProfile, filterRecipesWithCompleteInstructions, loosenProviderParams, normalizeSpoonacularRecipe, rotateRecipes } from "../supabase/functions/recipes/provider";
+import { applyCuratedRanking, dedupeRecipes, expandProviderCuisines, fetchTheMealDbRecipes, filterRecipesByCategory, filterRecipesByMaxTime, filterRecipesByQuery, filterRecipesForProfile, filterRecipesWithCompleteInstructions, loosenProviderParams, normalizeCourseSearchIntent, normalizeSpoonacularRecipe, rotateRecipes } from "../supabase/functions/recipes/provider";
 
 describe("fetchTheMealDbRecipes", () => {
   it("returns normalized real recipes when the primary provider is unavailable", async () => {
@@ -26,6 +26,7 @@ describe("fetchTheMealDbRecipes", () => {
     expect(recipes[0]).toMatchObject({
       id: "mealdb-52772",
       title: "Teriyaki Chicken Casserole",
+      provider: "TheMealDB",
       cuisine: "Japanese",
       moods: ["Cozy"],
       ingredients: ["500g Chicken", "2 tbsp Soy sauce"],
@@ -126,8 +127,20 @@ describe("fetchTheMealDbRecipes", () => {
       active: ["garlic"],
       equipment: ["frying pan"],
     });
+    expect(recipe.provider).toBe("Spoonacular");
     expect(recipe.tags.effort).toContain("low_effort");
     expect(recipe.tags.sensory).toContain("warm");
+  });
+
+  it.each(["dessert", "desserts", "desert", "deserts", "dessert recipes"])(
+    "normalizes the %s query into a dessert category",
+    query => {
+      expect(normalizeCourseSearchIntent(query, "")).toEqual({ query: "", category: "dessert" });
+    },
+  );
+
+  it("does not reinterpret a concrete recipe query", () => {
+    expect(normalizeCourseSearchIntent("chocolate cake", "")).toEqual({ query: "chocolate cake", category: "" });
   });
 
   it("combines every Spoonacular instruction section into the full method", () => {
@@ -185,7 +198,7 @@ describe("fetchTheMealDbRecipes", () => {
     expect(filterRecipesByQuery(recipes, "chicken").map(recipe => recipe.title)).toEqual(["Chicken Enchiladas", "Green Enchiladas"]);
   });
 
-  it("rotates cached recipes with a request seed without losing any", () => {
+  it("rotates live provider recipes with a request seed without losing any", () => {
     const recipes = [{ id: "1" }, { id: "2" }, { id: "3" }];
     expect(rotateRecipes(recipes, "a")).not.toEqual(rotateRecipes(recipes, "b"));
     expect(new Set(rotateRecipes(recipes, "a").map(recipe => recipe.id))).toEqual(new Set(["1", "2", "3"]));

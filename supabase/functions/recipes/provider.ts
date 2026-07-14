@@ -22,6 +22,23 @@ const MEALDB_AREAS = new Set([
   "Spanish", "Thai", "Tunisian", "Turkish", "Ukrainian", "Vietnamese",
 ]);
 
+const COURSE_QUERIES: Array<[RegExp, string]> = [
+  [/^breakfasts?(?:\s+(?:recipes?|dishes|ideas))?$/i, "breakfast"],
+  [/^lunch(?:es)?(?:\s+(?:recipes?|dishes|ideas))?$/i, "lunch"],
+  [/^dinners?(?:\s+(?:recipes?|dishes|ideas))?$/i, "dinner"],
+  [/^snacks?(?:\s+(?:recipes?|dishes|ideas))?$/i, "snacks"],
+  [/^des{1,2}erts?(?:\s+(?:recipes?|dishes|ideas))?$/i, "dessert"],
+];
+
+export function normalizeCourseSearchIntent(query: string, selectedCategory = ""): { query: string; category: string } {
+  const cleanQuery = String(query ?? "").trim();
+  const inferredCategory = COURSE_QUERIES.find(([pattern]) => pattern.test(cleanQuery))?.[1] ?? "";
+  if (inferredCategory && (!selectedCategory || selectedCategory.toLowerCase() === inferredCategory)) {
+    return { query: "", category: inferredCategory };
+  }
+  return { query: cleanQuery, category: selectedCategory };
+}
+
 function inferProviderTags(recipe: any) {
   const text = `${recipe.title ?? ""} ${recipe.reason ?? ""} ${(recipe.ingredients ?? []).join(" ")} ${(recipe.steps ?? []).map((step: any) => step?.text ?? "").join(" ")}`.toLowerCase();
   const tags: Record<string, string[]> = { mood: [], effort: [], sensory: [], nutrition: [], occasion: [], cookingStyle: [] };
@@ -94,6 +111,7 @@ function normalizeMeal(meal: Record<string, unknown>, mood: string) {
     status: "published",
     video: youtubeEmbed(String(meal.strYoutube ?? "")),
     sourceUrl: String(meal.strSource ?? ""),
+    provider: "TheMealDB",
   };
   return { ...normalized, tags: inferProviderTags(normalized) };
 }
@@ -315,6 +333,7 @@ export function normalizeSpoonacularRecipe(recipe: any, mood: string) {
     status: "published",
     video: "",
     sourceUrl: recipe.sourceUrl ?? recipe.spoonacularSourceUrl ?? "",
+    provider: "Spoonacular",
   };
   return { ...normalized, tags: inferProviderTags(normalized) };
 }

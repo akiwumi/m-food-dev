@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
-import { bundledRecipes } from "../bundledRecipes";
 import { recommend, RANKING_CONFIG_VERSION, type LearnedSignals } from "../recommendation";
 import { finalizeSearchResults } from "../searchResults";
 import { fetchCuratedRecipes, buildFoodHistory } from "../recipes";
@@ -13,7 +12,7 @@ import type { Entry } from "../appTypes";
 // candidate state, the deterministic ranking memos, the fetch effect, and
 // "show more". Extracted verbatim (roadmap Hook F). The fetch effect's dep array
 // is copied byte-for-byte — it intentionally omits foodHistory / behavioralConsent
-// / localFallback (H4); "fixing" it re-fires on every diary/save change and
+// (H4); "fixing" it re-fires on every diary/save change and
 // recreates the 502 fetch-loop the profile memo (H2) guards against.
 export function useHomeFeed(
   entry: Entry,
@@ -41,8 +40,7 @@ export function useHomeFeed(
   const ACCESSORY_TYPES = useMemo(() => new Set(["dessert", "desserts", "snack", "snacks", "drink", "drinks", "beverage", "beverages", "sweet", "sweets"]), []);
   // Ranks any candidate pool for the current check-in: applies the home filters as
   // hard constraints + client safety, mood-ranks what remains, and relaxes the time
-  // cap if the strict pass is empty. Shared by the bundled fallback and the live
-  // (uncurated) provider set so both honor exactly the same hard constraints.
+  // cap if the strict pass is empty.
   const rankForCheckin = useCallback((pool: Recipe[]) => {
     const filters = {
       cuisines: cuisine ? [cuisine] : undefined,
@@ -54,7 +52,6 @@ export function useHomeFeed(
     return strict.length ? strict : recommend(filtered, sharedProfile, mood, energy, 999, appliedSignals).map(item => item.recipe);
   }, [sharedProfile, mood, energy, time, cuisine, mealCategory, homeDiet, appliedSignals]);
 
-  const localFallback = useMemo(() => rankForCheckin(bundledRecipes), [rankForCheckin]);
   // Deterministic ranking of the live, uncurated provider candidates (Slice-1
   // default). Null until a live fetch lands.
   const deterministicLive = useMemo(
@@ -63,15 +60,15 @@ export function useHomeFeed(
   );
 
   const ranked = useMemo(() => {
-    // Order of preference: AI-curated (opt-in) → deterministic ranking of live
-    // provider recipes → deterministic ranking of the bundled offline catalog.
-    const base = aiRanked ?? deterministicLive ?? localFallback;
+    // Search results are always from a live provider. A failed request stays
+    // empty so stale bundled data can never masquerade as a current result.
+    const base = aiRanked ?? deterministicLive ?? [];
     if (mealCategory) return base;
     return base.filter(r => {
       const types = (r.mealTypes ?? []).map((t: string) => t.toLowerCase());
       return !types.length || !types.every((t: string) => ACCESSORY_TYPES.has(t));
     });
-  }, [aiRanked, deterministicLive, localFallback, mealCategory, ACCESSORY_TYPES]);
+  }, [aiRanked, deterministicLive, mealCategory, ACCESSORY_TYPES]);
 
   // When the user asks for recommendations, fetch real recipes (deterministic by
   // default; AI-curated only when opted in).
@@ -95,18 +92,16 @@ export function useHomeFeed(
           // can be tied back to it. Consent-gated, best-effort, never awaited.
           if (behavioralConsent) void recordRun({ rankingConfigVersion: RANKING_CONFIG_VERSION, candidates: list.map(r => ({ id: r.id, title: r.title, cuisine: r.cuisine })), mood, energy });
         } else {
-          setAiRanked(null); setLiveSet(null); // not signed in / configured → bundled ranking
+          setAiRanked(null); setLiveSet(null);
         }
-        // Telemetry: home check-in is a search. On the local-fallback path the user
-        // sees `localFallback`, so report its size as the result count.
         trackSearch({
           mode: "home",
           durationMs: Math.round(performance.now() - startedAt),
-          resultCount: list?.length ? list.length : localFallback.length,
-          source: list?.length ? "spoonacular" : localFallback.length ? "local" : "none",
+          resultCount: list?.length ?? 0,
+          source: list?.length ? "spoonacular" : "none",
           aiAttempted: aiCuration,
           aiSucceeded: aiCuration && !!list?.length,
-          fallbackUsed: !list?.length,
+          fallbackUsed: false,
           rankingConfigVersion: RANKING_CONFIG_VERSION,
         });
       })
@@ -114,8 +109,7 @@ export function useHomeFeed(
     return () => { cancelled = true; };
   }, [results, mood, energy, time, sharedProfile, entry, recipeNonce, mealCategory, cuisine, homeDiet, aiCuration]);
 
-  // "Show me 5 more", fetch a fresh page (next offset) and append. Falls back to
-  // simply revealing more of the local ranking when the backend isn't available.
+  // "Show me 5 more", fetch a fresh live page (next offset) and append.
   const loadMore = async () => {
     setCurating(true);
     const nextOffset = moreOffset + 20;

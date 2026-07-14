@@ -28,6 +28,7 @@ export function HomeScreen({ profile, diary, saved, catalog, mood, setMood, ener
   const [shownCount, setShownCount] = useState(RESULT_BATCH_SIZE);
   const visible = ranked.filter(r => !rejected.includes(r.id)).slice(0, shownCount);
   const hero = ranked[0];
+  const providerLabel = [...new Set(visible.map(recipe => recipe.provider).filter(Boolean))].join(" + ");
   const suggestions = useMemo(
     () => deriveDailySuggestions(diary, saved, catalog, profile),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -54,8 +55,8 @@ export function HomeScreen({ profile, diary, saved, catalog, mood, setMood, ener
       <div className="home-greeting">
         <h1>{mealCategory ? `${mealCategory[0].toUpperCase()}${mealCategory.slice(1)} picks.` : "Tonight’s picks."}</h1>
         <p>{energy < 50 ? "Low-effort" : "Interesting"}, {mood.toLowerCase()}{mealCategory ? `, ${mealCategory}` : ""}{cuisine ? `, ${cuisine}` : ""}, within {time} min · {eaterCount} {eaterCount === 1 ? "person" : "people"}</p>
-        {live && curated && <p className="source-note live"><Check size={13} /> Live picks, freshly curated by Moody for you.</p>}
-        {live && !curated && <p className="source-note live"><Check size={13} /> Live picks, matched to your mood.</p>}
+        {live && curated && <p className="source-note live"><Check size={13} /> Live from {providerLabel || "the recipe provider"}, freshly curated by Moody for you.</p>}
+        {live && !curated && <p className="source-note live"><Check size={13} /> Live from {providerLabel || "the recipe provider"}, matched to your mood.</p>}
         {!live && hasFetched && visible.length > 0 && <p className="source-note">Offline picks from your cookbook — live recipes are unavailable right now.</p>}
       </div>
       {visible.length ? (

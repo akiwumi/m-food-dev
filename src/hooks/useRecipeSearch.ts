@@ -1,5 +1,4 @@
 import { useCallback, useRef, useState } from "react";
-import { bundledRecipes } from "../bundledRecipes";
 import { finalizeSearchResults } from "../searchResults";
 import { appendUniqueRecipes, RESULT_BATCH_SIZE, takeUniqueBatch } from "../resultBatches";
 import { trackSearch } from "../telemetry";
@@ -59,33 +58,20 @@ export function useRecipeSearch(
     window.scrollTo(0, 0);
     const startedAt = performance.now();
     try {
-      // Show bundled matches immediately so the user sees results while the live
-      // search is in flight. The spinner only appears when there are zero local
-      // matches (niche queries). Live results arrive later and are ranked first.
-      const offlineCandidates = finalizeSearchResults(bundledRecipes, sharedProfile, request.filters, Infinity);
-      if (!nextPage && offlineCandidates.length) {
-        setSearchCandidates(offlineCandidates);
-        setSearchResults(takeUniqueBatch(offlineCandidates));
-      }
-
       // Explicit search honors the filters exactly — relax:false tells the backend
       // not to silently drop cuisine/course/time to force a result.
       const live = await fetchCuratedRecipes(sharedProfile, request.mood || mood, 50, request.filters.maxReadyTime ?? 60, request.query, request.filters, foodHistory, offset, false, false, controller.signal);
       if (!isActiveSearch()) return;
       const liveCandidates = finalizeSearchResults(live ?? [], sharedProfile, request.filters, Infinity);
-      const pageCandidates = liveCandidates.length ? liveCandidates : offlineCandidates;
       const strictCandidates = appendUniqueRecipes(
         nextPage ? searchCandidates : [],
-        pageCandidates,
+        liveCandidates,
         Infinity,
       );
-      // Never replace an exact filtered search with unrelated local recipes.
-      // The bundled candidates above already obey every requested filter.
       const candidates = strictCandidates;
       const nextResults = nextPage
         ? appendUniqueRecipes(searchResults, candidates, RESULT_BATCH_SIZE)
         : takeUniqueBatch(candidates);
-      const fallbackUsed = !liveCandidates.length && offlineCandidates.length > 0;
       setSearchRelaxed(false);
       setSearchCandidates(candidates);
       setSearchResults(nextResults);
@@ -94,10 +80,10 @@ export function useRecipeSearch(
         mode: nextPage ? "load_more" : "search",
         durationMs: Math.round(performance.now() - startedAt),
         resultCount: nextResults.length,
-        source: live?.length ? "spoonacular" : fallbackUsed && nextResults.length ? "local" : "none",
+        source: live?.length ? "spoonacular" : "none",
         aiAttempted: false,
         aiSucceeded: false,
-        fallbackUsed,
+        fallbackUsed: false,
         rankingConfigVersion: RANKING_CONFIG_VERSION,
         hasQuery: !!request.query,
         filterCount: Object.values(request.filters).filter(v => v !== undefined && v !== "" && !(Array.isArray(v) && v.length === 0)).length,

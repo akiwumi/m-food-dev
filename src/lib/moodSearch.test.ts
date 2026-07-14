@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMoodSearchQuery, getMoodByValue, getMoodTags } from "./moodSearch";
+import { buildMoodSearchQuery, getMoodByValue, getMoodTags, normalizeRecipeSearchIntent } from "./moodSearch";
 
 describe("getMoodByValue", () => {
   it("returns the matching mood tag", () => {
@@ -36,5 +36,23 @@ describe("buildMoodSearchQuery", () => {
 
   it("trims whitespace-only query text", () => {
     expect(buildMoodSearchQuery({ query: "   " })).toBe("");
+  });
+});
+
+describe("normalizeRecipeSearchIntent", () => {
+  it.each(["dessert", "desserts", "desert", "deserts", "dessert recipes"])(
+    "maps %s to the dessert course instead of a strict title query",
+    query => {
+      expect(normalizeRecipeSearchIntent(query)).toEqual({ query: "", type: "dessert" });
+    },
+  );
+
+  it("maps other course-only searches to structured course filters", () => {
+    expect(normalizeRecipeSearchIntent("snacks")).toEqual({ query: "", type: "snacks" });
+    expect(normalizeRecipeSearchIntent("breakfast recipes")).toEqual({ query: "", type: "breakfast" });
+  });
+
+  it("preserves concrete recipe searches", () => {
+    expect(normalizeRecipeSearchIntent("chocolate cake")).toEqual({ query: "chocolate cake", type: "" });
   });
 });

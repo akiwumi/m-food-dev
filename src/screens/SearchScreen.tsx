@@ -10,7 +10,7 @@ import { TopBar } from "../components/AppChrome";
 import { DailySuggestionCarousel } from "../components/DailySuggestionCarousel";
 import { TokenInput } from "../components/TokenInput";
 import { moodSearchTags, type Mood } from "@/data/moodTags";
-import { buildMoodSearchQuery, getMoodByValue } from "@/lib/moodSearch";
+import { buildMoodSearchQuery, getMoodByValue, normalizeRecipeSearchIntent } from "@/lib/moodSearch";
 
 export function SearchScreen({
   profile, diary, saved, catalog, onSearch,
@@ -57,16 +57,17 @@ export function SearchScreen({
       maxCookingTime: maxTime,
       query,
     });
+    const intent = normalizeRecipeSearchIntent(searchQuery, type);
     const filters: RecipeFilters = {
-      query: searchQuery, cuisines,
-      type: type || undefined,
+      query: intent.query, cuisines,
+      type: intent.type || undefined,
       diet: diet === "Any" ? undefined : diet,
       maxReadyTime: maxTime, sort,
       includeIngredients: include, excludeIngredients: exclude,
       maxCalories: maxCalories || undefined,
       minProtein: minProtein || undefined,
     };
-    onSearch({ query: searchQuery, mood: selectedMood?.label, filters });
+    onSearch({ query: intent.query, mood: selectedMood?.label, filters });
   };
 
   const pickSuggestion = (r: Recipe) => {
