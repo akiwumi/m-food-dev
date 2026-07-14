@@ -125,6 +125,65 @@ Separate them, because each has a different answer:
 
 ---
 
+## 3a. Database architecture — the v1 decision (Supabase + on-device cache)
+
+> **Decision history:** an earlier draft of this section chose Architecture A
+> (remove Supabase, on-device only). **That was reversed.** v1 **keeps Supabase**
+> and ships **real multi-user community/social** as a headline feature. The
+> reasoning below reflects the current, shipped direction; the on-device
+> durability guidance is retained because it still matters for the *local* cache.
+
+**Decision (v1): Supabase is the store of record for anything multi-user or
+cross-device; a local on-device store is the offline cache + personal data.**
+Concretely:
+
+- **Supabase (source of truth)** — accounts/auth, the social graph (friends,
+  posts, likes, comments, shared recipes), profile sync, and the friend-visible
+  activity (a member's food profile, cooked/reviewed meals, favourites). This is
+  live on project `pjfoiamcflimdreoxvpg` (migrations 018–020, deployed
+  2026-07-14). Community is inherently multi-user, so it *requires* a server —
+  that's exactly what Supabase is for.
+- **On-device (cache + personal)** — the app still reads/writes localStorage for
+  fast, offline-first personal state (current mood, drafts, diary, saved), and
+  falls back to a purely local experience when signed out or offline (the pilot
+  path). Supabase is synced up in the background; the app never breaks when the
+  backend is briefly unreachable.
+
+### On-device done right: SQLite/Preferences, not raw localStorage
+The local cache must **not** stay on raw `localStorage` once native. Inside a
+Capacitor/WKWebView app, **localStorage and IndexedDB are not guaranteed durable**
+— iOS can evict WebView storage under disk pressure when the app isn't running.
+Fine for a web pilot, unacceptable for someone's food diary. Move the local cache
+to:
+
+- **`@capacitor-community/sqlite`** — the durable local store for personal data
+  (profile, diary, saved, groceries, diners, photo logs). Lives in the app
+  container and is covered by iCloud backup, so the personal data survives a
+  reinstall even before a device is signed in and synced.
+- **Capacitor Preferences** (native `UserDefaults`) — small key-value settings.
+- **RevenueCat's entitlement cache** — the subscription source of truth, on-device.
+
+### Pre-launch task: localStorage → SQLite migration (local cache only)
+Still a real pre-launch task — it hardens the *local cache*, independent of the
+Supabase sync:
+
+1. Add `@capacitor-community/sqlite`; define a schema for the current stores
+   (`moodfood-profile`, `-saved`, `-diary`, `-groceries`, `-diners`,
+   `-eater-count`, photo logs) plus a `schema_version` row.
+2. Introduce a small storage adapter behind the existing `useStoredState` API so
+   call sites don't change: SQLite/Preferences on native, `localStorage` on web.
+3. **One-time migration on first native launch:** if SQLite is empty but
+   `localStorage` has data, copy it across, then mark migrated.
+4. Route photo-log images to the app's file container (not the DB / localStorage);
+   store only the file path in SQLite.
+5. Verify durability: background the app, simulate storage pressure, confirm data
+   survives; confirm it rides an iCloud backup/restore.
+
+Until this lands the app keeps running on `localStorage` (functionally fine, just
+not eviction-proof), so the migration doesn't block anything.
+
+---
+
 ## 4. Subscriptions — the part that will make or break your App Store review
 
 ### The hard rule
@@ -246,7 +305,8 @@ You have a complete, working React web app. **Do not rewrite it.** Wrap it:
 | Need AI to assess mood? | **No.** Deterministic rules (`moodRules.ts`) already do it. |
 | Need AI to track/learn the user? | **No.** Rating-derived signals (`behavioral.ts`) already do it; AI only rephrases. |
 | Any feature that *genuinely* needs AI? | Only **food-photo calorie analysis** (vision). Everything else has a non-AI path. |
-| Need Supabase to function? | **No** for a single-device v1. **Yes** if you want accounts, sync, community, and the full Spoonacular catalog. |
+| Need Supabase to function? | The **deterministic core** runs without it (pilot/offline). But v1 **keeps Supabase** as the store of record for accounts + the real community/social features (§3a); it's live (migrations 018–020). |
+| Remote DB or on-device for iOS? | **Both, by role.** Supabase for multi-user/cross-device (social, accounts); an on-device store (`@capacitor-community/sqlite` + Preferences, **not** raw localStorage) as the durable offline cache for personal data. |
 | Need a backend for subscriptions? | **No** — RevenueCat verifies entitlements on-device. Optionally sync to Supabase. |
 | Can I use Stripe for the iOS subscription? | **No.** Apple requires StoreKit IAP. Use RevenueCat. Keep Stripe only for web. |
 | Rewrite in React Native? | **No.** Wrap the existing React app in **Capacitor**. |
