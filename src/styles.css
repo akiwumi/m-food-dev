@@ -138,14 +138,17 @@ input[type=range]{accent-color:var(--blue-deep)}
 /* ---- Notifications panel ---- */
 .notif-bell{position:relative}
 .notif-dot{position:absolute;top:8px;right:8px;min-width:16px;height:16px;padding:0 4px;border-radius:99px;background:var(--coral);color:#fff;font-size:9px;font-weight:800;display:grid;place-items:center;border:2px solid #fff}
-.notif-list{display:grid;gap:10px;margin-top:8px}
-.notif-swipe{position:relative;overflow:hidden;border-radius:18px;touch-action:pan-y;background:transparent}
+.notif-list{display:flex;flex-direction:column;gap:10px;margin-top:8px;flex:1;min-height:0;overflow-y:auto;padding:0 0 max(12px,env(safe-area-inset-bottom));-webkit-overflow-scrolling:touch}
+.notif-swipe{position:relative;overflow:hidden;border-radius:18px;touch-action:pan-y;background:transparent;flex:0 0 auto}
 .notif-swipe.active{background:var(--coral)}
 .notif-delete{position:absolute;inset:0 0 0 auto;width:132px;color:#fff;display:flex;align-items:center;justify-content:center;gap:6px;font-size:11px;font-weight:800}
-.notif-card{background:#fff;border:1px solid rgba(23,26,28,.08);border-radius:18px;box-shadow:var(--shadow-sm);padding:14px;display:grid;grid-template-columns:38px minmax(0,1fr);gap:12px;min-height:76px;align-items:flex-start}
+.notif-card{background:#fff;border:1px solid rgba(23,26,28,.08);border-radius:18px;box-shadow:var(--shadow-sm);padding:14px;display:grid;grid-template-columns:38px minmax(0,1fr) 34px;gap:12px;min-height:76px;align-items:flex-start}
 .notif-card{position:relative;z-index:1;touch-action:pan-y;transition:transform .18s ease;background-clip:padding-box}
 .notif-card.dragging{transition:none}
+.notif-copy{min-width:0}
 .notif-card .ic{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:var(--sage);color:var(--ink)}
+.notif-clear{width:34px;height:34px;border:0;border-radius:50%;background:var(--sage);color:var(--coral);display:grid;place-items:center;align-self:center}
+.notif-clear:active{transform:scale(.94)}
 .notif-card.unread{border-color:var(--blue)}
 .notif-card .ic.confirm,.notif-card .ic.welcome{background:#dff1f7;color:var(--blue-deep)}
 .notif-card .ic.receipt{background:#cdeede;color:#1f7a4d}

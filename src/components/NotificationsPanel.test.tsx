@@ -36,6 +36,9 @@ describe("NotificationsPanel", () => {
     expect(screen.getByText("Second notice")).toBeTruthy();
     expect(screen.queryByText("Delete")).toBeNull();
 
+    fireEvent.click(screen.getByRole("button", { name: "Clear notification: Second notice" }));
+    expect(readInbox().map(i => i.id)).toEqual(["first"]);
+
     const row = screen.getByText("First notice").closest(".notif-card");
     expect(row).toBeTruthy();
     fireEvent.pointerDown(row!, { pointerId: 1, clientX: 220 });
@@ -43,6 +46,6 @@ describe("NotificationsPanel", () => {
     expect(screen.getByText("Delete")).toBeTruthy();
     fireEvent.pointerUp(row!, { pointerId: 1, clientX: 80 });
 
-    expect(readInbox().map(i => i.id)).toEqual(["second"]);
+    expect(readInbox()).toEqual([]);
   });
 });

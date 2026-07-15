@@ -63,13 +63,23 @@ export function NotificationsPanel({ close, profile, save, refresh }: { close: (
         onPointerUp={event => endDrag(event, i.id)}
         onPointerCancel={event => endDrag(event, i.id)}
       >
-        <span className={"ic " + i.tag}>{icon(i)}</span><div><b>{i.subject}</b><p>{i.body}</p><div className="meta"><span className="chip">{i.kind === "email" ? "Email" : "Push"}</span>{i.to && i.kind === "email" && <span>{i.to}</span>}{i.status === "scheduled" ? <span className="chip scheduled">Scheduled {fmt(i.scheduledFor)}</span> : <span>{fmt(i.createdAt)}</span>}</div></div>
+        <span className={"ic " + i.tag}>{icon(i)}</span>
+        <div className="notif-copy"><b>{i.subject}</b><p>{i.body}</p><div className="meta"><span className="chip">{i.kind === "email" ? "Email" : "Push"}</span>{i.to && i.kind === "email" && <span>{i.to}</span>}{i.status === "scheduled" ? <span className="chip scheduled">Scheduled {fmt(i.scheduledFor)}</span> : <span>{fmt(i.createdAt)}</span>}</div></div>
+        <button
+          className="notif-clear"
+          type="button"
+          aria-label={`Clear notification: ${i.subject}`}
+          onPointerDown={event => event.stopPropagation()}
+          onClick={event => { event.stopPropagation(); dismiss(i.id); }}
+        >
+          <Trash2 size={16} />
+        </button>
       </div>
     </div>;
   };
   return <div className="panel-bg" onClick={close}><aside className="moody-panel" onClick={e => e.stopPropagation()}>
     <header><div className="moody"><Bell size={22} /></div><div><b>Notifications</b><span>Emails &amp; reminders</span></div><button onClick={close}><X /></button></header>
-    <div className="notif-list" style={{ overflowY: "auto", flex: 1 }}>
+    <div className="notif-list">
       {scheduled.map(Row)}
       {sent.map(Row)}
       {!items.length && <div className="notif-empty"><Mail /><p>No notifications yet. Community posts, replies, confirmations, reminders, and receipts will appear here.</p></div>}

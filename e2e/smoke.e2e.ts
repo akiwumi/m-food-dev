@@ -41,6 +41,43 @@ test("saving a pick persists it to the Saved tab", async ({ page }) => {
   await expect(page.getByRole("heading", { name: title })).toBeVisible();
 });
 
+test("notifications are readable and managed inside the panel", async ({ page }) => {
+  await page.addInitScript(() => {
+    const now = new Date("2026-07-15T10:00:00.000Z").toISOString();
+    const items = Array.from({ length: 12 }, (_, index) => ({
+      id: `notice-${index}`,
+      kind: index % 2 ? "email" : "push",
+      subject: index === 0 ? "New reply from Sofia" : `Recipe reminder ${index}`,
+      body: index === 0
+        ? "Sofia replied to your shared recipe. Open the thread when you are ready."
+        : "Your saved dinner plan is ready to review.",
+      createdAt: now,
+      status: "sent",
+      read: false,
+      tag: index === 0 ? "message" : "reminder",
+    }));
+    localStorage.setItem("moodfood-inbox", JSON.stringify(items));
+  });
+
+  await page.goto("/?testState=home");
+  await page.getByRole("button", { name: "Notifications" }).click();
+  await expect(page.locator(".moody-panel header").getByText("Notifications")).toBeVisible();
+  await expect(page.getByText("New reply from Sofia")).toBeVisible();
+  await expect(page.getByText("Sofia replied to your shared recipe")).toBeVisible();
+
+  await expect.poll(() => page.locator(".notif-card").first().evaluate(element => element.getBoundingClientRect().height)).toBeGreaterThan(80);
+  await expect.poll(() => page.locator(".notif-list").evaluate(element => {
+    const list = element.getBoundingClientRect();
+    const panel = element.closest(".moody-panel")!.getBoundingClientRect();
+    return list.bottom <= panel.bottom + 1 && list.top >= panel.top;
+  })).toBe(true);
+  await expect.poll(() => page.locator(".notif-list").evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true);
+
+  await expect(page.getByText("Delete")).toHaveCount(0);
+  await page.getByRole("button", { name: "Clear notification: New reply from Sofia" }).click();
+  await expect(page.getByText("New reply from Sofia")).toHaveCount(0);
+});
+
 test("quick-start activation flow renders", async ({ page }) => {
   await page.goto("/?testState=quick-start");
   await expect(page.getByRole("heading", { name: /Tell me how dinner feels/i })).toBeVisible();
