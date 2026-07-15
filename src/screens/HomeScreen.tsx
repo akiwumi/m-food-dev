@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Sparkles, Check, RotateCcw, ChefHat, Clock3, ShieldCheck, Play, ArrowRight, FlameKindling, Camera, Activity, Users, UserRound, Sliders } from "lucide-react";
 import { moods, type Recipe } from "../data";
+import { moodVoice } from "../moodVoice";
 import type { Profile, Diner } from "../store";
 import { sumNutrition, type FoodPhoto } from "../foodAnalysis";
 import { SPOON_CUISINES, SEARCH_DIETS } from "../searchFilters";
@@ -53,8 +54,9 @@ export function HomeScreen({ profile, diary, saved, catalog, mood, setMood, ener
       </div> : <>
       <div className="home-greeting">
         <h1>{mealCategory ? `${mealCategory[0].toUpperCase()}${mealCategory.slice(1)} picks.` : "Tonight’s picks."}</h1>
+        {moodVoice(mood, energy) && <p className="moody-voice"><Sparkles size={14} /> {moodVoice(mood, energy)}</p>}
         <p>{energy < 50 ? "Low-effort" : "Interesting"}, {mood.toLowerCase()}{mealCategory ? `, ${mealCategory}` : ""}{cuisine ? `, ${cuisine}` : ""}, within {time} min · {eaterCount} {eaterCount === 1 ? "person" : "people"}</p>
-        {live && curated && <p className="source-note live"><Check size={13} /> Live picks, freshly curated by Moody for you.</p>}
+        {live && curated && <p className="source-note live"><Check size={13} /> Moody chose these for you.</p>}
         {live && !curated && <p className="source-note live"><Check size={13} /> Live picks, matched to your mood.</p>}
         {!live && hasFetched && visible.length > 0 && <p className="source-note">Offline picks from your cookbook — live recipes are unavailable right now.</p>}
       </div>
