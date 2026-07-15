@@ -404,8 +404,8 @@ export default function App() {
     const confirmed = !!opts?.hasSession; // session present = email confirmation is OFF, so they're in
     const next = { ...profile, ...patch, accountCreated: true, emailVerified: confirmed };
     setProfile(next);
-    if (!isSupabaseConfigured) { sendConfirmationEmail(next.email, next.name); refreshNotifs(); setEntry("verify"); return; }
     if (confirmed) { sendWelcomeEmail(next.email, next.name); refreshNotifs(); setEntry("verified"); }
+    else if (!isSupabaseConfigured) { sendConfirmationEmail(next.email, next.name); refreshNotifs(); setEntry("verify"); }
     else { setEntry("verify"); } // Supabase sent a real confirmation email
   }} />;
   if (entry === "verify") return <VerifyEmailScreen email={profile.email} realAuth={isSupabaseConfigured} resend={() => { sendConfirmationEmail(profile.email, profile.name); refreshNotifs(); }} back={() => setEntry("account")} onVerified={() => { setProfile({ ...profile, emailVerified: true }); sendWelcomeEmail(profile.email, profile.name); refreshNotifs(); setEntry("verified"); }} />;
