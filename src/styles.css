@@ -2415,6 +2415,14 @@ button.ghost{border:1px solid var(--line);background:transparent;color:var(--mut
 .moody-recipe-card svg:last-child{color:var(--muted);flex-shrink:0}
 .moody-suggested{display:flex;flex-wrap:wrap;gap:8px;padding:0 16px 10px}
 .moody-suggested button{border:1px solid var(--line);background:var(--white);border-radius:99px;padding:8px 14px;font-size:12.5px;font-weight:600;color:var(--blue-deep);cursor:pointer}
+.moody-profile-drip{background:var(--white);border:1px solid var(--line);border-radius:18px;padding:14px;margin:4px 0 8px;display:grid;gap:11px;box-shadow:var(--shadow-sm)}
+.moody-profile-drip>span{display:flex;align-items:center;gap:5px;font-size:9px;font-weight:800;letter-spacing:.14em;color:var(--blue-deep)}
+.moody-profile-drip h2{font-size:15px;line-height:1.25;margin:0;letter-spacing:0!important}
+.moody-profile-drip p,.moody-profile-drip article small{font-size:11px;line-height:1.45;color:var(--muted);margin:0}
+.moody-profile-drip article{display:grid;gap:8px;border-top:1px solid var(--line);padding-top:11px}
+.moody-profile-drip article>b{font-size:12px;line-height:1.35}
+.moody-profile-drip .choice button{font-size:11px;padding:8px 11px}
+.moody-profile-drip .secondary{min-height:40px;border-radius:12px}
 .moody-chat-input{display:flex;gap:8px;padding:12px 14px calc(12px + env(safe-area-inset-bottom));background:var(--white);border-top:1px solid var(--line)}
 .moody-chat-input input{flex:1;min-width:0;border:1px solid var(--line);background:var(--bg2,#eef4f3);border-radius:99px;padding:12px 16px;font-size:14px;outline:0}
 .moody-chat-input button{width:44px;height:44px;flex-shrink:0;border:0;border-radius:50%;background:var(--ink);color:#fff;display:grid;place-items:center;cursor:pointer}

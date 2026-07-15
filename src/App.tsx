@@ -450,7 +450,7 @@ export default function App() {
       {page === "help" && <HelpScreen back={() => go("settings")} />}
     </main></Suspense>
     {page !== "cook" && <BottomNav page={page} go={go} />}
-    {page !== "cook" && <MoodyChat profile={profile} mood={mood} picks={ranked} candidates={safeRecipes} openRecipe={open} />}
+    {page !== "cook" && <MoodyChat profile={profile} mood={mood} picks={ranked} candidates={safeRecipes} cookedCount={diary.length} saveProfile={setProfile} openRecipe={open} />}
     {notifOpen && <NotificationsPanel close={() => setNotifOpen(false)} profile={profile} save={setProfile} refresh={refreshNotifs} />}
     {menuOpen && <MainMenu profile={profile} page={page} go={go} close={() => setMenuOpen(false)} openNotifs={openNotifs} unread={unreadCount()} logout={() => { void authSignOut(); setEntry("welcome"); }} />}
   </div></MenuCtx.Provider>;

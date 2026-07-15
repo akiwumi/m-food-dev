@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createTelemetry, telemetrySource, type QueuedEvent } from "./telemetry";
+import { createTelemetry, searchTelemetryEvents, telemetrySource, type QueuedEvent } from "./telemetry";
 
 // A controllable transport that records every batch it's asked to send and
 // resolves to a configurable success flag.
@@ -121,5 +121,30 @@ describe("telemetrySource", () => {
 
   it("defaults an unlabeled but non-empty live list to 'spoonacular'", () => {
     expect(telemetrySource([{}, {}])).toBe("spoonacular");
+  });
+});
+
+describe("searchTelemetryEvents", () => {
+  it("emits distinct north-star events alongside the search event", () => {
+    const events = searchTelemetryEvents({
+      mode: "home",
+      durationMs: 420,
+      resultCount: 3,
+      source: "spoonacular",
+      aiAttempted: true,
+      aiSucceeded: true,
+      fallbackUsed: false,
+      rankingConfigVersion: "rank-v1",
+      moodAlone: true,
+      timeToFirstAnswerMs: 1800,
+    });
+
+    expect(events.map(e => e.event_type)).toEqual([
+      "search_completed",
+      "answered_from_mood_alone",
+      "time_to_first_answer",
+    ]);
+    expect(events[1]).toMatchObject({ value: 1, source: "spoonacular", ranking_config_version: "rank-v1" });
+    expect(events[2]).toMatchObject({ duration_ms: 1800, value: 3, source: "spoonacular" });
   });
 });

@@ -2,6 +2,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Sparkles, X, ArrowUp, Clock3, ShieldCheck, ChevronRight } from "lucide-react";
 import { callFn } from "../api/backend";
 import { FALLBACK_FOOD } from "./photos";
+import { profileDrip } from "../progressiveProfile";
+import { QuestionField } from "../screens/onboarding/QuestionField";
+import type { OnboardingKey, ProfileValue } from "../onboarding";
 import type { Profile } from "../store";
 import type { Recipe } from "../data";
 
@@ -41,18 +44,22 @@ function proactiveOpener(mood: string, picks: Recipe[]): string {
 
 const SUGGESTED = ["Something quick tonight", "I want comfort food", "Surprise me"];
 
-export function MoodyChat({ profile, mood, picks, candidates, openRecipe }: {
+export function MoodyChat({ profile, mood, picks, candidates, cookedCount = 0, saveProfile, openRecipe }: {
   profile: Profile;
   mood: string;
   picks: Recipe[];
   candidates: Recipe[];
+  cookedCount?: number;
+  saveProfile?: (profile: Profile) => void;
   openRecipe: (recipe: Recipe) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [profileDripDismissed, setProfileDripDismissed] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const drip = saveProfile && !profileDripDismissed ? profileDrip(profile, cookedCount) : null;
 
   // Seed the proactive opener the first time the sheet is opened (recomputed then
   // so it reflects the mood/picks at that moment).
@@ -102,6 +109,10 @@ export function MoodyChat({ profile, mood, picks, candidates, openRecipe }: {
     }
   };
 
+  const updateProfile = (key: OnboardingKey, value: ProfileValue) => {
+    saveProfile?.({ ...profile, [key]: value });
+  };
+
   return (
     <>
       <button className={"moody-fab" + (open ? " hidden" : "")} aria-label="Chat with Moody" onClick={() => setOpen(true)}>
@@ -136,6 +147,21 @@ export function MoodyChat({ profile, mood, picks, candidates, openRecipe }: {
                 </div>
               ))}
               {loading && <div className="moody-msg assistant"><div className="moody-bubble moody-typing"><i /><i /><i /></div></div>}
+              {drip && (
+                <section className="moody-profile-drip" aria-label="Progressive food profile">
+                  <span><Sparkles size={13} /> PROFILE TUNE-UP</span>
+                  <h2>{drip.headline}</h2>
+                  <p>{drip.text}</p>
+                  {drip.questions.map(q => (
+                    <article key={q.id}>
+                      <b>{q.title}</b>
+                      <small>{q.text}</small>
+                      <QuestionField q={q} profile={profile} update={updateProfile} />
+                    </article>
+                  ))}
+                  <button type="button" className="secondary" onClick={() => setProfileDripDismissed(true)}>Done for now</button>
+                </section>
+              )}
             </div>
 
             {messages.length <= 1 && !loading && (

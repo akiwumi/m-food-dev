@@ -16,7 +16,7 @@ import { supabase } from "./supabase";
 // uuid) so it can be unit-tested without a network or a real Supabase session,
 // matching the project's existing dependency-injection test style.
 
-export type EventType = "search_completed" | "app_error";
+export type EventType = "search_completed" | "answered_from_mood_alone" | "time_to_first_answer" | "app_error";
 
 // What a caller provides. id / event_time / category are added by the queue.
 export type TelemetryEvent = {
@@ -143,9 +143,8 @@ export type SearchTelemetry = {
   safetyRejected?: number;
   hasQuery?: boolean;
   filterCount?: number;
-  // North-star signals (concept-recovery Phase 0). Folded into search_completed
-  // metadata rather than new event types so the analytics function's allow-list
-  // (search_completed | app_error) accepts them unchanged.
+  // North-star signals (concept-recovery Phase 0). These also emit distinct
+  // operational events so the core KPI queries don't have to parse metadata.
   moodAlone?: boolean;          // home answer reached without touching any Refine control
   timeToFirstAnswerMs?: number; // app-open → first recipe on screen, reported once per session
 };
@@ -167,26 +166,52 @@ export function telemetrySource(
   return "spoonacular";
 }
 
-export function trackSearch(t: SearchTelemetry): void {
-  telemetry.track({
+export function searchTelemetryEvents(t: SearchTelemetry): TelemetryEvent[] {
+  const baseMetadata = {
+    mode: t.mode,
+    ai_attempted: t.aiAttempted,
+    ai_succeeded: t.aiSucceeded,
+    fallback_used: t.fallbackUsed,
+    empty: t.resultCount === 0,
+    ...(t.safetyRejected !== undefined ? { safety_rejected: t.safetyRejected } : {}),
+    ...(t.hasQuery !== undefined ? { has_query: t.hasQuery } : {}),
+    ...(t.filterCount !== undefined ? { filter_count: t.filterCount } : {}),
+    ...(t.moodAlone !== undefined ? { mood_alone: t.moodAlone } : {}),
+    ...(t.timeToFirstAnswerMs !== undefined ? { time_to_first_answer_ms: t.timeToFirstAnswerMs } : {}),
+  };
+  const events: TelemetryEvent[] = [{
     event_type: "search_completed",
     duration_ms: t.durationMs,
     value: t.resultCount,
     source: t.source,
     ranking_config_version: t.rankingConfigVersion,
-    metadata: {
-      mode: t.mode,
-      ai_attempted: t.aiAttempted,
-      ai_succeeded: t.aiSucceeded,
-      fallback_used: t.fallbackUsed,
-      empty: t.resultCount === 0,
-      ...(t.safetyRejected !== undefined ? { safety_rejected: t.safetyRejected } : {}),
-      ...(t.hasQuery !== undefined ? { has_query: t.hasQuery } : {}),
-      ...(t.filterCount !== undefined ? { filter_count: t.filterCount } : {}),
-      ...(t.moodAlone !== undefined ? { mood_alone: t.moodAlone } : {}),
-      ...(t.timeToFirstAnswerMs !== undefined ? { time_to_first_answer_ms: t.timeToFirstAnswerMs } : {}),
-    },
-  });
+    metadata: baseMetadata,
+  }];
+  if (t.mode === "home" && t.moodAlone) {
+    events.push({
+      event_type: "answered_from_mood_alone",
+      duration_ms: t.durationMs,
+      value: 1,
+      source: t.source,
+      ranking_config_version: t.rankingConfigVersion,
+      metadata: { mode: t.mode, result_count: t.resultCount },
+    });
+  }
+  if (t.mode === "home" && t.timeToFirstAnswerMs !== undefined) {
+    events.push({
+      event_type: "time_to_first_answer",
+      duration_ms: t.timeToFirstAnswerMs,
+      value: t.resultCount,
+      source: t.source,
+      ranking_config_version: t.rankingConfigVersion,
+      metadata: { mode: t.mode, search_duration_ms: t.durationMs },
+    });
+  }
+  return events;
+}
+
+export function trackSearch(t: SearchTelemetry): void {
+  for (const event of searchTelemetryEvents(t)) telemetry.track(event);
 }
 
 // FNV-1a — small, dependency-free hash to group identical stacks without sending

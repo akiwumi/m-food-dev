@@ -4,7 +4,7 @@ import { cleanText } from "../../security";
 import type { Profile } from "../../store";
 
 export function QuickTasteStartScreen({
-  mood, setMood, energy, setEnergy, time, setTime, profile, save, signin,
+  mood, setMood, time, setTime, profile, save, signin,
 }: {
   mood: string;
   setMood: (value: string) => void;
@@ -43,12 +43,6 @@ export function QuickTasteStartScreen({
             ))}
           </div>
         </fieldset>
-
-        <label className="quick-field">
-          <b>Energy: {energy}%</b>
-          <input type="range" min={0} max={100} value={energy} onChange={event => setEnergy(+event.target.value)} />
-          <div className="range-label"><span>Keep it easy</span><span>I'm up for more</span></div>
-        </label>
 
         <fieldset className="quick-field">
           <legend>Time</legend>
