@@ -204,6 +204,19 @@ body,.app{background:linear-gradient(180deg,#dceef2 0%,#eaf4f3 30%,#f5fbfa 100%)
 .mood-pills button{border:1px solid var(--line);background:rgba(255,255,255,.7);border-radius:99px;padding:9px 16px;font-size:13px;font-weight:600;box-shadow:var(--shadow-sm);transition:all .14s ease}
 .mood-pills button.active{background:var(--blue)!important;color:var(--ink)!important;border-color:var(--blue)!important;box-shadow:0 6px 18px rgba(100,185,220,.4)!important;transform:scale(1.04)}
 
+/* Check-in hint under the mood pills — mood alone is enough */
+.checkin-hint{font-size:12.5px;color:var(--muted);margin:12px 0 0;line-height:1.45}
+
+/* Refine disclosure — time/energy/meal/cuisine/diet, off the critical path */
+.home-refine{margin-top:16px;border-top:1px solid var(--line);padding-top:6px}
+.home-refine>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;padding:10px 2px;font-size:13px;font-weight:700;color:var(--blue-deep)}
+.home-refine>summary::-webkit-details-marker{display:none}
+.home-refine>summary span{font-weight:500;color:var(--muted);font-size:12px}
+.home-refine>summary::after{content:"";margin-left:auto;width:8px;height:8px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);transition:transform .18s ease}
+.home-refine[open]>summary::after{transform:rotate(-135deg)}
+.home-refine-body{padding-top:4px}
+.home-refine-body .section-label:first-child{margin-top:0}
+
 /* Time number-pill grid, faithful clone of the 10·20·30·40·50 selector */
 .time-pills{display:flex;gap:8px}
 .time-pills button{flex:1;padding:15px 4px;border-radius:18px;border:0;background:rgba(255,255,255,.75);font-size:16px;font-weight:800;color:var(--muted);box-shadow:var(--shadow-sm);transition:all .15s ease}
@@ -273,6 +286,13 @@ body,.app{background:linear-gradient(180deg,#dceef2 0%,#eaf4f3 30%,#f5fbfa 100%)
 .food-profile .fp-intro>span{font-size:10px;letter-spacing:.2em;font-weight:700;color:var(--blue-deep)}
 .food-profile .fp-intro h1{font-size:30px;font-weight:800;margin:6px 0 8px;letter-spacing:-.02em}
 .food-profile .fp-intro p{margin:0;color:var(--muted);line-height:1.6;font-size:14px}
+.food-profile .fp-completion{margin:14px 0 6px;background:var(--white,#fff);border:1px solid rgba(0,0,0,.06);border-radius:22px;padding:16px 18px;box-shadow:var(--shadow)}
+.food-profile .fp-completion-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.food-profile .fp-completion-head b{font-size:14.5px;font-weight:800;letter-spacing:-.01em}
+.food-profile .fp-completion-head span{font-size:12px;color:var(--muted);font-weight:600;white-space:nowrap}
+.food-profile .fp-completion-bar{height:8px;border-radius:99px;background:rgba(0,0,0,.07);margin:10px 0 10px;overflow:hidden}
+.food-profile .fp-completion-bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--blue),var(--blue-deep));transition:width .35s ease}
+.food-profile .fp-completion p{margin:0;color:var(--muted);font-size:12.5px;line-height:1.5}
 .food-profile .fp-section{margin-top:22px}
 .food-profile .fp-section-title{font-size:13px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--blue-deep);margin:0 2px 10px}
 .food-profile .fp-q{background:var(--white,#fff);border:1px solid rgba(0,0,0,.06);border-radius:22px;padding:18px;margin-bottom:12px;box-shadow:var(--shadow)}
@@ -1099,10 +1119,7 @@ button.ghost{border:1px solid var(--line);background:transparent;color:var(--mut
   }
   .home-checkin{
     margin-top:96px!important;
-    display:grid;
-    grid-template-columns:minmax(0,1.05fr) minmax(360px,.95fr);
-    gap:20px 40px;
-    align-items:start;
+    max-width:640px;
     padding:40px!important;
     border:0!important;
     border-radius:0!important;
@@ -1117,27 +1134,7 @@ button.ghost{border:1px solid var(--line);background:transparent;color:var(--mut
     font-weight:800;
     letter-spacing:.08em;
   }
-  .home-checkin .section-label:nth-of-type(n+3){margin-top:18px!important}
-  .home-checkin>.section-label:nth-of-type(1),
-  .home-checkin>.mood-pills,
-  .home-checkin>.section-label:nth-of-type(3),
-  .home-checkin>input[type=range],
-  .home-checkin>.range-label:nth-of-type(2),
-  .home-checkin>.section-label:nth-of-type(4),
-  .home-checkin>.meal-category-pills,
-  .home-checkin>.meal-type-hint{
-    grid-column:1;
-  }
-  .home-checkin>.section-label:nth-of-type(2),
-  .home-checkin>.time-pills,
-  .home-checkin>.range-label:nth-of-type(1),
-  .home-checkin>.section-label:nth-of-type(5),
-  .home-checkin>select:nth-of-type(1),
-  .home-checkin>.section-label:nth-of-type(6),
-  .home-checkin>select:nth-of-type(2),
-  .home-checkin>.primary{
-    grid-column:2;
-  }
+  .home-checkin .section-label:nth-of-type(n+2){margin-top:18px!important}
   .mood-pills,.meal-category-pills{gap:10px}
   .mood-pills button,.meal-category-pills button{padding:10px 15px}
   .mood-pills button.active,.meal-category-pills button.active,.time-pills button.active{

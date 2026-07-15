@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { bundledRecipes } from "../bundledRecipes";
 import { recommend, RANKING_CONFIG_VERSION, type LearnedSignals } from "../recommendation";
 import { finalizeSearchResults } from "../searchResults";
@@ -37,6 +37,14 @@ export function useHomeFeed(
   const [hasFetched, setHasFetched] = useState(false);
   const [moreOffset, setMoreOffset] = useState(0);
   const [recipeNonce, setRecipeNonce] = useState(0); // bump to force a re-fetch (Retry)
+
+  // North-star instrumentation (concept-recovery Phase 0):
+  //  • answered-from-mood-alone — did the session reach a pick without opening
+  //    Refine / touching a non-mood control? Sticky for the session.
+  //  • time-to-first-answer — app open → first recipe on screen, reported once.
+  const refineTouchedRef = useRef(false);
+  const appOpenedAtRef = useRef(performance.now());
+  const firstAnswerReportedRef = useRef(false);
 
   const ACCESSORY_TYPES = useMemo(() => new Set(["dessert", "desserts", "snack", "snacks", "drink", "drinks", "beverage", "beverages", "sweet", "sweets"]), []);
   // Ranks any candidate pool for the current check-in: applies the home filters as
@@ -99,15 +107,22 @@ export function useHomeFeed(
         }
         // Telemetry: home check-in is a search. On the local-fallback path the user
         // sees `localFallback`, so report its size as the result count.
+        const resultCount = list?.length ? list.length : localFallback.length;
+        // Report time-to-first-answer only on the first answer that actually put a
+        // recipe on screen this session (an empty result isn't an "answer").
+        const firstAnswer = resultCount > 0 && !firstAnswerReportedRef.current;
+        if (firstAnswer) firstAnswerReportedRef.current = true;
         trackSearch({
           mode: "home",
           durationMs: Math.round(performance.now() - startedAt),
-          resultCount: list?.length ? list.length : localFallback.length,
+          resultCount,
           source: list?.length ? "spoonacular" : localFallback.length ? "local" : "none",
           aiAttempted: aiCuration,
           aiSucceeded: aiCuration && !!list?.length,
           fallbackUsed: !list?.length,
           rankingConfigVersion: RANKING_CONFIG_VERSION,
+          moodAlone: !refineTouchedRef.current,
+          ...(firstAnswer ? { timeToFirstAnswerMs: Math.round(performance.now() - appOpenedAtRef.current) } : {}),
         });
       })
       .finally(() => { if (!cancelled) { setCurating(false); setHasFetched(true); } });
@@ -156,9 +171,23 @@ export function useHomeFeed(
   };
   const retry = () => setRecipeNonce(n => n + 1);
 
+  // Any control other than mood is a "Refine": touching one means this session's
+  // answer was NOT reached from mood alone. Wrap the exposed setters so the flag
+  // is set at the source, wherever the control lives.
+  const markRefine = () => { refineTouchedRef.current = true; };
+  const setEnergyTouched = useCallback((v: number) => { markRefine(); setEnergy(v); }, []);
+  const setTimeTouched = useCallback((v: number) => { markRefine(); setTime(v); }, []);
+  const setMealCategoryTouched = useCallback((v: string) => { markRefine(); setMealCategory(v); }, []);
+  const setCuisineTouched = useCallback((v: string) => { markRefine(); setCuisine(v); }, []);
+  const setHomeDietTouched = useCallback((v: string) => { markRefine(); setHomeDiet(v); }, []);
+
   return {
-    mood, setMood, energy, setEnergy, time, setTime,
-    mealCategory, setMealCategory, cuisine, setCuisine, homeDiet, setHomeDiet,
+    mood, setMood,
+    energy, setEnergy: setEnergyTouched,
+    time, setTime: setTimeTouched,
+    mealCategory, setMealCategory: setMealCategoryTouched,
+    cuisine, setCuisine: setCuisineTouched,
+    homeDiet, setHomeDiet: setHomeDietTouched,
     results, setResults, ranked, curating, hasFetched, loadMore,
     live: aiRanked !== null || deterministicLive !== null,
     curated: aiRanked !== null,

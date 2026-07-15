@@ -135,7 +135,7 @@ export default function App() {
       setProfile(prev => ({ ...prev, name: prev.name || "Test Cook", email: prev.email || "test@example.com", onboarded: true, accountCreated: true }));
       setEntry("app");
     } else if (testState === "onboarding") {
-      setProfile(prev => ({ ...prev, name: prev.name || "Test Cook", email: prev.email || "test@example.com", accountCreated: true }));
+      setProfile(prev => ({ ...prev, name: prev.name || "Test Cook", email: prev.email || "test@example.com", accountCreated: true, path: "quick" }));
       setEntry("onboarding");
     } else if (testState === "quick-start") {
       setEntry("quick-start");
@@ -257,7 +257,8 @@ export default function App() {
       // Older accounts are returning users whose data is missing → skip re-onboarding.
       const accountAgeMs = Date.now() - new Date(session.user.created_at).getTime();
       if (accountAgeMs < 10 * 60 * 1000) {
-        setProfile({ ...defaultProfile, email: session.user.email ?? "", accountCreated: true });
+        // New signups get the quick gate (~7 items); the rest is progressive.
+        setProfile({ ...defaultProfile, email: session.user.email ?? "", accountCreated: true, path: "quick" });
         setEntry("onboarding");
       } else {
         setEntry(prev => (prev === "welcome" || prev === "login") ? "app" : prev);

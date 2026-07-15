@@ -61,6 +61,7 @@ export type OnboardingQuestion = {
   highLabel?: string;
   allowCustom?: boolean;    // multi: let the user add their own
   optional?: boolean;
+  quick?: boolean;          // part of the ~7-item quick path (the only pre-value gate)
   showIf?: (p: Profile) => boolean;  // conditionally render this question
 };
 
@@ -100,7 +101,7 @@ export const onboardingQuestions: OnboardingQuestion[] = [
   // ──────────────────────────────────────────────────────── Section 0: Moods
   {
     id: "cooking-moods", section: "Your moods", eyebrow: "HOW YOU COOK",
-    title: "Which cooking moods feel like you?", type: "moodcards", key: "cookingMoods",
+    title: "Which cooking moods feel like you?", type: "moodcards", key: "cookingMoods", quick: true,
     text: "These are the headspaces you cook from. Pick the ones you recognise, you'll check in with one each time you open Moody.",
   },
   {
@@ -141,7 +142,7 @@ export const onboardingQuestions: OnboardingQuestion[] = [
   // ────────────────────────────────────────────────── Section 1: Food & safety
   {
     id: "diet", section: "Food & safety", eyebrow: "YOUR DIETARY LIFESTYLE",
-    title: "How do you usually eat?", type: "single", key: "diet",
+    title: "How do you usually eat?", type: "single", key: "diet", quick: true,
     text: "Pick the pattern closest to your everyday eating. This sets a baseline, never a cage.",
     options: ["Omnivore", "Flexitarian", "Pescatarian", "Vegetarian", "Vegan", "Keto / Low Carb", "Paleo", "Raw Food"],
   },
@@ -154,13 +155,13 @@ export const onboardingQuestions: OnboardingQuestion[] = [
   },
   {
     id: "allergies", section: "Food & safety", eyebrow: "SAFETY FIRST",
-    title: "Allergies and intolerances", type: "grouped-multi", key: "allergies",
+    title: "Allergies and intolerances", type: "grouped-multi", key: "allergies", quick: true,
     text: "Select anything that must never appear in a meal. These become hard safety filters that are never relaxed.",
     groups: ALLERGY_GROUPS, allowCustom: true, optional: true,
   },
   {
     id: "dislikes", section: "Food & safety", eyebrow: "HARD NO'S",
-    title: "Anything you just won't eat?", type: "multi", key: "dislikedIngredients",
+    title: "Anything you just won't eat?", type: "multi", key: "dislikedIngredients", quick: true,
     text: "Not allergies, just strong dislikes. Moody will steer recipes around these wherever it can.",
     options: ["Mushrooms", "Olives", "Cilantro", "Blue cheese", "Organ meats", "Anchovies", "Tofu", "Beetroot", "Oysters", "Raw tomato", "Raw onion", "Coconut", "Bitter flavours", "Fermented foods", "Game meat", "Fennel / anise", "Okra / slimy textures", "Very sour food", "Lamb / mutton"],
     allowCustom: true, optional: true,
@@ -208,7 +209,7 @@ export const onboardingQuestions: OnboardingQuestion[] = [
   },
   {
     id: "cuisines", section: "Your palate", eyebrow: "FLAVOR WORLDS",
-    title: "Which cuisines sound good?", type: "grouped-multi", key: "cuisines",
+    title: "Which cuisines sound good?", type: "grouped-multi", key: "cuisines", quick: true,
     text: "Gentle boosts toward the kitchens you love. Never rigid rules.",
     groups: CUISINE_GROUPS,
   },
@@ -303,7 +304,7 @@ export const onboardingQuestions: OnboardingQuestion[] = [
   // ──────────────────────────────────────── Section 6: Kitchen, time & table
   {
     id: "skill", section: "Kitchen, time & table", eyebrow: "YOUR KITCHEN",
-    title: "How confident are you cooking?", type: "skillcards", key: "skill",
+    title: "How confident are you cooking?", type: "skillcards", key: "skill", quick: true,
     text: "This protects your energy and keeps suggestions in reach.",
   },
   {
@@ -328,7 +329,7 @@ export const onboardingQuestions: OnboardingQuestion[] = [
   },
   {
     id: "weeknight-time", section: "Kitchen, time & table", eyebrow: "YOUR TIME",
-    title: "How long for a weeknight dinner?", type: "single", key: "weeknightTime",
+    title: "How long for a weeknight dinner?", type: "single", key: "weeknightTime", quick: true,
     text: "Your realistic default, not your best-case.",
     options: ["15 min", "30 min", "45 min", "An hour+", "Depends on the day"],
   },
@@ -447,6 +448,36 @@ export const onboardingQuestions: OnboardingQuestion[] = [
     lowLabel: "Keep it familiar", highLabel: "Surprise me",
   },
 ];
+
+// The ~7-item quick path: the only gate before a user's first pick. Everything
+// else moves to progressive profiling (concept-recovery Phase 1).
+export const quickOnboardingQuestions: OnboardingQuestion[] = onboardingQuestions.filter(q => q.quick);
+
+// Questions a user should render on a given path. Quick path = the gate subset;
+// standard path = the full profile.
+export function questionsForPath(path: Profile["path"]): OnboardingQuestion[] {
+  return path === "quick" ? quickOnboardingQuestions : onboardingQuestions;
+}
+
+// Has a profile field been meaningfully answered? Arrays need ≥1 entry, objects
+// need ≥1 truthy value, numbers always count, strings must be non-empty.
+function isAnswered(value: ProfileValue): boolean {
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "number") return true;
+  if (value && typeof value === "object") return Object.values(value).some(Boolean);
+  return Boolean(value);
+}
+
+// Progressive-profiling meter: how much of the FULL food profile is filled,
+// across every onboarding key (deduped — some keys back several questions).
+// Drives the "Complete your food profile — N%" prompt.
+export function profileCompletion(profile: Profile): { percent: number; answered: number; total: number; remaining: OnboardingQuestion[] } {
+  const seen = new Set<OnboardingKey>();
+  const unique = onboardingQuestions.filter(q => (seen.has(q.key) ? false : (seen.add(q.key), true)));
+  const remaining = unique.filter(q => !isAnswered(profile[q.key]));
+  const answered = unique.length - remaining.length;
+  return { percent: Math.round((answered / unique.length) * 100), answered, total: unique.length, remaining };
+}
 
 // Ordered, de-duplicated list of section names for progress display.
 export const onboardingSections: string[] = onboardingQuestions.reduce<string[]>((acc, q) => {

@@ -76,7 +76,7 @@ export function SearchScreen({
   return <div className="screen">
     <TopBar title="Search recipes" />
     <DailySuggestionCarousel suggestions={suggestions} onPick={pickSuggestion} />
-    <div className="ai-search-intro"><Search size={15} /><p>Search with structured filters. Your saved diet, allergies, and exclusions always remain protected.</p></div>
+    <div className="ai-search-intro"><Search size={15} /><p>Just say what you want tonight. Moody reads your mood and keeps your saved diet, allergies, and exclusions protected. Add filters only if you want fine control.</p></div>
     <div className="filter-block">
       <span className="filter-label">How are you feeling?</span>
       <div className="choice">
@@ -90,7 +90,7 @@ export function SearchScreen({
     </form>
     <div className="search-actions">
       <button className={"filter-toggle" + (showFilters ? " open" : "")} onClick={() => setShowFilters(v => !v)}>
-        <Settings2 size={15} /> Filters{activeFilterCount ? ` · ${activeFilterCount}` : ""}
+        <Settings2 size={15} /> Advanced{activeFilterCount ? ` · ${activeFilterCount}` : ""}
       </button>
       <button className="primary search-go" onClick={run}>Search <ArrowRight size={15} /></button>
     </div>
