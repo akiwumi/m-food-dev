@@ -2387,14 +2387,17 @@ button.ghost{border:1px solid var(--line);background:transparent;color:var(--mut
 .moody-fab:hover{transform:scale(1.06)}
 .moody-fab.hidden{opacity:0;pointer-events:none;transform:scale(.8)}
 .moody-chat-scrim{position:fixed;inset:0;z-index:70;background:rgba(15,25,28,.42);backdrop-filter:blur(3px);display:flex;align-items:flex-end;justify-content:center}
-.moody-chat{width:100%;max-width:520px;max-height:82vh;height:82vh;background:var(--bg2,#eef4f3);border-radius:26px 26px 0 0;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 -18px 50px rgba(20,40,45,.28);animation:moody-rise .24s ease}
+.moody-chat{width:100%;max-width:520px;max-height:82vh;height:82vh;background:var(--bg2,#eef4f3);border-radius:26px 26px 0 0;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 -18px 50px rgba(20,40,45,.28);animation:moody-rise .24s ease;will-change:transform}
 @keyframes moody-rise{from{transform:translateY(24px);opacity:.4}to{transform:translateY(0);opacity:1}}
-.moody-chat-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;background:var(--white);border-bottom:1px solid var(--line)}
+.moody-chat-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;background:var(--white);border-bottom:1px solid var(--line);cursor:grab;touch-action:none;user-select:none}
+.moody-chat.dragging .moody-chat-head{cursor:grabbing}
 .moody-chat-id{display:flex;align-items:center;gap:11px}
 .moody-chat-avatar{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(145deg,#a8dce8,#5baec5);color:#fff;box-shadow:var(--shadow-sm)}
 .moody-chat-id b{display:block;font-size:15px;font-weight:800;letter-spacing:-.01em}
 .moody-chat-id small{font-size:11.5px;color:var(--muted)}
-.moody-chat-head>button{border:0;background:transparent;color:var(--muted);display:grid;place-items:center;cursor:pointer;width:36px;height:36px;border-radius:12px}
+.moody-chat-actions{display:flex;align-items:center;gap:4px}
+.moody-chat-actions button{border:0;background:transparent;color:var(--muted);display:grid;place-items:center;cursor:pointer;width:36px;height:36px;border-radius:12px}
+.moody-chat-actions button:hover{background:var(--bg2,#eef4f3);color:var(--ink)}
 .moody-chat-body{flex:1;overflow-y:auto;padding:16px 16px 4px;display:flex;flex-direction:column;gap:12px}
 .moody-msg{display:flex;flex-direction:column;max-width:86%}
 .moody-msg.user{align-self:flex-end;align-items:flex-end}

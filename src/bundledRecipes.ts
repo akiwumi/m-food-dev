@@ -68,7 +68,7 @@ export const bundledRecipes: Recipe[] = [
   {
     id: "bundled-black-bean-tacos",
     title: "Smoky Black Bean Tacos",
-    image: "https://www.themealdb.com/images/media/meals/21yc5s1760524759.jpg",
+    image: "https://food55.com/thumb/768/black-bean-corn-tacos.webp",
     time: 20, difficulty: "Easy", calories: 380,
     moods: ["Happy", "Celebratory", "Energised"],
     reason: "Fast, fun and shareable — minimal cooking, maximum flavour.",

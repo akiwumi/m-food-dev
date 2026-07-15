@@ -1,7 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Sparkles, X, ArrowUp, Clock3, ShieldCheck, ChevronRight } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { Sparkles, X, ArrowUp, Clock3, ShieldCheck, ChevronRight, Trash2 } from "lucide-react";
 import { callFn } from "../api/backend";
 import { FALLBACK_FOOD } from "./photos";
+import { nextMoodyDragOffset, type MoodyDragPoint, type MoodyDragRect } from "../moodyDrag";
 import { profileDrip } from "../progressiveProfile";
 import { QuestionField } from "../screens/onboarding/QuestionField";
 import type { OnboardingKey, ProfileValue } from "../onboarding";
@@ -58,7 +59,16 @@ export function MoodyChat({ profile, mood, picks, candidates, cookedCount = 0, s
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [profileDripDismissed, setProfileDripDismissed] = useState(false);
+  const [dragOffset, setDragOffset] = useState<MoodyDragPoint>({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
+  const chatRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const chatVersionRef = useRef(0);
+  const dragRef = useRef<{
+    startOffset: MoodyDragPoint;
+    startPointer: MoodyDragPoint;
+    startRect: MoodyDragRect;
+  } | null>(null);
   const drip = saveProfile && !profileDripDismissed ? profileDrip(profile, cookedCount) : null;
 
   // Seed the proactive opener the first time the sheet is opened (recomputed then
@@ -74,9 +84,61 @@ export function MoodyChat({ profile, mood, picks, candidates, cookedCount = 0, s
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, loading]);
 
+  useEffect(() => {
+    if (open) setDragOffset({ x: 0, y: 0 });
+  }, [open]);
+
+  useEffect(() => {
+    if (!dragging) return;
+
+    const move = (event: PointerEvent) => {
+      const drag = dragRef.current;
+      if (!drag) return;
+      setDragOffset(nextMoodyDragOffset({
+        ...drag,
+        pointer: { x: event.clientX, y: event.clientY },
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+      }));
+    };
+    const end = () => {
+      dragRef.current = null;
+      setDragging(false);
+    };
+
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+    };
+  }, [dragging]);
+
+  const beginDrag = (event: ReactPointerEvent<HTMLElement>) => {
+    if ((event.target as HTMLElement).closest("button")) return;
+    const rect = chatRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    event.preventDefault();
+    dragRef.current = {
+      startOffset: dragOffset,
+      startPointer: { x: event.clientX, y: event.clientY },
+      startRect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
+    };
+    setDragging(true);
+  };
+
+  const resetChat = () => {
+    chatVersionRef.current += 1;
+    setInput("");
+    setLoading(false);
+    setMessages([{ role: "assistant", content: proactiveOpener(mood, picks) }]);
+  };
+
   const send = async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || loading) return;
+    const chatVersion = chatVersionRef.current;
     const history = messages.map(m => ({ role: m.role, content: m.content }));
     setMessages(prev => [...prev, { role: "user", content: trimmed }]);
     setInput("");
@@ -92,6 +154,7 @@ export function MoodyChat({ profile, mood, picks, candidates, cookedCount = 0, s
           candidates: candidates.slice(0, 30).map(r => ({ id: r.id, title: r.title, cuisine: r.cuisine, time: r.time, ingredients: r.ingredients })),
         },
       });
+      if (chatVersion !== chatVersionRef.current) return;
       if (reply.error || !reply.message) {
         setMessages(prev => [...prev, { role: "assistant", content: "I couldn't think that through just now. Give me another try in a moment." }]);
       } else {
@@ -101,11 +164,12 @@ export function MoodyChat({ profile, mood, picks, candidates, cookedCount = 0, s
         setMessages(prev => [...prev, { role: "assistant", content: reply.message!, recipe }]);
       }
     } catch {
+      if (chatVersion !== chatVersionRef.current) return;
       // callFn throws when the backend isn't configured or the user isn't signed
       // in — Moody needs a real session to protect the API key.
       setMessages(prev => [...prev, { role: "assistant", content: "I can't reach my kitchen brain right now. Make sure you're signed in and online, then try again." }]);
     } finally {
-      setLoading(false);
+      if (chatVersion === chatVersionRef.current) setLoading(false);
     }
   };
 
@@ -121,13 +185,23 @@ export function MoodyChat({ profile, mood, picks, candidates, cookedCount = 0, s
 
       {open && (
         <div className="moody-chat-scrim" onClick={() => setOpen(false)}>
-          <div className="moody-chat" role="dialog" aria-label="Moody chat" onClick={e => e.stopPropagation()}>
-            <header className="moody-chat-head">
+          <div
+            className={"moody-chat" + (dragging ? " dragging" : "")}
+            role="dialog"
+            aria-label="Moody chat"
+            ref={chatRef}
+            style={{ transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)` }}
+            onClick={e => e.stopPropagation()}
+          >
+            <header className="moody-chat-head" onPointerDown={beginDrag} title="Drag to move">
               <div className="moody-chat-id">
                 <span className="moody-chat-avatar"><Sparkles size={18} /></span>
                 <div><b>Moody</b><small>Your dinner co-pilot</small></div>
               </div>
-              <button aria-label="Close" onClick={() => setOpen(false)}><X size={20} /></button>
+              <div className="moody-chat-actions">
+                <button aria-label="Clear Moody chat" title="Clear chat" onClick={resetChat}><Trash2 size={18} /></button>
+                <button aria-label="Close" onClick={() => setOpen(false)}><X size={20} /></button>
+              </div>
             </header>
 
             <div className="moody-chat-body" ref={scrollRef}>
