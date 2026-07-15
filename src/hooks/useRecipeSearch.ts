@@ -10,7 +10,7 @@ import type { Recipe } from "../data";
 import type { Profile } from "../store";
 import type { SearchRequest, Page } from "../appTypes";
 
-type MoodySearchReply = { message?: string; recipeId?: string; recipe?: Recipe | null; error?: string };
+type MoodySearchReply = { message?: string; recipeId?: string; recipe?: Recipe | null; recipes?: Recipe[]; error?: string };
 
 // Structured recipe search: request/results state, the abort-disciplined search
 // runner (H5 — runSearch stays a plain per-render function so pagination reads
@@ -74,9 +74,10 @@ export function useRecipeSearch(
             },
           });
           if (!isActiveSearch()) return;
-          const moodyPick = reply.recipe ?? (reply.recipeId ? offlineCandidates.find(r => r.id === reply.recipeId) ?? null : null);
-          if (moodyPick) {
-            const candidates = appendUniqueRecipes([moodyPick], offlineCandidates, Infinity);
+          const single = reply.recipe ?? (reply.recipeId ? offlineCandidates.find(r => r.id === reply.recipeId) ?? null : null);
+          const moodyPicks = reply.recipes?.length ? reply.recipes : (single ? [single] : []);
+          if (moodyPicks.length) {
+            const candidates = appendUniqueRecipes(moodyPicks, offlineCandidates, Infinity);
             const nextResults = takeUniqueBatch(candidates);
             setSearchCandidates(candidates);
             setSearchResults(nextResults);

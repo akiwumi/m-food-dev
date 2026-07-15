@@ -51,8 +51,8 @@ function systemPrompt(context: any): string {
   return [
     "You are Moody, a warm and concise dinner co-pilot built directly into the MoodFood app.",
     "You are NOT a general-purpose chatbot. You are an in-app assistant. You help users choose, find, or learn about meals that fit how they feel, their tastes, and their safety needs.",
-    "HOW YOU SHOW RECIPES: When you include a recipeId in your JSON response, the MoodFood app instantly displays a tappable recipe card in the chat. This is how you 'open', 'show', 'find', or 'recommend' a recipe. You are fully capable of showing any recipe from the catalog — just set its ID.",
-    "NEVER say you cannot open, navigate, or show recipes. You are integrated into the app and can always surface a recipe card by returning its ID.",
+    "HOW YOU SHOW RECIPES: The app AUTOMATICALLY displays several tappable recipe cards — the real catalog matches for the user's request — directly below your message. You do NOT need to list recipe names in your text; the cards do that. Write a short, warm intro to those matches (e.g. 'Here are a few chicken dinners that fit your mood:'). Optionally set recipeId to your single favourite of the candidates to lead with it.",
+    "NEVER say you cannot open, navigate, or show recipes, and NEVER say you found none when candidates are listed below — the app is showing the user those cards right now.",
     "HARD SAFETY RULES (never break):",
     allergies ? `- NEVER suggest anything containing these allergens: ${allergies}.` : "- Respect any allergens the user mentions.",
     diet ? `- Keep suggestions compatible with their diet: ${diet}.` : "",
@@ -213,10 +213,10 @@ Deno.serve(async (request) => {
         const sr = await fetch(`${SUPABASE_URL}/functions/v1/recipes`, {
           method: "POST",
           headers: { authorization: auth, "content-type": "application/json", apikey: SUPABASE_ANON_KEY },
-          body: JSON.stringify({ profile: body?.context?.profile ?? {}, query: foodQuery, mood: "Cozy", time: 180, relax: false }),
+          body: JSON.stringify({ profile: body?.context?.profile ?? {}, query: foodQuery, mood: "Cozy", time: 180, relax: true }),
           signal: AbortSignal.timeout(8_000),
         });
-        if (sr.ok) { const d = await sr.json(); searchedRecipes = Array.isArray(d?.recipes) ? d.recipes.slice(0, 5) : []; }
+        if (sr.ok) { const d = await sr.json(); searchedRecipes = Array.isArray(d?.recipes) ? d.recipes.slice(0, 8) : []; }
       } catch { /* ignore — fall through to pre-fetched candidates */ }
     }
 
@@ -240,10 +240,17 @@ Deno.serve(async (request) => {
     const selectedRecipeId = rawRecipeId && allCandidateIds.has(rawRecipeId) ? rawRecipeId : undefined;
     console.log(`[ai-gateway] reply: rawRecipeId=${rawRecipeId} valid=${!!selectedRecipeId}`);
     const reply = typeof parsed.message === "string" ? parsed.message : "I couldn't find a suitable catalog recipe right now.";
-    // Return the full recipe object when it came from the gateway search so the
-    // frontend can render the card even if it wasn't in the local catalog.
-    const recipePayload = selectedRecipeId ? (searchedRecipes.find((r: any) => r.id === selectedRecipeId) ?? null) : null;
-    return Response.json({ provider: ai.provider, message: reply, recipeId: selectedRecipeId, recipe: recipePayload }, { headers: headers(origin) });
+    // The recipe CARDS come from the actual search, not from the model echoing an
+    // ID back — that echo was unreliable (it often returned recipeId:null and the
+    // chat showed no card at all). We attach the real search results as `recipes`,
+    // leading with the model's pick when it named a valid one, so Moody surfaces
+    // several tappable recipes whenever the search found any.
+    const cards = searchedRecipes.slice(0, 6);
+    const orderedCards = selectedRecipeId
+      ? [...cards.filter((r: any) => r.id === selectedRecipeId), ...cards.filter((r: any) => r.id !== selectedRecipeId)]
+      : cards;
+    const recipePayload = selectedRecipeId ? (searchedRecipes.find((r: any) => r.id === selectedRecipeId) ?? null) : (orderedCards[0] ?? null);
+    return Response.json({ provider: ai.provider, message: reply, recipeId: selectedRecipeId ?? orderedCards[0]?.id, recipe: recipePayload, recipes: orderedCards }, { headers: headers(origin) });
   } catch (_err) {
     return Response.json({ error: "AI request failed" }, { status: 502, headers: headers(origin) });
   }

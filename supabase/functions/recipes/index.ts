@@ -441,16 +441,23 @@ Deno.serve(async (request) => {
     }
     return true;
   };
-  const preferIntent = (filtered: any[], cap: number): any[] => {
-    if (!hasIntent) return filtered.slice(0, cap);
-    const matched = filtered.filter(matchesIntent);
-    return (matched.length >= 3 ? matched : filtered).slice(0, cap);
+  const backupOffset = num(body?.offset, 0, 900) ?? 0;
+  const preferIntent = (filtered: any[], cap: number, offset = 0): any[] => {
+    const pool = hasIntent
+      ? (() => { const matched = filtered.filter(matchesIntent); return matched.length >= 3 ? matched : filtered; })()
+      : filtered;
+    return pool.slice(offset, offset + cap);
   };
   const buildBackup = async (): Promise<{ source: "cache" | "themealdb"; recipes: any[] }> => {
     try {
-      const rows = await getCachedRecipes(moodTag, dietTags, 60);
+      const rows = await getCachedRecipes(moodTag, dietTags, 120);
       const cached = applyBackupFilters(rows.map(r => r.raw_data).filter(Boolean));
-      if (cached.length >= 6) return { source: "cache", recipes: preferIntent(cached, 20) };
+      // Page through the cache on "show more" (offset) so repeat clicks surface new
+      // rows instead of the same set; falls through to TheMealDB when it runs out.
+      if (cached.length >= 6) {
+        const paged = preferIntent(cached, 20, backupOffset);
+        if (paged.length) return { source: "cache", recipes: paged };
+      }
     } catch (e) {
       console.warn(`[recipes] backup cache read failed: ${e instanceof Error ? e.message : String(e)}`);
     }

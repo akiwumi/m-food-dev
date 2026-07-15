@@ -3,12 +3,14 @@
 // complexSearch parameters in the `recipes` edge function (which also maps the
 // profile's richer cuisine labels onto the same set).
 
-// Spoonacular `cuisine` values.
+// Spoonacular `cuisine` values — curated down to the cuisines that reliably
+// return a full set of results. The thinly-populated ones (African, Cajun,
+// Caribbean, Eastern European, German, Irish, Jewish, Latin American, Nordic,
+// Southern, British, Vietnamese, bare "European") were removed because they
+// routinely came back near-empty and read as "the filter is broken".
 export const SPOON_CUISINES = [
-  "African", "Asian", "American", "British", "Cajun", "Caribbean", "Chinese",
-  "Eastern European", "European", "French", "German", "Greek", "Indian", "Irish",
-  "Italian", "Japanese", "Jewish", "Korean", "Latin American", "Mediterranean",
-  "Mexican", "Middle Eastern", "Nordic", "Southern", "Spanish", "Thai", "Vietnamese",
+  "American", "Italian", "Mexican", "Mediterranean", "French", "Greek", "Spanish",
+  "Chinese", "Japanese", "Korean", "Thai", "Indian", "Middle Eastern", "Asian",
 ];
 
 // Meal-time categories shown on home screen and in search filters.
