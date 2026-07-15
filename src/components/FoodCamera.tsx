@@ -4,14 +4,35 @@ import { ShieldCheck, Check, Camera, Search } from "lucide-react";
 import { readSafeImage } from "../security";
 import { makeFoodLog, flaggedAllergens, type FoodPhoto } from "../foodAnalysis";
 import { searchFoods, primaryServing, type NutritionFood } from "../nutrition";
+import { callFn } from "../api/backend";
 
 type Fields = { dish: string; calories: string; protein: string; carbs: string; fat: string; fiber: string };
 const EMPTY: Fields = { dish: "", calories: "", protein: "", carbs: "", fat: "", fiber: "" };
+type VisionAnalysis = Partial<{
+  dish: string;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  fiber: number;
+  allergens: string[];
+}>;
+type VisionReply = { analysis?: VisionAnalysis; error?: string };
 
-// Capture a meal photo, then log it with HONEST numbers only. Nothing is guessed
-// from the pixels: calories can be prefilled from the recipe you cooked, looked up
-// in the FatSecret food database, or typed in by hand — and blank means unknown,
-// not zero-guessed. See src/foodAnalysis.ts for the data model.
+function fieldsFromVision(analysis: VisionAnalysis | undefined, hint?: { recipeCalories?: number; recipeName?: string }): Fields {
+  return {
+    dish: typeof analysis?.dish === "string" && analysis.dish.trim() ? analysis.dish : hint?.recipeName ?? "",
+    calories: Number.isFinite(analysis?.calories) ? String(Math.round(analysis!.calories!)) : hint?.recipeCalories ? String(hint.recipeCalories) : "",
+    protein: Number.isFinite(analysis?.protein) ? String(Math.round(analysis!.protein!)) : "",
+    carbs: Number.isFinite(analysis?.carbs) ? String(Math.round(analysis!.carbs!)) : "",
+    fat: Number.isFinite(analysis?.fat) ? String(Math.round(analysis!.fat!)) : "",
+    fiber: Number.isFinite(analysis?.fiber) ? String(Math.round(analysis!.fiber!)) : "",
+  };
+}
+
+// Capture a meal photo. Moody tries to read the plate through ai-gateway; if that
+// is unavailable, the user can still use recipe calories, FatSecret lookup, or
+// manual entry. Source labels keep the provenance explicit.
 export function FoodCamera({
   label = "Log a meal with photo",
   onSave,
@@ -33,8 +54,11 @@ export function FoodCamera({
   const [form, setForm] = useState<Fields>(EMPTY);
   const [source, setSource] = useState<FoodPhoto["source"]>("manual");
   const [lookup, setLookup] = useState<{ loading: boolean; results: NutritionFood[] | null }>({ loading: false, results: null });
+  const [visionLoading, setVisionLoading] = useState(false);
+  const [visionError, setVisionError] = useState("");
+  const [visionAllergens, setVisionAllergens] = useState<string[]>([]);
 
-  const dishAllergens = hint?.allergens ?? [];
+  const dishAllergens = visionAllergens.length ? visionAllergens : hint?.allergens ?? [];
   const flagged = flaggedAllergens(dishAllergens, allergies);
 
   const pick = async (file?: File) => {
@@ -48,7 +72,28 @@ export function FoodCamera({
       });
       setSource(hint?.recipeCalories ? "recipe" : "manual");
       setLookup({ loading: false, results: null });
+      setVisionError("");
+      setVisionAllergens([]);
       setImage(img);
+      setVisionLoading(true);
+      try {
+        const reply = await callFn<VisionReply>("ai-gateway", {
+          task: "analyze-food",
+          image: img,
+          hint: { recipeName: hint?.recipeName, recipeCalories: hint?.recipeCalories, allergens: allergies },
+        });
+        if (reply.analysis && !reply.error) {
+          setForm(fieldsFromVision(reply.analysis, hint));
+          setVisionAllergens(Array.isArray(reply.analysis.allergens) ? reply.analysis.allergens : []);
+          setSource("vision");
+        } else {
+          setVisionError("Moody could not read this photo. You can still look it up or enter the numbers.");
+        }
+      } catch {
+        setVisionError("Moody could not read this photo. You can still look it up or enter the numbers.");
+      } finally {
+        setVisionLoading(false);
+      }
     } catch {
       /* unreadable image, stay on the trigger */
     }
@@ -83,7 +128,7 @@ export function FoodCamera({
     setLookup({ loading: false, results: null });
   };
 
-  const reset = () => { setImage(null); setForm(EMPTY); setLookup({ loading: false, results: null }); };
+  const reset = () => { setImage(null); setForm(EMPTY); setLookup({ loading: false, results: null }); setVisionError(""); setVisionAllergens([]); setVisionLoading(false); };
 
   const save = () => {
     if (!image) return;
@@ -133,6 +178,9 @@ export function FoodCamera({
             </div>
           )}
 
+          {visionLoading && <p className="flf-source">Moody is reading the plate…</p>}
+          {visionError && <p className="flf-source">{visionError}</p>}
+
           <div className="flf-macros">
             <NumField label="Calories" unit="kcal" value={form.calories} onChange={v => set("calories", v)} />
             <NumField label="Protein" unit="g" value={form.protein} onChange={v => set("protein", v)} />
@@ -150,6 +198,7 @@ export function FoodCamera({
 
           <p className="flf-source">
             {source === "recipe" && "Calories from this recipe. Look up or edit the rest below."}
+            {source === "vision" && "Moody estimated this from the photo. Check and edit anything that looks off."}
             {source === "database" && "Nutrition from the FatSecret food database, per serving."}
             {source === "manual" && "Enter what you know — leave the rest blank. Nothing is guessed from the photo."}
           </p>

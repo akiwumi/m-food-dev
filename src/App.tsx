@@ -120,11 +120,10 @@ export default function App() {
   const [viewingMember, setViewingMember] = useState<string | undefined>(undefined);
   const { saved, setSaved, diary, setDiary, groceries, setGroceries, posts, setPosts, diners, setDiners, selectedDiners, setSelectedDiners, eaterCount, setEaterCount, sharedProfile } = useHouseholdCollections(profile);
   const { aiCuration, setAiCuration, learnedSignals, setLearnedSignals, behavioralConsent, cuisineSignal, moodSignal, suppressedCuisines, setSuppressedCuisines, appliedSignals } = useLearningSignals(entry, page, diary);
-  // AI features are a Pro perk (strategy §6.5): the stored preference survives,
-  // but AI curation only takes effect while the trial/subscription is live.
-  // Free users keep the deterministic ranking — the core never needs AI.
+  // Concept recovery Phase 3: Moody curation is on by default for the home feed.
+  // The stored preference still lets users turn it off.
   const pro = isPro(profile);
-  const aiCurationActive = aiCuration && pro;
+  const aiCurationActive = aiCuration;
 
   // Browser automation cannot use javascript: URLs to mutate localStorage.
   // Development-only test states provide explicit, repeatable access instead.
@@ -392,16 +391,16 @@ export default function App() {
       openRecipe={(recipe) => {
         setSelected(recipe);
         setProfile({ ...profile, firstPickViewed: true });
-        setEntry("subscription");
+        setEntry("account");
       }}
       continueToTrial={() => {
         setProfile({ ...profile, firstPickViewed: true });
-        setEntry("subscription");
+        setEntry("account");
       }}
     />
   );
-  if (entry === "onboarding") return <Onboarding profile={profile} save={setProfile} finish={(next) => { setProfile({ ...next, onboarded: true }); clearStored("moodfood-onboarding-step"); setEntry("account"); }} />;
-  if (entry === "account") return <AccountSetupScreen profile={profile} back={() => setEntry("onboarding")} simulate={testState === "account" || testState === "onboarding"} submit={(patch, opts) => {
+  if (entry === "onboarding") return <Onboarding profile={profile} save={setProfile} finish={(next) => { setProfile({ ...next, onboarded: true, quickStartCompleted: true }); clearStored("moodfood-onboarding-step"); setEntry("first-pick"); }} />;
+  if (entry === "account") return <AccountSetupScreen profile={profile} back={() => setEntry(profile.firstPickViewed || profile.quickStartCompleted ? "first-pick" : "onboarding")} simulate={testState === "account" || testState === "onboarding"} submit={(patch, opts) => {
     const confirmed = !!opts?.hasSession; // session present = email confirmation is OFF, so they're in
     const next = { ...profile, ...patch, accountCreated: true, emailVerified: confirmed };
     setProfile(next);
@@ -429,7 +428,7 @@ export default function App() {
       {page === "pantry" && <PantryScreen items={profile.pantryStaples} setItems={items => setProfile(p => ({ ...p, pantryStaples: items }))} addToGrocery={item => setGroceries(v => v.includes(item) ? v : [...v, item])} />}
       {page === "planner" && <PlannerScreen open={open} />}
       {page === "insights" && <InsightsScreen diary={diary} />}
-      {page === "settings" && <SettingsScreen profile={profile} save={setProfile} go={go} logout={() => { void authSignOut(); setEntry("welcome"); }} aiCuration={aiCuration} setAiCuration={setAiCuration} learnedSignals={learnedSignals} setLearnedSignals={setLearnedSignals} behavioralConsent={behavioralConsent} pro={pro} />}
+      {page === "settings" && <SettingsScreen profile={profile} save={setProfile} go={go} logout={() => { void authSignOut(); setEntry("welcome"); }} aiCuration={aiCuration} setAiCuration={setAiCuration} learnedSignals={learnedSignals} setLearnedSignals={setLearnedSignals} behavioralConsent={behavioralConsent} />}
       {page === "privacy" && <DataPrivacyScreen signal={cuisineSignal} moodSignal={moodSignal} suppressed={suppressedCuisines} learningOn={learnedSignals} onForget={c => setSuppressedCuisines(prev => [...new Set([...prev, c])])} onRestore={c => setSuppressedCuisines(prev => prev.filter(x => x !== c))} pro={pro} />}
       {page === "favorites" && <LibraryScreen title="Saved recipes" source={safeRecipes.filter(r => saved.includes(r.id))} open={open} remove={r => setSaved(saved.filter(id => id !== r.id))} share={shareRecipe} />}
       {page === "import" && <ImportScreen />}

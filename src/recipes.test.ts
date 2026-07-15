@@ -11,6 +11,7 @@ describe("recipeProfilePayload", () => {
       diet: "Pescatarian",
       foodRelationship: "Food helps me feel grounded",
       comfortCues: ["Warm bowls"],
+      moodNeeds: { Tired: "soup, not baking" },
       sensoryCues: ["Bright"],
       textureAvoids: ["Mushy"],
     });
@@ -19,6 +20,7 @@ describe("recipeProfilePayload", () => {
       diet: "Pescatarian",
       foodRelationship: "Food helps me feel grounded",
       comfortCues: ["Warm bowls"],
+      moodNeeds: { Tired: "soup, not baking" },
       sensoryCues: ["Bright"],
       textureAvoids: ["Mushy"],
     });

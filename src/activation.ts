@@ -5,6 +5,11 @@ import { recommend, safeRecipes } from "./recommendation";
 export type QuickStartInput = {
   diet: string;
   allergies: string[];
+  dislikedIngredients?: string[];
+  skill?: string;
+  cuisines?: string[];
+  cookingMood?: string;
+  weeknightTime?: string;
 };
 
 export type ActivationPickInput = {
@@ -24,6 +29,11 @@ export function buildQuickStartProfilePatch(input: QuickStartInput): Partial<Pro
   return {
     diet: input.diet,
     allergies: input.allergies,
+    ...(input.dislikedIngredients ? { dislikedIngredients: input.dislikedIngredients } : {}),
+    ...(input.skill ? { skill: input.skill } : {}),
+    ...(input.cuisines ? { cuisines: input.cuisines } : {}),
+    ...(input.cookingMood ? { cookingMoods: [input.cookingMood] } : {}),
+    ...(input.weeknightTime ? { weeknightTime: input.weeknightTime } : {}),
     quickStartCompleted: true,
     quickStartSafetyConfirmed: true,
     path: "quick",

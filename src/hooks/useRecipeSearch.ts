@@ -4,10 +4,13 @@ import { finalizeSearchResults } from "../searchResults";
 import { appendUniqueRecipes, RESULT_BATCH_SIZE, takeUniqueBatch } from "../resultBatches";
 import { trackSearch } from "../telemetry";
 import { RANKING_CONFIG_VERSION } from "../recommendation";
-import { fetchCuratedRecipes, buildFoodHistory } from "../recipes";
+import { fetchCuratedRecipes, buildFoodHistory, recipeProfilePayload } from "../recipes";
+import { callFn } from "../api/backend";
 import type { Recipe } from "../data";
 import type { Profile } from "../store";
 import type { SearchRequest, Page } from "../appTypes";
+
+type MoodySearchReply = { message?: string; recipeId?: string; recipe?: Recipe | null; error?: string };
 
 // Structured recipe search: request/results state, the abort-disciplined search
 // runner (H5 — runSearch stays a plain per-render function so pagination reads
@@ -54,6 +57,42 @@ export function useRecipeSearch(
       if (!nextPage && offlineCandidates.length) {
         setSearchCandidates(offlineCandidates);
         setSearchResults(takeUniqueBatch(offlineCandidates));
+      }
+
+      if (!nextPage && request.routedBy === "moody" && request.query.trim()) {
+        try {
+          const reply = await callFn<MoodySearchReply>("ai-gateway", {
+            task: "chat",
+            message: request.query,
+            context: {
+              profile: recipeProfilePayload(sharedProfile),
+              candidates: offlineCandidates.slice(0, 30).map(r => ({ id: r.id, title: r.title, cuisine: r.cuisine, time: r.time, ingredients: r.ingredients })),
+            },
+          });
+          if (!isActiveSearch()) return;
+          const moodyPick = reply.recipe ?? (reply.recipeId ? offlineCandidates.find(r => r.id === reply.recipeId) ?? null : null);
+          if (moodyPick) {
+            const candidates = appendUniqueRecipes([moodyPick], offlineCandidates, Infinity);
+            const nextResults = takeUniqueBatch(candidates);
+            setSearchCandidates(candidates);
+            setSearchResults(nextResults);
+            trackSearch({
+              mode: "search",
+              durationMs: Math.round(performance.now() - startedAt),
+              resultCount: nextResults.length,
+              source: reply.recipe ? "spoonacular" : "local",
+              aiAttempted: true,
+              aiSucceeded: true,
+              fallbackUsed: false,
+              rankingConfigVersion: RANKING_CONFIG_VERSION,
+              hasQuery: true,
+              filterCount: 0,
+            });
+            return;
+          }
+        } catch {
+          // Backend/auth unavailable: fall through to the existing deterministic search.
+        }
       }
 
       // Explicit search honors the filters exactly — relax:false tells the backend

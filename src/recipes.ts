@@ -53,6 +53,7 @@ export function recipeProfilePayload(profile: Profile) {
     allergies: profile.allergies,
     dislikedIngredients: profile.dislikedIngredients,
     foodRelationship: profile.foodRelationship,
+    moodNeeds: profile.moodNeeds,
     comfortCues: profile.comfortCues,
     avoidCues: profile.avoidCues,
     sensoryCues: profile.sensoryCues,

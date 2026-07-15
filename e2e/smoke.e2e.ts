@@ -12,16 +12,13 @@ test("welcome screen loads for a first-time visitor", async ({ page }) => {
 test("home check-in produces recipe picks", async ({ page }) => {
   await page.goto("/?testState=home");
   await expect(page.getByRole("heading", { name: /How does dinner feel tonight/i })).toBeVisible();
-  // Pick a meal type (required to enable "Choose") and run the check-in.
-  await page.locator(".meal-category-pills button", { hasText: "Dinner" }).click();
-  await page.getByRole("button", { name: /^Choose/ }).click();
+  await page.getByRole("button", { name: "Stressed", exact: true }).click();
   await expect(page.locator(".pick-card").first()).toBeVisible({ timeout: 15_000 });
 });
 
 test("opening a pick shows the recipe detail", async ({ page }) => {
   await page.goto("/?testState=home");
-  await page.locator(".meal-category-pills button", { hasText: "Dinner" }).click();
-  await page.getByRole("button", { name: /^Choose/ }).click();
+  await page.getByRole("button", { name: "Stressed", exact: true }).click();
   const firstPick = page.locator(".pick-card").first();
   await expect(firstPick).toBeVisible({ timeout: 15_000 });
   const title = await firstPick.locator("h2").innerText();
@@ -34,8 +31,7 @@ test("opening a pick shows the recipe detail", async ({ page }) => {
 
 test("saving a pick persists it to the Saved tab", async ({ page }) => {
   await page.goto("/?testState=home");
-  await page.locator(".meal-category-pills button", { hasText: "Dinner" }).click();
-  await page.getByRole("button", { name: /^Choose/ }).click();
+  await page.getByRole("button", { name: "Stressed", exact: true }).click();
   const firstPick = page.locator(".pick-card").first();
   await expect(firstPick).toBeVisible({ timeout: 15_000 });
   const title = (await firstPick.locator("h2").innerText()).trim();
@@ -131,11 +127,11 @@ test("profile onboarding remains tappable through account setup", async ({ page,
   await expect(stressedMood).toHaveAttribute("aria-pressed", "true");
 
   await page.getByRole("button", { name: /^Continue/ }).tap();
-  await expect(page.getByRole("heading", { name: /When you're stressed/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /How do you usually eat/i })).toBeVisible();
 
-  const stressAnswer = page.getByRole("button", { name: /Cooking is therapy/i });
-  await stressAnswer.tap();
-  await expect(stressAnswer).toHaveAttribute("aria-pressed", "true");
+  const dietAnswer = page.getByRole("button", { name: "Vegetarian", exact: true });
+  await dietAnswer.tap();
+  await expect(dietAnswer).toHaveAttribute("aria-pressed", "true");
 
   await page.getByRole("button", { name: "Back", exact: true }).tap();
   await expect(stressedMood).toHaveAttribute("aria-pressed", "true");
@@ -156,6 +152,8 @@ test("profile onboarding remains tappable through account setup", async ({ page,
   await page.getByRole("button", { name: "Review profile" }).tap();
   await expect(page.getByRole("heading", { name: /Nice to meet you/i })).toBeVisible();
   await page.getByRole("button", { name: /^Continue/ }).tap();
+  await expect(page.getByText("DINNER IS HANDLED")).toBeVisible();
+  await page.getByRole("button", { name: /Save this profile/i }).tap();
   await expect(page.getByRole("heading", { name: "Save your profile." })).toBeVisible();
 
   await page.getByLabel("Name").fill("iPhone Test Cook");
