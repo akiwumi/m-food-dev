@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Camera, Trash2 } from "lucide-react";
 import { TopBar } from "../components/AppChrome";
+import { AvatarResizeEditor } from "../components/AvatarResizeEditor";
 import { ProfileEditor, Choice } from "../components/misc";
 import { IMAGE_FILE_ACCEPT, readSafeImage, cleanText } from "../security";
 import { uploadAvatar } from "../community";
@@ -9,18 +10,25 @@ import type { Profile, SocialPost } from "../store";
 export function AccountScreen({ profile, save, posts, back, cancelAccount }: { profile: Profile; save: (p: Profile) => void; posts: SocialPost[]; back: () => void; cancelAccount: () => Promise<{ ok: boolean; error?: string }> }) {
   const update = (patch: Partial<Profile>) => save({ ...profile, ...patch });
   const [uploadError, setUploadError] = useState("");
+  const [pendingAvatar, setPendingAvatar] = useState("");
   const upload = async (file?: File) => {
     if (!file) return;
     try {
-      const dataUrl = await readSafeImage(file);
+      setPendingAvatar(await readSafeImage(file));
+      setUploadError("");
+    } catch (error) { setUploadError((error as Error).message); }
+  };
+  const saveAvatar = async (dataUrl: string) => {
+    try {
       update({ avatar: dataUrl }); // instant local preview
+      setPendingAvatar("");
       setUploadError("");
       // With a real backend, push to storage so the photo shows in community + search.
       const url = await uploadAvatar(dataUrl);
       if (url) update({ avatar: url });
     } catch (error) { setUploadError((error as Error).message); }
   };
-  return <div className="screen account"><TopBar title="Your account" back={back} /><section className="account-hero"><label>{profile.avatar ? <img src={profile.avatar} alt={profile.name} /> : <span>{profile.name.slice(0, 2).toUpperCase()}</span>}<i><Camera size={16} /></i><input type="file" accept={IMAGE_FILE_ACCEPT} onChange={e => upload(e.target.files?.[0])} /></label>{uploadError && <em>{uploadError}</em>}<h1>{profile.name}</h1><p>{profile.bio}</p><small>{posts.length} posts · Profile linked to your shared cooks</small></section><ProfileEditor title="Public profile" text="This is what people you connect with can see."><label className="account-field">Display name<input maxLength={80} value={profile.name} onChange={e => update({ name: cleanText(e.target.value, 80) })} /></label><label className="account-field">Bio<textarea maxLength={300} value={profile.bio} onChange={e => update({ bio: cleanText(e.target.value, 300) })} /></label><label className="account-field">Location<input maxLength={100} value={profile.location} onChange={e => update({ location: cleanText(e.target.value, 100) })} placeholder="Optional" /></label></ProfileEditor><ProfileEditor title="Privacy and sharing" text="Your psychological profile, raw mood entries, and private diary are never shown here."><Choice values={["connections", "public", "private"]} active={profile.profileVisibility} pick={v => update({ profileVisibility: v as Profile["profileVisibility"] })} /><label className="toggle-row"><span><b>Offer to share completed cooks</b><small>You always confirm before anything is posted.</small></span><input type="checkbox" checked={profile.shareCookedMeals} onChange={e => update({ shareCookedMeals: e.target.checked })} /></label></ProfileEditor>{posts.length > 0 && <ProfileEditor title="Posts linked to your profile" text="Images and tips you chose to share."><div className="profile-gallery">{posts.map(p => <img src={p.image} alt="" key={p.id} />)}</div></ProfileEditor>}<CancelAccount cancelAccount={cancelAccount} /></div>;
+  return <div className="screen account"><TopBar title="Your account" back={back} /><section className="account-hero"><label>{profile.avatar ? <img src={profile.avatar} alt={profile.name} /> : <span>{profile.name.slice(0, 2).toUpperCase()}</span>}<i><Camera size={16} /></i><input type="file" accept={IMAGE_FILE_ACCEPT} onChange={e => upload(e.target.files?.[0])} /></label>{uploadError && <em>{uploadError}</em>}{pendingAvatar && <AvatarResizeEditor image={pendingAvatar} name={profile.name} onCancel={() => setPendingAvatar("")} onSave={saveAvatar} />}<h1>{profile.name}</h1><p>{profile.bio}</p><small>{posts.length} posts · Profile linked to your shared cooks</small></section><ProfileEditor title="Public profile" text="This is what people you connect with can see."><label className="account-field">Display name<input maxLength={80} value={profile.name} onChange={e => update({ name: cleanText(e.target.value, 80) })} /></label><label className="account-field">Bio<textarea maxLength={300} value={profile.bio} onChange={e => update({ bio: cleanText(e.target.value, 300) })} /></label><label className="account-field">Location<input maxLength={100} value={profile.location} onChange={e => update({ location: cleanText(e.target.value, 100) })} placeholder="Optional" /></label></ProfileEditor><ProfileEditor title="Privacy and sharing" text="Your psychological profile, raw mood entries, and private diary are never shown here."><Choice values={["connections", "public", "private"]} active={profile.profileVisibility} pick={v => update({ profileVisibility: v as Profile["profileVisibility"] })} /><label className="toggle-row"><span><b>Offer to share completed cooks</b><small>You always confirm before anything is posted.</small></span><input type="checkbox" checked={profile.shareCookedMeals} onChange={e => update({ shareCookedMeals: e.target.checked })} /></label></ProfileEditor>{posts.length > 0 && <ProfileEditor title="Posts linked to your profile" text="Images and tips you chose to share."><div className="profile-gallery">{posts.map(p => <img src={p.image} alt="" key={p.id} />)}</div></ProfileEditor>}<CancelAccount cancelAccount={cancelAccount} /></div>;
 }
 
 function CancelAccount({ cancelAccount }: { cancelAccount: () => Promise<{ ok: boolean; error?: string }> }) {

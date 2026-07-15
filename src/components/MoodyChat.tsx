@@ -60,10 +60,19 @@ export function MoodyChat({ profile, mood, picks, candidates, openRecipe }: {
   const [loading, setLoading] = useState(false);
   const [dragOffset, setDragOffset] = useState<MoodyDragPoint>({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
+  const [fabOffset, setFabOffset] = useState<MoodyDragPoint>({ x: 0, y: 0 });
+  const [fabDragging, setFabDragging] = useState(false);
   const chatRef = useRef<HTMLDivElement>(null);
+  const fabRef = useRef<HTMLButtonElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const chatVersionRef = useRef(0);
+  const suppressFabClickRef = useRef(false);
   const dragRef = useRef<{
+    startOffset: MoodyDragPoint;
+    startPointer: MoodyDragPoint;
+    startRect: MoodyDragRect;
+  } | null>(null);
+  const fabDragRef = useRef<{
     startOffset: MoodyDragPoint;
     startPointer: MoodyDragPoint;
     startRect: MoodyDragRect;
@@ -114,6 +123,41 @@ export function MoodyChat({ profile, mood, picks, candidates, openRecipe }: {
     };
   }, [dragging]);
 
+  useEffect(() => {
+    if (!fabDragging) return;
+
+    const move = (event: PointerEvent) => {
+      const drag = fabDragRef.current;
+      if (!drag) return;
+      const next = nextMoodyDragOffset({
+        ...drag,
+        pointer: { x: event.clientX, y: event.clientY },
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+        margin: moodyDragMargin(),
+      });
+      if (Math.abs(next.x - drag.startOffset.x) > 3 || Math.abs(next.y - drag.startOffset.y) > 3) {
+        suppressFabClickRef.current = true;
+      }
+      setFabOffset(next);
+    };
+    const end = () => {
+      fabDragRef.current = null;
+      setFabDragging(false);
+      if (suppressFabClickRef.current) {
+        window.setTimeout(() => { suppressFabClickRef.current = false; }, 250);
+      }
+    };
+
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+    };
+  }, [fabDragging]);
+
   const beginDrag = (event: ReactPointerEvent<HTMLElement>) => {
     if ((event.target as HTMLElement).closest("button")) return;
     const rect = chatRef.current?.getBoundingClientRect();
@@ -125,6 +169,25 @@ export function MoodyChat({ profile, mood, picks, candidates, openRecipe }: {
       startRect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
     };
     setDragging(true);
+  };
+
+  const beginFabDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const rect = fabRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    fabDragRef.current = {
+      startOffset: fabOffset,
+      startPointer: { x: event.clientX, y: event.clientY },
+      startRect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
+    };
+    setFabDragging(true);
+  };
+
+  const openFromFab = () => {
+    if (suppressFabClickRef.current) {
+      suppressFabClickRef.current = false;
+      return;
+    }
+    setOpen(true);
   };
 
   const resetChat = () => {
@@ -174,7 +237,15 @@ export function MoodyChat({ profile, mood, picks, candidates, openRecipe }: {
 
   return (
     <>
-      <button className={"moody-fab" + (open ? " hidden" : "")} aria-label="Chat with Moody" onClick={() => setOpen(true)}>
+      <button
+        className={"moody-fab" + (open ? " hidden" : "") + (fabDragging ? " dragging" : "")}
+        aria-label="Chat with Moody"
+        onClick={openFromFab}
+        onPointerDown={beginFabDrag}
+        ref={fabRef}
+        style={{ transform: `translate(${fabOffset.x}px, ${fabOffset.y}px)` }}
+        title="Drag to move"
+      >
         <Sparkles size={22} />
       </button>
 

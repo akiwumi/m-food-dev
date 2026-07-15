@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { ArrowLeft, Camera, ArrowRight, Lock } from "lucide-react";
+import { AvatarResizeEditor } from "../../components/AvatarResizeEditor";
 import { IMAGE_FILE_ACCEPT, readSafeImage, cleanText, validateEmail } from "../../security";
 import { signUp as authSignUp, isSupabaseConfigured } from "../../auth";
 import type { Profile } from "../../store";
@@ -9,9 +10,10 @@ export function AccountSetupScreen({ profile, back, submit, simulate = false }: 
   const [email, setEmail] = useState(profile.email);
   const [password, setPassword] = useState("");
   const [avatar, setAvatar] = useState(profile.avatar);
+  const [pendingAvatar, setPendingAvatar] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const upload = async (file?: File) => { if (!file) return; try { setAvatar(await readSafeImage(file)); setError(""); } catch (err) { setError((err as Error).message); } };
+  const upload = async (file?: File) => { if (!file) return; try { setPendingAvatar(await readSafeImage(file)); setError(""); } catch (err) { setError((err as Error).message); } };
   // Validate the email locally before signup so we never ask the backend to send
   // a confirmation to a malformed/undeliverable/typo'd address (which would bounce).
   const emailCheck = validateEmail(email);
@@ -38,6 +40,7 @@ export function AccountSetupScreen({ profile, back, submit, simulate = false }: 
     <h1>Save your profile.</h1>
     <p className="lede">Your food profile is ready. Create an account so it's yours on every device, we'll send a confirmation email to finish.</p>
     <div className="avatar-pick"><label>{avatar ? <span className="ring"><img src={avatar} alt="" /></span> : <span className="ring"><span>{(name || "You").slice(0, 1).toUpperCase()}</span></span>}<span className="cam"><Camera size={16} /></span><input type="file" accept={IMAGE_FILE_ACCEPT} onChange={e => upload(e.target.files?.[0])} /></label><em>Add a profile photo</em></div>
+    {pendingAvatar && <AvatarResizeEditor image={pendingAvatar} name={name} onCancel={() => setPendingAvatar("")} onSave={dataUrl => { setAvatar(dataUrl); setPendingAvatar(""); }} />}
     <form onSubmit={onSubmit}>
       <label>Name<input value={name} maxLength={80} onChange={e => setName(e.target.value)} placeholder="Jessica" /></label>
       <label>Email address<input type="email" value={email} onChange={e => { setEmail(e.target.value); setError(""); }} placeholder="you@example.com" /></label>
