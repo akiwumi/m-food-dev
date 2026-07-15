@@ -110,6 +110,9 @@ describe("client security controls", () => {
 
   it("limits Moody recipe links to structured supplied catalog candidates", () => {
     const source = readFileSync("supabase/functions/ai-gateway/index.ts", "utf8");
+    expect(source).toContain("api.anthropic.com/v1/messages");
+    expect(source).toContain("claude-haiku-4-5");
+    expect(source).not.toContain('const CHAT_MODEL = "gpt-4o-mini"');
     expect(source).toContain('response_format: { type: "json_object" }');
     expect(source).toContain("allCandidateIds.has(rawRecipeId)");
     expect(source).toContain("recipeId: selectedRecipeId");

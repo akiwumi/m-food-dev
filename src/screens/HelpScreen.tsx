@@ -8,7 +8,7 @@ const FAQ_DATA = [
     section: "Getting started",
     items: [
       { q: "What is MoodFood?", a: "MoodFood is a personal dinner companion that matches you with one safe, perfectly suited meal based on how you feel, your energy, time available, and your food profile. It removes the 'what's for dinner?' decision entirely." },
-      { q: "What is the onboarding for?", a: `The in-depth onboarding (${onboardingQuestions.length} questions across ${onboardingSections.length} chapters) builds your food psychology profile, covering your cooking moods, taste phenotype (flavours and textures you love or avoid), emotional eating patterns, comfort food, kitchen setup, habits, values, and nutrition goals. Every answer shapes your recommendations.` },
+      { q: "What is the onboarding for?", a: `The quick start gets the first safe pick from a small set of signals. The full food profile (${onboardingQuestions.length} questions across ${onboardingSections.length} chapters) stays available progressively, covering your cooking moods, taste phenotype, emotional eating patterns, comfort food, kitchen setup, habits, values, and nutrition goals.` },
       { q: "Can I change my profile later?", a: "Yes. Go to Settings → Psychological food profile to edit every answer. Changes take effect immediately on your next recommendation." },
       { q: "How do I reset and start fresh?", a: "Tap Settings → Sign out and replay first launch. This clears all stored data and takes you back to the welcome screen." },
     ],
@@ -16,7 +16,7 @@ const FAQ_DATA = [
   {
     section: "Getting a recommendation",
     items: [
-      { q: "How does the mood check-in work?", a: "Select your mood, how long you have, and your energy level on the home screen, then tap 'Find tonight's dinner'. Moody scores every recipe against your profile and surfaces the best match." },
+      { q: "How does the mood check-in work?", a: "Tap a mood on the home screen and Moody immediately finds a safe dinner. Time, energy, meal type, cuisine, and diet stay in Refine if you want extra control." },
       { q: "What does the energy slider do?", a: "Low energy nudges Moody toward one-pot, minimal-prep, easy recipes. High energy opens up more adventurous, multi-step dishes." },
       { q: "Are my allergies always enforced?", a: "Yes, always. Allergens and dietary restrictions set during onboarding are hard filters that are never relaxed, regardless of mood or any other setting." },
       { q: "What does 'Not tonight' do on a pick card?", a: "It hides that recipe for the current session only. It comes back next time." },
@@ -25,9 +25,9 @@ const FAQ_DATA = [
   {
     section: "Food photo & calorie log",
     items: [
-      { q: "How do I log a meal with a photo?", a: "Tap the camera button on the Home screen, in the Diary, on a Recipe detail page, or after finishing Cook mode. Choose a photo from your camera roll, and Moody will estimate the dish, calories, and macros in about 2 seconds." },
-      { q: "How accurate are the calorie estimates?", a: "Estimates are derived from visual analysis of your photo matched against a food database. Accuracy is typically within 15–25% for single-dish meals. Results are shown with a confidence score. They are informational only, not medical or nutritional advice." },
-      { q: "Can I edit the calorie count?", a: "You can discard the result and retake the photo from a different angle or better lighting for a more accurate reading." },
+      { q: "How do I log a meal with a photo?", a: "Tap the camera button on the Home screen, in the Diary, on a Recipe detail page, or after finishing Cook mode. Add a photo, name the dish, and tap 'Look up' to pull real per-serving numbers from a food database — or type them in yourself. If you're logging a recipe you just cooked, its calories carry over automatically." },
+      { q: "Where do the calorie numbers come from?", a: "From an honest source only — never guessed from the photo. They come from a real per-serving lookup in the FatSecret food database matched to the dish you name, from the calories of the recipe you cooked, or from what you enter by hand. A blank field means unknown, never invented." },
+      { q: "Can I edit the calorie count?", a: "Yes — every number is editable. Type your own, re-run the database lookup with a more specific dish name, or leave a field blank if it's unknown. Editing a value marks it as your own." },
       { q: "Where are my logged meals stored?", a: "Photo logs are saved on your device in localStorage. They appear in the Food photo log screen (Settings → Food photo log) and feed the 'Today's calories' stat on your home screen." },
     ],
   },
@@ -81,7 +81,7 @@ export function HelpScreen({ back }: { back: () => void }) {
         {[
           { n: 1, title: "Complete onboarding", desc: `${onboardingQuestions.length} questions build your taste + psychology profile. More detail = better matches.` },
           { n: 2, title: "Create your account", desc: "Save your profile so it travels with you. Confirm your email to unlock everything." },
-          { n: 3, title: "Check in on the home screen", desc: "Pick a mood, set your time and energy, then tap 'Find tonight's dinner'." },
+          { n: 3, title: "Check in on the home screen", desc: "Tap a mood and Moody picks one safe dinner. Open Refine only when you want extra control." },
           { n: 4, title: "Cook with Moody", desc: "Open a pick → 'Start cook mode' for step-by-step guidance with timers. Screen stays awake." },
           { n: 5, title: "Log your meal with a photo", desc: "After cooking, tap the camera button. Moody reads the plate and estimates calories + macros." },
         ].map(s => (

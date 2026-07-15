@@ -4,7 +4,7 @@ import { TopBar } from "../components/AppChrome";
 import { Avatar } from "../components/misc";
 import {
   searchUsers, sendFriendRequest, respondFriendRequest, removeFriend,
-  listFriends, listFriendRequests, suggestFriends, listRecommendations,
+  listFriends, listFriendRequests, suggestFriends, listRecommendations, suggestionCompatibility,
   type UserResult, type Friend, type FriendRequest, type Relationship,
   type Suggestion, type Recommendation,
 } from "../community";
@@ -125,15 +125,16 @@ export function FriendsScreen({ back, openMember }: { back: () => void; openMemb
 
           {suggestions.length > 0 && (
             <section className="friend-block">
-              <h2><Sparkles size={15} /> Suggested for you</h2>
-              <p className="fb-sub">People with a similar taste in food.</p>
+              <h2><Sparkles size={15} /> Mood-profile matches</h2>
+              <p className="fb-sub">Suggested from shared cooking moods, comfort cues, flavour and cuisine.</p>
               {suggestions.map(s => {
                 const r = rel[s.id];
+                const match = suggestionCompatibility(s);
                 return (
                   <div className="friend-row" key={s.id}>
                     <button className="friend-open" onClick={() => openMember(s.id)}>
                       <Avatar name={s.name} image={s.avatar} />
-                      <span className="fr-text"><b>{s.name}</b>{s.sharedCuisines > 0 && <small>{s.sharedCuisines} shared cuisine{s.sharedCuisines > 1 ? "s" : ""}</small>}</span>
+                      <span className="fr-text"><b>{s.name}</b><small>{match.label} · {match.detail}</small>{match.signals.length > 0 && <span className="mini-signals">{match.signals.map(signal => <em key={signal}>{signal}</em>)}</span>}</span>
                     </button>
                     {r === "pending_out" ? <span className="friend-tag muted"><Clock size={14} />Requested</span>
                       : <button className="secondary sm" onClick={() => addById(s.id)}><UserPlus size={15} />Add</button>}

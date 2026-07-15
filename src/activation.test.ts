@@ -8,11 +8,21 @@ describe("quick-start activation", () => {
     const patch = buildQuickStartProfilePatch({
       diet: "Vegetarian",
       allergies: ["Dairy"],
+      dislikedIngredients: ["Mushrooms"],
+      skill: "Beginner",
+      cuisines: ["Thai"],
+      cookingMood: "Tired",
+      weeknightTime: "30 min",
     });
 
     expect(patch).toEqual({
       diet: "Vegetarian",
       allergies: ["Dairy"],
+      dislikedIngredients: ["Mushrooms"],
+      skill: "Beginner",
+      cuisines: ["Thai"],
+      cookingMoods: ["Tired"],
+      weeknightTime: "30 min",
       quickStartCompleted: true,
       quickStartSafetyConfirmed: true,
       path: "quick",

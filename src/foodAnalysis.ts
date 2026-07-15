@@ -24,7 +24,7 @@ export type FoodPhoto = {
   fiber: number;         // grams
   vitamins?: Vitamin[];  // only present if a source supplied them; new logs omit
   allergens: string[];   // real allergens carried from the logged recipe, else []
-  source?: "recipe" | "database" | "manual"; // provenance of the numbers
+  source?: "recipe" | "database" | "manual" | "vision"; // provenance of the numbers
   when: string;          // human-readable datetime
   recipeId?: string;     // if logged after cooking a specific recipe
   note?: string;

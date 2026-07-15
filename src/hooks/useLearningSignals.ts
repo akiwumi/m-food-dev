@@ -9,7 +9,11 @@ import type { DiaryEntry, Entry, Page } from "../appTypes";
 // learned-signal toggles, the mirrored server consent, and the derived cuisine /
 // mood signals. entry/page/diary come from the app and drive the two effects.
 export function useLearningSignals(entry: Entry, page: Page, diary: DiaryEntry[]) {
-  const [aiCuration, setAiCuration] = useStoredState<boolean>("moodfood-ai-curation", false);
+  // On by default (concept-recovery Phase 3): Pro/trial users get Moody's curation
+  // automatically ("Moody chose these for you"). Only takes effect while Pro is
+  // live (aiCurationActive = aiCuration && pro); free users keep deterministic
+  // ranking. Users who explicitly turned it off keep their stored `false`.
+  const [aiCuration, setAiCuration] = useStoredState<boolean>("moodfood-ai-curation", true);
   const [learnedSignals, setLearnedSignals] = useStoredState<boolean>("moodfood-learned-signals", false);
   const [behavioralConsent, setBehavioralConsent] = useState(false);
   const [cuisineSignal, setCuisineSignal] = useState<CuisineSignal | null>(null);

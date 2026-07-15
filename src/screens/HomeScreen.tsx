@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Sparkles, Check, RotateCcw, ChefHat, Clock3, ShieldCheck, Play, ArrowRight, FlameKindling, Camera, Activity, Users, UserRound } from "lucide-react";
+import { Sparkles, Check, RotateCcw, ChefHat, Clock3, ShieldCheck, Play, ArrowRight, FlameKindling, Camera, Activity, Users, UserRound, Sliders } from "lucide-react";
 import { moods, type Recipe } from "../data";
+import { moodVoice } from "../moodVoice";
+import { explainPick, type LearnedSignals } from "../recommendation";
 import type { Profile, Diner } from "../store";
 import { sumNutrition, type FoodPhoto } from "../foodAnalysis";
 import { SPOON_CUISINES, SEARCH_DIETS } from "../searchFilters";
@@ -13,7 +15,7 @@ import { PickCard } from "../components/PickCard";
 import { DailySuggestionCarousel } from "../components/DailySuggestionCarousel";
 import { FoodCamera } from "../components/FoodCamera";
 
-export function HomeScreen({ profile, diary, saved, catalog, mood, setMood, energy, setEnergy, time, setTime, mealCategory, setMealCategory, cuisine, setCuisine, diet, setDiet, results, setResults, beginResults, ranked, curating, hasFetched, loadMore, live, curated, retry, open, go, diners, selectedDiners, setSelectedDiners, eaterCount, setEaterCount, openNotifs, unread, addPhoto, onPickSuggestion, toggleSave }: {
+export function HomeScreen({ profile, diary, saved, catalog, mood, setMood, energy, setEnergy, time, setTime, mealCategory, setMealCategory, cuisine, setCuisine, diet, setDiet, results, setResults, beginResults, ranked, curating, hasFetched, loadMore, live, curated, retry, open, go, diners, selectedDiners, setSelectedDiners, eaterCount, setEaterCount, openNotifs, unread, addPhoto, onPickSuggestion, toggleSave, signals }: {
   profile: Profile; diary: DiaryEntry[]; saved: string[]; catalog: Recipe[];
   mood: string; setMood: (v: string) => void; energy: number; setEnergy: (v: number) => void; time: number; setTime: (v: number) => void;
   mealCategory: string; setMealCategory: (v: string) => void;
@@ -23,6 +25,7 @@ export function HomeScreen({ profile, diary, saved, catalog, mood, setMood, ener
   diners: Diner[]; selectedDiners: string[]; setSelectedDiners: (v: string[]) => void;
   eaterCount: number; setEaterCount: (v: number) => void; openNotifs?: () => void; unread?: number;
   addPhoto: (p: FoodPhoto) => void; onPickSuggestion: (r: Recipe) => void; toggleSave: (r: Recipe) => void;
+  signals?: LearnedSignals;
 }) {
   const [rejected, setRejected] = useState<string[]>([]);
   const [shownCount, setShownCount] = useState(RESULT_BATCH_SIZE);
@@ -54,14 +57,15 @@ export function HomeScreen({ profile, diary, saved, catalog, mood, setMood, ener
       </div> : <>
       <div className="home-greeting">
         <h1>{mealCategory ? `${mealCategory[0].toUpperCase()}${mealCategory.slice(1)} picks.` : "Tonight’s picks."}</h1>
+        {moodVoice(mood, energy) && <p className="moody-voice"><Sparkles size={14} /> {moodVoice(mood, energy)}</p>}
         <p>{energy < 50 ? "Low-effort" : "Interesting"}, {mood.toLowerCase()}{mealCategory ? `, ${mealCategory}` : ""}{cuisine ? `, ${cuisine}` : ""}, within {time} min · {eaterCount} {eaterCount === 1 ? "person" : "people"}</p>
-        {live && curated && <p className="source-note live"><Check size={13} /> Live from {providerLabel || "the recipe provider"}, freshly curated by Moody for you.</p>}
+        {live && curated && <p className="source-note live"><Check size={13} /> Live from {providerLabel || "the recipe provider"} — Moody chose these for you.</p>}
         {live && !curated && <p className="source-note live"><Check size={13} /> Live from {providerLabel || "the recipe provider"}, matched to your mood.</p>}
         {!live && hasFetched && visible.length > 0 && <p className="source-note">Offline picks from your cookbook — live recipes are unavailable right now.</p>}
       </div>
       {visible.length ? (
         <div style={{ padding: "0 16px", display: "grid", gap: 14 }}>
-          {visible.map(r => <PickCard key={r.id} recipe={r} servings={eaterCount} open={() => open(r)} reject={() => setRejected([...rejected, r.id])} save={() => toggleSave(r)} saved={saved.includes(r.id)} />)}
+          {visible.map(r => <PickCard key={r.id} recipe={r} servings={eaterCount} open={() => open(r)} reject={() => setRejected([...rejected, r.id])} save={() => toggleSave(r)} saved={saved.includes(r.id)} why={explainPick(r, profile, mood, energy, time, signals)} />)}
           {loadMore && (
             <button className="secondary" style={{ width: "100%" }} disabled={curating} onClick={showMore}>
               {curating ? "Finding more…" : <>Show me 5 more <RotateCcw size={16} /></>}
@@ -94,7 +98,7 @@ export function HomeScreen({ profile, diary, saved, catalog, mood, setMood, ener
 
       <div className="home-greeting">
         <h1>How does dinner feel tonight?</h1>
-        <p>Pick a mood, time, and energy level. Moody will choose one safe answer and keep backups ready.</p>
+        <p>Tap how you feel. Moody chooses one safe answer and keeps backups ready — refine only if you want to.</p>
       </div>
 
       {/* ── Hero recipe photo (45vh, rounded, like the fitness hero image) ── */}
@@ -131,72 +135,76 @@ export function HomeScreen({ profile, diary, saved, catalog, mood, setMood, ener
         <DailySuggestionCarousel suggestions={suggestions} onPick={onPickSuggestion} showHero={false} />
       </div>
 
-      {/* ── Check-in card, bottom-sheet style glass card ── */}
+      {/* ── Check-in card: one question → one answer. Mood alone is enough. ── */}
       <div className="home-checkin">
         <span className="section-label">How are you feeling?</span>
-        {/* Mood pill row, all 9 moods */}
+        {/* Tapping a mood is the whole check-in: it picks tonight's dinner. */}
         <div className="mood-pills">
           {moods.map(v => (
-            <button key={v} className={mood === v ? "active" : ""} onClick={() => setMood(v)}>{v}</button>
+            <button key={v} className={mood === v ? "active" : ""} onClick={() => { setMood(v); beginResults(); }}>{v}</button>
           ))}
         </div>
-
-        <span className="section-label">Time available</span>
-        {/* Number-pill selector, faithful to 10·20·30·40·50 in reference */}
-        <div className="time-pills">
-          {[15, 20, 30, 45, 60].map(v => (
-            <button key={v} className={time === v ? "active" : ""} onClick={() => setTime(v)}>
-              {v}
-            </button>
-          ))}
-        </div>
-        <div className="range-label" style={{ marginTop: 6 }}>
-          <span>15 min</span><span style={{ color: "var(--blue-deep)", fontWeight: 700 }}>{time} min selected</span><span>60 min</span>
-        </div>
-
-        <span className="section-label">Energy level: {energy}%</span>
-        <input type="range" value={energy} onChange={e => setEnergy(+e.target.value)} style={{ width: "100%" }} />
-        <div className="range-label"><span>Low: easy recipes</span><span>High: adventurous</span></div>
-
-        <span className="section-label">Meal type</span>
-        <div className="meal-category-pills">
-          {["Breakfast", "Lunch", "Dinner", "Snacks", "Dessert"].map(cat => (
-            <button
-              key={cat}
-              className={mealCategory === cat.toLowerCase() ? "active" : ""}
-              onClick={() => setMealCategory(mealCategory === cat.toLowerCase() ? "" : cat.toLowerCase())}
-            >{cat}</button>
-          ))}
-        </div>
-        {!mealCategory && <p className="meal-type-hint">Pick a meal type to search</p>}
-
-        <span className="section-label" style={{ marginTop: 14 }}>Cuisine style</span>
-        <select
-          className="cuisine-select"
-          value={cuisine}
-          onChange={e => setCuisine(e.target.value)}
-        >
-          <option value="">Any cuisine</option>
-          {SPOON_CUISINES.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-
-        <span className="section-label" style={{ marginTop: 14 }}>Dietary preference</span>
-        <select
-          className="cuisine-select"
-          value={diet}
-          onChange={e => setDiet(e.target.value)}
-        >
-          {SEARCH_DIETS.map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
+        <p className="checkin-hint">Tap a mood and Moody picks one safe dinner. Everything below is optional.</p>
 
         <button
           className="primary"
           style={{ width: "100%", marginTop: 14, minHeight: 54 }}
-          disabled={!mealCategory}
           onClick={beginResults}
         >
-          Choose <ArrowRight size={18} />
+          Choose tonight’s dinner <ArrowRight size={18} />
         </button>
+
+        {/* Time · energy · meal · cuisine · diet — off the critical path, one tap away. */}
+        <details className="home-refine">
+          <summary><Sliders size={15} /> Refine <span>time · energy · meal · cuisine · diet</span></summary>
+          <div className="home-refine-body">
+            <span className="section-label">Time available</span>
+            <div className="time-pills">
+              {[15, 20, 30, 45, 60].map(v => (
+                <button key={v} className={time === v ? "active" : ""} onClick={() => setTime(v)}>
+                  {v}
+                </button>
+              ))}
+            </div>
+            <div className="range-label" style={{ marginTop: 6 }}>
+              <span>15 min</span><span style={{ color: "var(--blue-deep)", fontWeight: 700 }}>{time} min selected</span><span>60 min</span>
+            </div>
+
+            <span className="section-label">Energy level: {energy}%</span>
+            <input type="range" value={energy} onChange={e => setEnergy(+e.target.value)} style={{ width: "100%" }} />
+            <div className="range-label"><span>Low: easy recipes</span><span>High: adventurous</span></div>
+
+            <span className="section-label">Meal type</span>
+            <div className="meal-category-pills">
+              {["Breakfast", "Lunch", "Dinner", "Snacks", "Dessert"].map(cat => (
+                <button
+                  key={cat}
+                  className={mealCategory === cat.toLowerCase() ? "active" : ""}
+                  onClick={() => setMealCategory(mealCategory === cat.toLowerCase() ? "" : cat.toLowerCase())}
+                >{cat}</button>
+              ))}
+            </div>
+
+            <span className="section-label" style={{ marginTop: 14 }}>Cuisine style</span>
+            <select
+              className="cuisine-select"
+              value={cuisine}
+              onChange={e => setCuisine(e.target.value)}
+            >
+              <option value="">Any cuisine</option>
+              {SPOON_CUISINES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+
+            <span className="section-label" style={{ marginTop: 14 }}>Dietary preference</span>
+            <select
+              className="cuisine-select"
+              value={diet}
+              onChange={e => setDiet(e.target.value)}
+            >
+              {SEARCH_DIETS.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+        </details>
       </div>
 
       <details className="home-more">

@@ -55,7 +55,7 @@ export function FirstPickScreen({
           </div>
           <div className="moody-note first-pick-note"><Moody /><p>{fit}</p></div>
           <div className="first-pick-actions">
-            <button className="primary" onClick={() => openRecipe(picks.hero!)}>View recipe <ArrowRight size={17} /></button>
+            <button className="primary" onClick={() => openRecipe(picks.hero!)}>Save profile to view recipe <ArrowRight size={17} /></button>
             <button className="secondary" onClick={continueToTrial}>Save this profile</button>
           </div>
           <section className="reject-box">

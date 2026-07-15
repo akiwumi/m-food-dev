@@ -143,6 +143,11 @@ export type SearchTelemetry = {
   safetyRejected?: number;
   hasQuery?: boolean;
   filterCount?: number;
+  // North-star signals (concept-recovery Phase 0). Folded into search_completed
+  // metadata rather than new event types so the analytics function's allow-list
+  // (search_completed | app_error) accepts them unchanged.
+  moodAlone?: boolean;          // home answer reached without touching any Refine control
+  timeToFirstAnswerMs?: number; // app-open → first recipe on screen, reported once per session
 };
 
 // Derive the telemetry `source` from the provider stamped on the live recipes
@@ -178,6 +183,8 @@ export function trackSearch(t: SearchTelemetry): void {
       ...(t.safetyRejected !== undefined ? { safety_rejected: t.safetyRejected } : {}),
       ...(t.hasQuery !== undefined ? { has_query: t.hasQuery } : {}),
       ...(t.filterCount !== undefined ? { filter_count: t.filterCount } : {}),
+      ...(t.moodAlone !== undefined ? { mood_alone: t.moodAlone } : {}),
+      ...(t.timeToFirstAnswerMs !== undefined ? { time_to_first_answer_ms: t.timeToFirstAnswerMs } : {}),
     },
   });
 }

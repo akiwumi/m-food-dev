@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, ArrowRight, Clock3 } from "lucide-react";
 import { useStoredState, type Profile } from "../../store";
-import { onboardingQuestions, onboardingSections, type OnboardingKey, type OnboardingQuestion, type ProfileValue } from "../../onboarding";
+import { questionsForPath, onboardingSections, type OnboardingKey, type OnboardingQuestion, type ProfileValue } from "../../onboarding";
 import { SetupStep } from "../../components/misc";
 import { SECTION_PHOTOS, FALLBACK_FOOD } from "../../components/photos";
 import { QuestionField } from "./QuestionField";
@@ -20,9 +20,11 @@ function useDesktopOnboarding() {
 }
 
 export function Onboarding({ profile, save, finish }: { profile: Profile; save: (p: Profile) => void; finish: (p: Profile) => void }) {
-  // Questions whose showIf condition currently passes (e.g. spice types only
-  // appear once the user has any heat tolerance). Navigation runs over this list.
-  const visible = onboardingQuestions.filter(q => !q.showIf || q.showIf(profile));
+  // The quick path (~7 items) is the only gate before a user's first pick;
+  // standard shows the full profile. Everything else moves to progressive
+  // profiling (concept-recovery Phase 1). Then narrow to questions whose showIf
+  // currently passes (e.g. spice types only appear once heat tolerance > 0).
+  const visible = questionsForPath(profile.path).filter(q => !q.showIf || q.showIf(profile));
   const total = visible.length;
   const desktop = useDesktopOnboarding();
   const [step, setStep] = useStoredState<number>("moodfood-onboarding-step", 0);

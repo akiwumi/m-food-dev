@@ -51,23 +51,27 @@ export function SearchScreen({
     (maxCalories ? 1 : 0) + (minProtein ? 1 : 0);
 
   const run = () => {
+    const useAdvanced = showFilters;
     const searchQuery = buildMoodSearchQuery({
-      mood: mood || undefined,
-      cuisine: cuisines.join(" ") || undefined,
-      maxCookingTime: maxTime,
+      mood: useAdvanced ? mood || undefined : undefined,
+      cuisine: useAdvanced ? cuisines.join(" ") || undefined : undefined,
+      maxCookingTime: useAdvanced ? maxTime : undefined,
       query,
     });
-    const intent = normalizeRecipeSearchIntent(searchQuery, type);
+    const intent = normalizeRecipeSearchIntent(searchQuery, useAdvanced ? type : "");
     const filters: RecipeFilters = {
-      query: intent.query, cuisines,
-      type: intent.type || undefined,
-      diet: diet === "Any" ? undefined : diet,
-      maxReadyTime: maxTime, sort,
-      includeIngredients: include, excludeIngredients: exclude,
-      maxCalories: maxCalories || undefined,
-      minProtein: minProtein || undefined,
+      query: intent.query,
+      cuisines: useAdvanced ? cuisines : [],
+      type: useAdvanced ? intent.type || undefined : undefined,
+      diet: useAdvanced && diet !== "Any" ? diet : undefined,
+      maxReadyTime: useAdvanced ? maxTime : undefined,
+      sort: useAdvanced ? sort : undefined,
+      includeIngredients: useAdvanced ? include : [],
+      excludeIngredients: useAdvanced ? exclude : [],
+      maxCalories: useAdvanced ? maxCalories || undefined : undefined,
+      minProtein: useAdvanced ? minProtein || undefined : undefined,
     };
-    onSearch({ query: intent.query, mood: selectedMood?.label, filters });
+    onSearch({ query: intent.query, mood: useAdvanced ? selectedMood?.label : undefined, filters, routedBy: useAdvanced ? "structured" : "moody" });
   };
 
   const pickSuggestion = (r: Recipe) => {
@@ -77,26 +81,26 @@ export function SearchScreen({
   return <div className="screen">
     <TopBar title="Search recipes" />
     <DailySuggestionCarousel suggestions={suggestions} onPick={pickSuggestion} />
-    <div className="ai-search-intro"><Search size={15} /><p>Search with structured filters. Your saved diet, allergies, and exclusions always remain protected.</p></div>
-    <div className="filter-block">
-      <span className="filter-label">How are you feeling?</span>
-      <div className="choice">
-        {moodSearchTags.map(m => <button key={m.mood} className={mood === m.mood ? "active" : ""} onClick={() => setMood(prev => prev === m.mood ? "" : m.mood)}>{m.label}</button>)}
-      </div>
-      {selectedMood && <p className="mood-helper"><b>{selectedMood.label}</b> {selectedMood.description}</p>}
-    </div>
+    <div className="ai-search-intro"><Search size={15} /><p>Just say what you want tonight. Moody reads your mood and keeps your saved diet, allergies, and exclusions protected. Add filters only if you want fine control.</p></div>
     <form className="search-box" onSubmit={e => { e.preventDefault(); run(); }}>
       <Search />
       <input value={query} onChange={e => setQuery(e.target.value)} placeholder="“Something cozy and high-protein under 30 min”" />
     </form>
     <div className="search-actions">
       <button className={"filter-toggle" + (showFilters ? " open" : "")} onClick={() => setShowFilters(v => !v)}>
-        <Settings2 size={15} /> Filters{activeFilterCount ? ` · ${activeFilterCount}` : ""}
+        <Settings2 size={15} /> Advanced{activeFilterCount ? ` · ${activeFilterCount}` : ""}
       </button>
       <button className="primary search-go" onClick={run}>Search <ArrowRight size={15} /></button>
     </div>
 
     {showFilters && <div className="search-filters">
+      <div className="filter-block">
+        <span className="filter-label">How are you feeling?</span>
+        <div className="choice">
+          {moodSearchTags.map(m => <button key={m.mood} className={mood === m.mood ? "active" : ""} onClick={() => setMood(prev => prev === m.mood ? "" : m.mood)}>{m.label}</button>)}
+        </div>
+        {selectedMood && <p className="mood-helper"><b>{selectedMood.label}</b> {selectedMood.description}</p>}
+      </div>
       <div className="filter-block">
         <span className="filter-label">Sort by</span>
         <div className="choice">{SORT_OPTIONS.map(o => <button key={o.id} className={sort === o.id ? "active" : ""} onClick={() => setSort(o.id)} title={o.hint}>{o.label}</button>)}</div>

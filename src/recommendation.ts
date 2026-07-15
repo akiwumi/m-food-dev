@@ -172,6 +172,45 @@ export function recommend(recipes: Recipe[], profile: Profile, mood: string, ene
     .sort((a, b) => b.score - a.score);
 }
 
+// "Why this pick?" — a plain-language explanation of the strongest reasons THIS
+// recipe rose for THIS user, drawn from the same signals recipeScore uses. Makes
+// the food profile visibly drive picks (concept-recovery Phase 4). Honest: every
+// reason corresponds to a boost that actually fired. Learned reasons (mood/cuisine)
+// lead when present — that's the "almost telepathic" moment.
+export function explainPick(
+  recipe: Recipe, profile: Profile, mood: string, energy: number, time: number, signals?: LearnedSignals,
+): string {
+  const recipeText = `${recipe.reason} ${recipe.title} ${recipe.moods.join(" ")} ${recipe.cuisine} ${recipe.ingredients.join(" ")}`.toLowerCase();
+  const canonicalMood = normalizeMood(mood);
+  const moodLower = mood.toLowerCase();
+  const reasons: { weight: number; text: string }[] = [];
+
+  // Learned signals lead — this is the differentiated, "how did it know" moment.
+  if (signals?.moodCuisine && moodBoost(recipe, signals.moodCuisine, mood) > 0) {
+    reasons.push({ weight: 100, text: `you rate ${recipe.cuisine} highly when you're ${moodLower}` });
+  } else if (signals?.cuisine && learnedBoost(recipe, signals.cuisine) > 0) {
+    reasons.push({ weight: 90, text: `you keep rating ${recipe.cuisine} dishes highly` });
+  }
+
+  if (recipe.moods.some(value => normalizeMood(value) === canonicalMood)) {
+    reasons.push({ weight: 80, text: `it's a go-to for ${moodLower} nights` });
+  }
+  const comfortMatch = profile.comfortFoods.find(c => matchesTag(recipeText, c));
+  if (comfortMatch) reasons.push({ weight: 62, text: `it lands on your comfort food (${comfortMatch.toLowerCase()})` });
+  if (profile.cuisines.includes(recipe.cuisine)) reasons.push({ weight: 55, text: `${recipe.cuisine} is one of your cuisines` });
+  const flavorMatch = profile.flavorLikes.find(f => matchesTag(recipeText, f));
+  if (flavorMatch) reasons.push({ weight: 45, text: `it leans ${flavorMatch.toLowerCase()}, which you reach for` });
+  if (energy < 50 && recipe.difficulty === "Easy") reasons.push({ weight: 35, text: `it's low-effort for a low-energy night` });
+  const goalMatch = profile.nutritionGoals.includes("More protein") && recipe.diets.includes("High protein");
+  if (goalMatch) reasons.push({ weight: 30, text: `it's high-protein, which you're working toward` });
+  if (recipe.time <= time) reasons.push({ weight: 20, text: `it's ready inside your ${time}-minute limit` });
+
+  if (!reasons.length) return "";
+  reasons.sort((a, b) => b.weight - a.weight);
+  const top = reasons.slice(0, 2).map(r => r.text);
+  return `Because ${top.length === 2 ? `${top[0]} and ${top[1]}` : top[0]}.`;
+}
+
 export function profileForDiners(profile: Profile, diners: Diner[]) {
   const allergies = [...new Set([...profile.allergies, ...diners.flatMap(d => d.allergies)])];
   const unrestricted = new Set(["", "any", "anything", "everything", "flexitarian", "omnivore", "no specific diet", "none"]);

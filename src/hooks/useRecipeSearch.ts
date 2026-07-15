@@ -3,10 +3,13 @@ import { finalizeSearchResults } from "../searchResults";
 import { appendUniqueRecipes, RESULT_BATCH_SIZE, takeUniqueBatch } from "../resultBatches";
 import { trackSearch, telemetrySource } from "../telemetry";
 import { RANKING_CONFIG_VERSION } from "../recommendation";
-import { fetchCuratedRecipes, buildFoodHistory } from "../recipes";
+import { fetchCuratedRecipes, buildFoodHistory, recipeProfilePayload } from "../recipes";
+import { callFn } from "../api/backend";
 import type { Recipe } from "../data";
 import type { Profile } from "../store";
 import type { SearchRequest, Page } from "../appTypes";
+
+type MoodySearchReply = { message?: string; recipeId?: string; recipe?: Recipe | null; error?: string };
 
 // Structured recipe search: request/results state, the abort-disciplined search
 // runner (H5 — runSearch stays a plain per-render function so pagination reads
@@ -58,6 +61,42 @@ export function useRecipeSearch(
     window.scrollTo(0, 0);
     const startedAt = performance.now();
     try {
+      if (!nextPage && request.routedBy === "moody" && request.query.trim()) {
+        try {
+          const reply = await callFn<MoodySearchReply>("ai-gateway", {
+            task: "chat",
+            message: request.query,
+            context: {
+              profile: recipeProfilePayload(sharedProfile),
+              candidates: [],
+            },
+          });
+          if (!isActiveSearch()) return;
+          const moodyPick = reply.recipe ?? null;
+          if (moodyPick) {
+            const candidates = [moodyPick];
+            const nextResults = takeUniqueBatch(candidates);
+            setSearchCandidates(candidates);
+            setSearchResults(nextResults);
+            trackSearch({
+              mode: "search",
+              durationMs: Math.round(performance.now() - startedAt),
+              resultCount: nextResults.length,
+              source: "spoonacular",
+              aiAttempted: true,
+              aiSucceeded: true,
+              fallbackUsed: false,
+              rankingConfigVersion: RANKING_CONFIG_VERSION,
+              hasQuery: true,
+              filterCount: 0,
+            });
+            return;
+          }
+        } catch {
+          // Backend/auth unavailable: fall through to the live recipe search.
+        }
+      }
+
       // Explicit search honors the filters exactly — relax:false tells the backend
       // not to silently drop cuisine/course/time to force a result.
       const live = await fetchCuratedRecipes(sharedProfile, request.mood || mood, 50, request.filters.maxReadyTime ?? 60, request.query, request.filters, foodHistory, offset, false, false, controller.signal);

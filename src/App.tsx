@@ -33,6 +33,7 @@ import { useHouseholdCollections } from "./hooks/useHouseholdCollections";
 import { useRecipeCatalog } from "./hooks/useRecipeCatalog";
 import { BottomNav, DesktopNav } from "./components/AppChrome";
 import { MainMenu } from "./components/MainMenu";
+import { MoodyChat } from "./components/MoodyChat";
 import { NotificationsPanel } from "./components/NotificationsPanel";
 // Authenticated app screens: none are needed until the user is signed in and on
 // that page, so lazy-load them out of the initial (Landing/onboarding) chunk.
@@ -119,11 +120,10 @@ export default function App() {
   const [viewingMember, setViewingMember] = useState<string | undefined>(undefined);
   const { saved, setSaved, diary, setDiary, groceries, setGroceries, posts, setPosts, diners, setDiners, selectedDiners, setSelectedDiners, eaterCount, setEaterCount, sharedProfile } = useHouseholdCollections(profile);
   const { aiCuration, setAiCuration, learnedSignals, setLearnedSignals, behavioralConsent, cuisineSignal, moodSignal, suppressedCuisines, setSuppressedCuisines, appliedSignals } = useLearningSignals(entry, page, diary);
-  // AI features are a Pro perk (strategy §6.5): the stored preference survives,
-  // but AI curation only takes effect while the trial/subscription is live.
-  // Free users keep the deterministic ranking — the core never needs AI.
+  // Concept recovery Phase 3: Moody curation is on by default for the home feed.
+  // The stored preference still lets users turn it off.
   const pro = isPro(profile);
-  const aiCurationActive = aiCuration && pro;
+  const aiCurationActive = aiCuration;
 
   // Browser automation cannot use javascript: URLs to mutate localStorage.
   // Development-only test states provide explicit, repeatable access instead.
@@ -135,7 +135,7 @@ export default function App() {
       setProfile(prev => ({ ...prev, name: prev.name || "Test Cook", email: prev.email || "test@example.com", onboarded: true, accountCreated: true }));
       setEntry("app");
     } else if (testState === "onboarding") {
-      setProfile(prev => ({ ...prev, name: prev.name || "Test Cook", email: prev.email || "test@example.com", accountCreated: true }));
+      setProfile(prev => ({ ...prev, name: prev.name || "Test Cook", email: prev.email || "test@example.com", accountCreated: true, path: "quick" }));
       setEntry("onboarding");
     } else if (testState === "quick-start") {
       setEntry("quick-start");
@@ -257,7 +257,8 @@ export default function App() {
       // Older accounts are returning users whose data is missing → skip re-onboarding.
       const accountAgeMs = Date.now() - new Date(session.user.created_at).getTime();
       if (accountAgeMs < 10 * 60 * 1000) {
-        setProfile({ ...defaultProfile, email: session.user.email ?? "", accountCreated: true });
+        // New signups get the quick gate (~7 items); the rest is progressive.
+        setProfile({ ...defaultProfile, email: session.user.email ?? "", accountCreated: true, path: "quick" });
         setEntry("onboarding");
       } else {
         setEntry(prev => (prev === "welcome" || prev === "login") ? "app" : prev);
@@ -390,16 +391,16 @@ export default function App() {
       openRecipe={(recipe) => {
         setSelected(recipe);
         setProfile({ ...profile, firstPickViewed: true });
-        setEntry("subscription");
+        setEntry("account");
       }}
       continueToTrial={() => {
         setProfile({ ...profile, firstPickViewed: true });
-        setEntry("subscription");
+        setEntry("account");
       }}
     />
   );
-  if (entry === "onboarding") return <Onboarding profile={profile} save={setProfile} finish={(next) => { setProfile({ ...next, onboarded: true }); clearStored("moodfood-onboarding-step"); setEntry("account"); }} />;
-  if (entry === "account") return <AccountSetupScreen profile={profile} back={() => setEntry("onboarding")} simulate={testState === "account" || testState === "onboarding"} submit={(patch, opts) => {
+  if (entry === "onboarding") return <Onboarding profile={profile} save={setProfile} finish={(next) => { setProfile({ ...next, onboarded: true, quickStartCompleted: true }); clearStored("moodfood-onboarding-step"); setEntry("first-pick"); }} />;
+  if (entry === "account") return <AccountSetupScreen profile={profile} back={() => setEntry(profile.firstPickViewed || profile.quickStartCompleted ? "first-pick" : "onboarding")} simulate={testState === "account" || testState === "onboarding"} submit={(patch, opts) => {
     const confirmed = !!opts?.hasSession; // session present = email confirmation is OFF, so they're in
     const next = { ...profile, ...patch, accountCreated: true, emailVerified: confirmed };
     setProfile(next);
@@ -413,12 +414,12 @@ export default function App() {
   return <MenuCtx.Provider value={() => setMenuOpen(true)}><div className={page === "cook" ? "app cooking" : "app"}>
     {page !== "cook" && <DesktopNav page={page} go={go} />}
     <Suspense fallback={<main className="screen-loading" aria-busy="true" />}><main>
-      {page === "home" && <HomeScreen profile={profile} diary={diary} saved={saved} catalog={catalog} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results={false} setResults={setResults} beginResults={() => { setSearchRequest(null); beginCheckin(); go("results"); }} ranked={ranked} curating={curating} loadMore={loadMore} live={live} curated={curated} retry={retry} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={addPhoto} onPickSuggestion={r => runSearch({ query: r.title, filters: { query: r.title } })} toggleSave={toggleSavedRecipe} />}
+      {page === "home" && <HomeScreen profile={profile} diary={diary} saved={saved} catalog={catalog} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results={false} setResults={setResults} beginResults={() => { setSearchRequest(null); beginCheckin(); go("results"); }} ranked={ranked} curating={curating} loadMore={loadMore} live={live} curated={curated} retry={retry} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={addPhoto} onPickSuggestion={r => runSearch({ query: r.title, filters: { query: r.title } })} toggleSave={toggleSavedRecipe} signals={appliedSignals} />}
       {page === "search" && <SearchScreen profile={sharedProfile} diary={diary} saved={saved} catalog={catalog} onSearch={request => runSearch(request)} />}
       {page === "results" && (searchRequest
         ? <SearchResultsScreen results={searchResults} loading={searchLoading} request={searchRequest} relaxed={searchRelaxed} more={() => runSearch(searchRequest, true)} home={() => go("home")} search={() => go("search")} open={open} saved={saved} toggleSave={toggleSavedRecipe} />
         : results
-          ? <HomeScreen profile={profile} diary={diary} saved={saved} catalog={catalog} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results setResults={v => { setResults(v); if (!v) go("home"); }} beginResults={() => {}} ranked={ranked} curating={curating} hasFetched={hasFetched} loadMore={loadMore} live={live} curated={curated} retry={retry} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={addPhoto} onPickSuggestion={r => runSearch({ query: r.title, filters: { query: r.title } })} toggleSave={toggleSavedRecipe} />
+          ? <HomeScreen profile={profile} diary={diary} saved={saved} catalog={catalog} mood={mood} setMood={setMood} energy={energy} setEnergy={setEnergy} time={time} setTime={setTime} mealCategory={mealCategory} setMealCategory={setMealCategory} cuisine={cuisine} setCuisine={setCuisine} diet={homeDiet} setDiet={setHomeDiet} results setResults={v => { setResults(v); if (!v) go("home"); }} beginResults={() => {}} ranked={ranked} curating={curating} hasFetched={hasFetched} loadMore={loadMore} live={live} curated={curated} retry={retry} open={open} go={go} diners={diners} selectedDiners={selectedDiners} setSelectedDiners={setSelectedDiners} eaterCount={eaterCount} setEaterCount={setEaterCount} openNotifs={openNotifs} unread={unreadCount()} addPhoto={addPhoto} onPickSuggestion={r => runSearch({ query: r.title, filters: { query: r.title } })} toggleSave={toggleSavedRecipe} signals={appliedSignals} />
           : <EmptyResultsScreen home={() => go("home")} search={() => go("search")} />)}
       {page === "detail" && selected && <DetailScreen recipe={selected} servings={eaterCount} back={backFromDetail} cook={() => go("cook")} saved={saved.includes(selected.id)} toggleSave={() => toggleSavedRecipe(selected)} addGroceries={() => setGroceries(v => [...new Set([...v, ...selected.ingredients])])} addPhoto={addPhoto} shareToCommunity={() => shareRecipe(selected)} allergies={profile.allergies} />}
       {page === "cook" && selected && <CookScreen recipe={selected} exit={() => go("detail")} allergies={profile.allergies} finish={(rating, photo) => { setDiary(v => [{ recipe: selected, rating, when: "Today" }, ...v]); if (photo) addPhoto(photo); if (behavioralConsent) void recordRating({ providerRecipeId: selected.id, title: selected.title, cuisine: selected.cuisine, source: aiCurationActive ? "ai" : "deterministic", rating, mood }); go("diary"); }} />}
@@ -438,7 +439,7 @@ export default function App() {
       {page === "account" && <AccountScreen profile={profile} save={setProfile} posts={posts.filter(p => p.author === profile.name)} back={() => go("settings")} cancelAccount={cancelAccount} />}
       {page === "community" && <CommunityScreen profile={profile} posts={posts} setPosts={setPosts} openRecipe={open} catalog={catalog} savedRecipes={savedRecipes} initialRecipeId={pendingShare} clearInitial={() => setPendingShare(undefined)} goFriends={() => go("friends")} openMember={openMember} openNotifications={openNotifs} unreadNotifications={unreadCount()} refreshNotifications={refreshNotifs} />}
       {page === "friends" && <FriendsScreen back={() => go("community")} openMember={openMember} />}
-      {page === "member-profile" && viewingMember && <FriendProfileScreen memberId={viewingMember} back={() => go("friends")} openRecipeRef={openRecipeRef} />}
+      {page === "member-profile" && viewingMember && <FriendProfileScreen memberId={viewingMember} back={() => go("friends")} openRecipeRef={openRecipeRef} viewerProfile={profile} />}
       {page === "health" && <HealthHub diary={diary} go={go} />}
       {page === "health-nutrition" && <HealthDetail kind="nutrition" diary={diary} back={() => go("health")} />}
       {page === "health-variety" && <HealthDetail kind="variety" diary={diary} back={() => go("health")} />}
@@ -449,6 +450,7 @@ export default function App() {
       {page === "help" && <HelpScreen back={() => go("settings")} />}
     </main></Suspense>
     {page !== "cook" && <BottomNav page={page} go={go} />}
+    {page !== "cook" && <MoodyChat profile={profile} mood={mood} picks={ranked} candidates={safeRecipes} openRecipe={open} />}
     {notifOpen && <NotificationsPanel close={() => setNotifOpen(false)} profile={profile} save={setProfile} refresh={refreshNotifs} />}
     {menuOpen && <MainMenu profile={profile} page={page} go={go} close={() => setMenuOpen(false)} openNotifs={openNotifs} unread={unreadCount()} logout={() => { void authSignOut(); setEntry("welcome"); }} />}
   </div></MenuCtx.Provider>;

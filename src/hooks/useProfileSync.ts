@@ -16,13 +16,14 @@ export function prefsForUpsert(p: Profile): Omit<Profile, "photoLogs"> {
 // The ONLY profile data ever exposed to other members (friend profiles + the
 // food-profile-based friend suggestions). Deliberately a curated food whitelist:
 // it must never include the psychological profile, mood entries, account, or
-// subscription fields. `cuisines` + `diet` also drive suggest_friends matching.
+// subscription fields. These curated signals also drive suggest_friends matching.
 export function publicFoodProfile(p: Profile): Record<string, unknown> {
   return {
     diet: p.diet, allergies: p.allergies, dietReligious: p.dietReligious,
     cuisines: p.cuisines, skill: p.skill,
     flavorLikes: p.flavorLikes, flavorAvoids: p.flavorAvoids,
     textureLikes: p.textureLikes, textureAvoids: p.textureAvoids,
+    comfortCues: p.comfortCues, comfortFoods: p.comfortFoods, cookingMoods: p.cookingMoods,
     spiceTolerance: p.spiceTolerance, spiceTypes: p.spiceTypes,
     proteins: p.proteins, vegetables: p.vegetables, carbs: p.carbs,
     dislikedIngredients: p.dislikedIngredients,

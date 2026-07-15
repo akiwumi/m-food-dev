@@ -203,6 +203,12 @@ async function curate(recipes: any[], profile: any, mood: string, history: any):
   const menu = recipes.map((r, i) => `${i}: ${r.title} | ${r.time}min | ${r.calories}cal | ${r.cuisine}`).join("\n");
   const arr = (v: unknown): string[] => Array.isArray(v) ? v.filter(x => typeof x === "string") : [];
   const list = (label: string, v: unknown, max = 8) => { const a = arr(v).slice(0, max); return a.length ? `${label}: ${a.join(", ")}.` : ""; };
+  const moodNeeds = profile?.moodNeeds && typeof profile.moodNeeds === "object"
+    ? Object.entries(profile.moodNeeds)
+      .filter((entry): entry is [string, string] => typeof entry[0] === "string" && typeof entry[1] === "string" && entry[1].trim().length > 0)
+      .slice(0, 8)
+      .map(([moodName, need]) => `${moodName}: ${need}`)
+    : [];
   const sys = [
     "You are Moody, a dinner co-pilot. Rank these REAL recipes for the user and explain each briefly.",
     "First, read the user's full food-psychology profile and food history below; rank for THIS person, not the average person.",
@@ -211,6 +217,7 @@ async function curate(recipes: any[], profile: any, mood: string, history: any):
     list("Firm religious/ethical rules (never break)", profile?.dietReligious),
     list("Dislikes (avoid)", profile?.dislikedIngredients),
     profile?.foodRelationship ? `Relationship with food: ${profile.foodRelationship}.` : "",
+    moodNeeds.length ? `Personal mood meanings — use these when the current mood matches: ${moodNeeds.join("; ")}.` : "",
     profile?.cookingMotivation ? `Primary cooking motivation: ${profile.cookingMotivation}.` : "",
     list("Comfort cues", profile?.comfortCues),
     list("Avoid cues", profile?.avoidCues),

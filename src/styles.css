@@ -183,6 +183,8 @@ body,.app{background:linear-gradient(180deg,#dceef2 0%,#eaf4f3 30%,#f5fbfa 100%)
 .home-greeting{padding:14px 20px 8px}
 .home-greeting h1{font-size:40px;font-weight:800;margin:0;letter-spacing:-.03em;line-height:1.05}
 .home-greeting p{color:var(--muted);margin:6px 0 0;font-size:14px}
+.home-greeting p.moody-voice{color:var(--ink);font-size:15px;line-height:1.5;font-weight:600;margin:10px 0 2px;display:flex;gap:7px;align-items:flex-start}
+.home-greeting p.moody-voice svg{color:var(--blue-deep);flex-shrink:0;margin-top:3px}
 
 /* Hero recipe photo, the star of the layout */
 .home-hero{position:relative;margin:10px 16px 0;border-radius:28px;overflow:hidden;height:44vh;min-height:280px;box-shadow:0 20px 50px rgba(20,50,60,.18);cursor:pointer}
@@ -207,6 +209,19 @@ body,.app{background:linear-gradient(180deg,#dceef2 0%,#eaf4f3 30%,#f5fbfa 100%)
 .mood-pills{display:flex;flex-wrap:wrap;gap:8px}
 .mood-pills button{border:1px solid var(--line);background:rgba(255,255,255,.7);border-radius:99px;padding:9px 16px;font-size:13px;font-weight:600;box-shadow:var(--shadow-sm);transition:all .14s ease}
 .mood-pills button.active{background:var(--blue)!important;color:var(--ink)!important;border-color:var(--blue)!important;box-shadow:0 6px 18px rgba(100,185,220,.4)!important;transform:scale(1.04)}
+
+/* Check-in hint under the mood pills — mood alone is enough */
+.checkin-hint{font-size:12.5px;color:var(--muted);margin:12px 0 0;line-height:1.45}
+
+/* Refine disclosure — time/energy/meal/cuisine/diet, off the critical path */
+.home-refine{margin-top:16px;border-top:1px solid var(--line);padding-top:6px}
+.home-refine>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;padding:10px 2px;font-size:13px;font-weight:700;color:var(--blue-deep)}
+.home-refine>summary::-webkit-details-marker{display:none}
+.home-refine>summary span{font-weight:500;color:var(--muted);font-size:12px}
+.home-refine>summary::after{content:"";margin-left:auto;width:8px;height:8px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);transition:transform .18s ease}
+.home-refine[open]>summary::after{transform:rotate(-135deg)}
+.home-refine-body{padding-top:4px}
+.home-refine-body .section-label:first-child{margin-top:0}
 
 /* Time number-pill grid, faithful clone of the 10·20·30·40·50 selector */
 .time-pills{display:flex;gap:8px}
@@ -277,6 +292,13 @@ body,.app{background:linear-gradient(180deg,#dceef2 0%,#eaf4f3 30%,#f5fbfa 100%)
 .food-profile .fp-intro>span{font-size:10px;letter-spacing:.2em;font-weight:700;color:var(--blue-deep)}
 .food-profile .fp-intro h1{font-size:30px;font-weight:800;margin:6px 0 8px;letter-spacing:-.02em}
 .food-profile .fp-intro p{margin:0;color:var(--muted);line-height:1.6;font-size:14px}
+.food-profile .fp-completion{margin:14px 0 6px;background:var(--white,#fff);border:1px solid rgba(0,0,0,.06);border-radius:22px;padding:16px 18px;box-shadow:var(--shadow)}
+.food-profile .fp-completion-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.food-profile .fp-completion-head b{font-size:14.5px;font-weight:800;letter-spacing:-.01em}
+.food-profile .fp-completion-head span{font-size:12px;color:var(--muted);font-weight:600;white-space:nowrap}
+.food-profile .fp-completion-bar{height:8px;border-radius:99px;background:rgba(0,0,0,.07);margin:10px 0 10px;overflow:hidden}
+.food-profile .fp-completion-bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--blue),var(--blue-deep));transition:width .35s ease}
+.food-profile .fp-completion p{margin:0;color:var(--muted);font-size:12.5px;line-height:1.5}
 .food-profile .fp-section{margin-top:22px}
 .food-profile .fp-section-title{font-size:13px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--blue-deep);margin:0 2px 10px}
 .food-profile .fp-q{background:var(--white,#fff);border:1px solid rgba(0,0,0,.06);border-radius:22px;padding:18px;margin-bottom:12px;box-shadow:var(--shadow)}
@@ -622,6 +644,8 @@ button.ghost{border:1px solid var(--line);background:transparent;color:var(--mut
 .fr-text{display:grid;min-width:0}
 .fr-text b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fr-text small{font-size:10px;color:var(--muted)}
+.mini-signals{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.mini-signals em{font-style:normal;background:var(--sage);color:var(--olive);border-radius:999px;padding:2px 7px;font-size:9px;font-weight:700}
 .friend-block .fb-sub{font-size:11px;color:var(--muted);margin:-4px 0 8px}
 .social-post .post-author{display:flex;align-items:center;gap:9px;flex:1;border:0;background:transparent;text-align:left;padding:0}
 .friend-profile .fp-hero{display:grid;justify-items:center;text-align:center;gap:4px;padding:18px 0 8px}
@@ -632,6 +656,15 @@ button.ghost{border:1px solid var(--line);background:transparent;color:var(--mut
 .fp-stats{display:flex;gap:18px;margin:8px 0 4px;font-size:12px;color:var(--muted)}
 .fp-stats b{color:var(--olive)}
 .fp-actions{display:flex;gap:8px;align-items:center;margin-top:6px}
+.food-personality-card{margin-top:18px;background:linear-gradient(145deg,#fffdf6,#eef7f4);border:1px solid #ffffffd9;border-radius:18px;padding:16px;box-shadow:0 12px 34px rgba(67,89,75,.12);display:grid;gap:14px}
+.fpc-head{display:flex;gap:10px;align-items:flex-start}
+.fpc-head svg{color:var(--olive);flex-shrink:0;margin-top:2px}
+.fpc-head span,.fpc-grid small{display:block;font-size:9px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
+.fpc-head h2{font:700 20px/1.2 "Playfair Display",serif;margin:0;color:var(--ink)}
+.fpc-grid{display:grid;gap:12px}
+.fpc-overlap{background:#fff;border:1px solid var(--line);border-radius:14px;padding:11px;display:grid;gap:8px}
+.fpc-overlap b{font-size:12px;line-height:1.45;color:var(--olive)}
+.food-personality-card p{font-size:10px;line-height:1.5;color:var(--muted);margin:0}
 .fp-block{margin-top:20px}
 .fp-block h2{font:600 15px "Playfair Display",serif;margin-bottom:10px}
 .fp-field{margin-bottom:12px}
@@ -1107,10 +1140,7 @@ button.ghost{border:1px solid var(--line);background:transparent;color:var(--mut
   }
   .home-checkin{
     margin-top:96px!important;
-    display:grid;
-    grid-template-columns:minmax(0,1.05fr) minmax(360px,.95fr);
-    gap:20px 40px;
-    align-items:start;
+    max-width:640px;
     padding:40px!important;
     border:0!important;
     border-radius:0!important;
@@ -1125,27 +1155,7 @@ button.ghost{border:1px solid var(--line);background:transparent;color:var(--mut
     font-weight:800;
     letter-spacing:.08em;
   }
-  .home-checkin .section-label:nth-of-type(n+3){margin-top:18px!important}
-  .home-checkin>.section-label:nth-of-type(1),
-  .home-checkin>.mood-pills,
-  .home-checkin>.section-label:nth-of-type(3),
-  .home-checkin>input[type=range],
-  .home-checkin>.range-label:nth-of-type(2),
-  .home-checkin>.section-label:nth-of-type(4),
-  .home-checkin>.meal-category-pills,
-  .home-checkin>.meal-type-hint{
-    grid-column:1;
-  }
-  .home-checkin>.section-label:nth-of-type(2),
-  .home-checkin>.time-pills,
-  .home-checkin>.range-label:nth-of-type(1),
-  .home-checkin>.section-label:nth-of-type(5),
-  .home-checkin>select:nth-of-type(1),
-  .home-checkin>.section-label:nth-of-type(6),
-  .home-checkin>select:nth-of-type(2),
-  .home-checkin>.primary{
-    grid-column:2;
-  }
+  .home-checkin .section-label:nth-of-type(n+2){margin-top:18px!important}
   .mood-pills,.meal-category-pills{gap:10px}
   .mood-pills button,.meal-category-pills button{padding:10px 15px}
   .mood-pills button.active,.meal-category-pills button.active,.time-pills button.active{
@@ -2372,3 +2382,51 @@ button.ghost{border:1px solid var(--line);background:transparent;color:var(--mut
   .community-composer-screen,.community-post-detail{left:calc((100vw + 240px - 680px)/2)}
   .community-floating-post{right:40px;bottom:32px}
 }
+/* ── Moody chat: floating FAB + bottom-sheet conversation (Phase 2) ── */
+.moody-fab{position:fixed;right:18px;bottom:84px;z-index:60;width:56px;height:56px;border-radius:50%;display:grid;place-items:center;border:0;background:var(--ink);color:#fff;box-shadow:0 12px 28px rgba(23,26,28,.32);cursor:pointer;transition:transform .16s ease,opacity .16s ease}
+.moody-fab:hover{transform:scale(1.06)}
+.moody-fab.hidden{opacity:0;pointer-events:none;transform:scale(.8)}
+.moody-chat-scrim{position:fixed;inset:0;z-index:70;background:rgba(15,25,28,.42);backdrop-filter:blur(3px);display:flex;align-items:flex-end;justify-content:center}
+.moody-chat{width:100%;max-width:520px;max-height:82vh;height:82vh;background:var(--bg2,#eef4f3);border-radius:26px 26px 0 0;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 -18px 50px rgba(20,40,45,.28);animation:moody-rise .24s ease}
+@keyframes moody-rise{from{transform:translateY(24px);opacity:.4}to{transform:translateY(0);opacity:1}}
+.moody-chat-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;background:var(--white);border-bottom:1px solid var(--line)}
+.moody-chat-id{display:flex;align-items:center;gap:11px}
+.moody-chat-avatar{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(145deg,#a8dce8,#5baec5);color:#fff;box-shadow:var(--shadow-sm)}
+.moody-chat-id b{display:block;font-size:15px;font-weight:800;letter-spacing:-.01em}
+.moody-chat-id small{font-size:11.5px;color:var(--muted)}
+.moody-chat-head>button{border:0;background:transparent;color:var(--muted);display:grid;place-items:center;cursor:pointer;width:36px;height:36px;border-radius:12px}
+.moody-chat-body{flex:1;overflow-y:auto;padding:16px 16px 4px;display:flex;flex-direction:column;gap:12px}
+.moody-msg{display:flex;flex-direction:column;max-width:86%}
+.moody-msg.user{align-self:flex-end;align-items:flex-end}
+.moody-msg.assistant{align-self:flex-start;align-items:flex-start}
+.moody-bubble{padding:11px 14px;border-radius:18px;font-size:14px;line-height:1.45;white-space:pre-wrap}
+.moody-msg.user .moody-bubble{background:var(--ink);color:#fff;border-bottom-right-radius:6px}
+.moody-msg.assistant .moody-bubble{background:var(--white);color:var(--ink);border:1px solid var(--line);border-bottom-left-radius:6px}
+.moody-typing{display:flex;gap:5px;align-items:center}
+.moody-typing i{width:7px;height:7px;border-radius:50%;background:var(--muted);opacity:.5;animation:moody-blink 1.1s infinite ease-in-out}
+.moody-typing i:nth-child(2){animation-delay:.18s}
+.moody-typing i:nth-child(3){animation-delay:.36s}
+@keyframes moody-blink{0%,80%,100%{opacity:.3;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}
+.moody-recipe-card{margin-top:8px;display:flex;align-items:center;gap:12px;width:100%;background:var(--white);border:1px solid var(--line);border-radius:18px;padding:8px 12px 8px 8px;box-shadow:var(--shadow-sm);cursor:pointer;text-align:left;color:var(--ink)}
+.moody-recipe-card img{width:56px;height:56px;border-radius:14px;object-fit:cover;flex-shrink:0}
+.moody-recipe-card .mrc-body{flex:1;min-width:0}
+.moody-recipe-card .mrc-body b{display:block;font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.moody-recipe-card .mrc-facts{display:flex;align-items:center;gap:5px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);margin-top:3px}
+.moody-recipe-card svg:last-child{color:var(--muted);flex-shrink:0}
+.moody-suggested{display:flex;flex-wrap:wrap;gap:8px;padding:0 16px 10px}
+.moody-suggested button{border:1px solid var(--line);background:var(--white);border-radius:99px;padding:8px 14px;font-size:12.5px;font-weight:600;color:var(--blue-deep);cursor:pointer}
+.moody-chat-input{display:flex;gap:8px;padding:12px 14px calc(12px + env(safe-area-inset-bottom));background:var(--white);border-top:1px solid var(--line)}
+.moody-chat-input input{flex:1;min-width:0;border:1px solid var(--line);background:var(--bg2,#eef4f3);border-radius:99px;padding:12px 16px;font-size:14px;outline:0}
+.moody-chat-input button{width:44px;height:44px;flex-shrink:0;border:0;border-radius:50%;background:var(--ink);color:#fff;display:grid;place-items:center;cursor:pointer}
+.moody-chat-input button:disabled{opacity:.4;cursor:default}
+@media(min-width:760px){.moody-chat{border-radius:26px;margin-bottom:24px;height:min(680px,82vh)}.moody-fab{bottom:26px;right:26px}}
+
+/* "Why this pick?" — the food profile made visible on each pick (Phase 4) */
+.pick-card .pick-why{background:transparent;padding:0;margin:2px 0 10px;font-size:11.5px;line-height:1.4;color:var(--blue-deep);font-weight:600;display:flex;gap:5px;align-items:flex-start;max-width:100%}
+.pick-card .pick-why svg{flex-shrink:0;margin-top:2px;color:var(--blue-deep)}
+
+/* Variety / deficit nudge on the Weekly reflection (Phase 4) */
+.insight-nudge{display:flex;gap:12px;align-items:flex-start;margin-top:12px;background:var(--white);border:1px solid var(--line);border-radius:22px;padding:16px 18px;box-shadow:var(--shadow-sm)}
+.insight-nudge>svg{flex-shrink:0;margin-top:2px;color:var(--blue-deep)}
+.insight-nudge b{display:block;font-size:14px;font-weight:800;letter-spacing:-.01em;margin-bottom:3px}
+.insight-nudge p{margin:0;font-size:12.5px;line-height:1.5;color:var(--muted)}
