@@ -5,6 +5,7 @@
   --blue:#7cc3dc;--blue-deep:#57aecb;--coral:#ef6a4f;
   --bg1:#e7f1f0;--bg2:#f4f9f8;
   --cream:#eef4f3;--sage:#e9f2f1;--white:#ffffff;
+  --app-chrome-top:calc(18px + env(safe-area-inset-top));--app-chrome-control:48px;
   --glass:rgba(255,255,255,.62);--glass-strong:rgba(255,255,255,.84);
   --olive:#171a1c;                       /* legacy "primary" token, now ink */
   --line:rgba(23,26,28,.07);
@@ -415,7 +416,7 @@ body,.app{background:linear-gradient(180deg,#dceef2 0%,#eaf4f3 30%,#f5fbfa 100%)
 .billing button.skip{border:0;background:transparent;color:var(--muted);font-weight:700;padding:10px;text-align:center;width:100%;display:block}
 
 /* ── Other small touches ─────────────────────────────────────────── */
-.top-bar{height:auto;min-height:calc(62px + env(safe-area-inset-top));display:grid;grid-template-columns:50px 1fr 50px;align-items:center;padding:env(safe-area-inset-top) 10px 0}
+.top-bar{height:auto;min-height:calc(var(--app-chrome-top) + var(--app-chrome-control));display:grid;grid-template-columns:50px 1fr 50px;align-items:center;padding:var(--app-chrome-top) 10px 0}
 .top-bar h1{text-align:center;font-size:18px;font-weight:800;margin:0}
 .top-bar button{width:42px;height:42px;border-radius:50%;background:#fff;box-shadow:var(--shadow-sm);border:0;display:grid;place-items:center}
 .top-bar button:disabled{opacity:0}
@@ -2239,6 +2240,20 @@ button.ghost{border:1px solid var(--line);background:transparent;color:var(--mut
   font-size: 9px;
   font-weight: 700;
   width: fit-content;
+}
+
+@media(max-width:1023px){
+  .top-bar,.onboarding header{min-height:calc(var(--app-chrome-top) + var(--app-chrome-control));padding-top:var(--app-chrome-top)}
+  .top-bar button{width:46px;height:46px}
+  .detail-image>button,.detail-image>div{top:var(--app-chrome-top)}
+  .detail-image>div button{top:auto}
+  .cook{padding-top:var(--app-chrome-top)}
+  .entry,.auth-modern,.quick-start{padding-top:var(--app-chrome-top)}
+  .onboarding-photo .op-bar{padding:var(--app-chrome-top) 18px 0}
+  .ih-top{padding:var(--app-chrome-top) 20px 0}
+  .ip-top{padding:var(--app-chrome-top) 16px 6px}
+  .ap-back{top:var(--app-chrome-top)}
+  .ap-logo{top:calc(var(--app-chrome-top) + 8px)}
 }
 
 /* ── Moody chat: floating FAB + bottom-sheet conversation (Phase 2) ── */

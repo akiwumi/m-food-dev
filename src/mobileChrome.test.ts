@@ -6,8 +6,14 @@ describe("mobile chrome layout", () => {
 
   it("keeps app headers below the iOS status bar and camera notch", () => {
     const css = styles();
+    expect(css).toContain("--app-chrome-top:calc(18px + env(safe-area-inset-top))");
+    expect(css).toContain("--app-chrome-control:48px");
     expect(css).toContain("padding:calc(18px + env(safe-area-inset-top)) 20px 0");
-    expect(css).toContain("min-height:calc(62px + env(safe-area-inset-top))");
+    expect(css).toContain("min-height:calc(var(--app-chrome-top) + var(--app-chrome-control))");
+    expect(css).toContain("top:var(--app-chrome-top)");
+    expect(css).toContain("padding-top:var(--app-chrome-top)");
+    expect(css).toContain(".entry,.auth-modern,.quick-start{padding-top:var(--app-chrome-top)}");
+    expect(css).toContain(".onboarding-photo .op-bar{padding:var(--app-chrome-top) 18px 0}");
   });
 
   it("renders Moody chat as a draggable floating window, not a pinned bottom sheet", () => {
