@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { Plus, ChefHat, X, Camera, Send, Users, MoreVertical, ChevronRight, Heart, MessageCircle, UserPlus, Globe, ThumbsUp, Hand, type LucideIcon } from "lucide-react";
+import { Plus, ChefHat, X, Camera, Send, Users, MoreVertical, ChevronRight, Heart, MessageCircle, UserPlus, Globe, ThumbsUp, Hand, Pencil, type LucideIcon } from "lucide-react";
 import { TopBar } from "../components/AppChrome";
 import { Avatar } from "../components/misc";
+import { PostImageEditor } from "../components/PostImageEditor";
 import { IMAGE_FILE_ACCEPT, readSafeImage, cleanText } from "../security";
 import { useCommunity } from "../hooks/useCommunity";
 import { fetchComments, type FeedPost, type FeedComment, type PostReaction, type PostVisibility } from "../community";
 import type { Recipe } from "../data";
 import type { Profile, ReactionCounts, ReactionKind, SocialPost } from "../store";
 import { notifyCommunityMessage, notifyCommunityPost } from "../notifications";
+import { MAX_POST_IMAGES, normalizePostImages, postDisplayImages } from "../postImages";
 
 const EMPTY_REACTIONS: ReactionCounts = { like: [], love: [], applaud: [] };
 const REACTIONS: { kind: ReactionKind; label: string; Icon: LucideIcon }[] = [
@@ -25,7 +27,7 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
   const community = useCommunity();
   const seenRealPostIds = useRef<Set<string> | null>(null);
   const [composer, setComposer] = useState(false);
-  const [text, setText] = useState(""); const [image, setImage] = useState(""); const [recipeId, setRecipeId] = useState("");
+  const [text, setText] = useState(""); const [images, setImages] = useState<string[]>([]); const [editingImageIndex, setEditingImageIndex] = useState<number | null>(null); const [recipeId, setRecipeId] = useState("");
   const [visibility, setVisibility] = useState<PostVisibility>("connections");
   const [uploadError, setUploadError] = useState(""); const [posting, setPosting] = useState(false);
   const [comment, setComment] = useState<Record<string, string>>({}); // local-feed (pilot) comment drafts
@@ -61,16 +63,28 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
     if (fresh.length) refreshNotifications();
   }, [community.ready, community.feed, profile.communityPostNotifications, profile.name, refreshNotifications]);
 
-  const upload = async (file?: File) => { if (!file) return; try { setImage(await readSafeImage(file)); setUploadError(""); } catch (e) { setUploadError((e as Error).message); } };
-  const resetComposer = () => { setText(""); setImage(""); setRecipeId(""); setComposer(false); };
+  const upload = async (files?: FileList | null) => {
+    const selected = [...(files ?? [])].slice(0, Math.max(0, MAX_POST_IMAGES - images.length));
+    if (!selected.length) return;
+    try {
+      const converted: string[] = [];
+      for (const file of selected) converted.push(await readSafeImage(file));
+      setImages(current => normalizePostImages([...current, ...converted]));
+      setEditingImageIndex(images.length);
+      setUploadError("");
+    } catch (e) {
+      setUploadError((e as Error).message);
+    }
+  };
+  const resetComposer = () => { setText(""); setImages([]); setEditingImageIndex(null); setRecipeId(""); setComposer(false); };
 
   const publish = async () => {
     const safeText = cleanText(text, 1000);
-    if (!safeText && !image && !recipeId) return;
+    if (!safeText && !images.length && !recipeId) return;
     const recipe = findRecipe(recipeId);
     if (community.ready) {
       setPosting(true);
-      const ok = await community.publish({ body: safeText, imageDataUrl: image || undefined, recipeRef: recipeId || undefined, recipeTitle: recipe?.title, visibility });
+      const ok = await community.publish({ body: safeText, imageDataUrls: images.length ? images : undefined, recipeRef: recipeId || undefined, recipeTitle: recipe?.title, visibility });
       setPosting(false);
       if (ok) {
         if (profile.communityPostNotifications) {
@@ -83,7 +97,7 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
       return;
     }
     // Pilot fallback: local-only feed.
-    setPosts([{ id: crypto.randomUUID(), author: cleanText(profile.name, 80) || "You", avatar: profile.avatar, text: safeText, image: image || recipe?.image || "", recipeId: recipeId || undefined, createdAt: "Just now", reactions: { ...EMPTY_REACTIONS }, comments: [] }, ...posts.slice(0, 99)]);
+    setPosts([{ id: crypto.randomUUID(), author: cleanText(profile.name, 80) || "You", avatar: profile.avatar, text: safeText, image: images[0] || "", images, recipeId: recipeId || undefined, createdAt: "Just now", reactions: { ...EMPTY_REACTIONS }, comments: [] }, ...posts.slice(0, 99)]);
     if (profile.communityPostNotifications) {
       notifyCommunityPost(profile.name || "You", safeText || recipe?.title || "A saved recipe was shared.");
       refreshNotifications();
@@ -104,7 +118,30 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
   const composerEl = composer && (
     <section className="composer">
       <div><Avatar name={profile.name} image={profile.avatar} /><textarea maxLength={1000} value={text} onTouchStart={e => e.currentTarget.focus()} onChange={e => setText(e.target.value)} placeholder="Share a cook, recipe, or tip..." /></div>
-      {image && <img src={image} alt="Post preview" />}
+      {editingImageIndex !== null && images[editingImageIndex] && (
+        <PostImageEditor
+          image={images[editingImageIndex]}
+          index={editingImageIndex}
+          onCancel={() => setEditingImageIndex(null)}
+          onSave={next => {
+            setImages(current => current.map((image, index) => index === editingImageIndex ? next : image));
+            setEditingImageIndex(null);
+          }}
+        />
+      )}
+      {images.length > 0 && (
+        <div className="composer-images">
+          {images.map((src, index) => (
+            <figure key={`${src.slice(0, 32)}-${index}`}>
+              <img src={src} alt={`Post preview ${index + 1}`} />
+              <figcaption>
+                <button type="button" onClick={() => setEditingImageIndex(index)} aria-label={`Edit image ${index + 1}`}><Pencil size={13} /></button>
+                <button type="button" onClick={() => { setImages(current => current.filter((_, n) => n !== index)); setEditingImageIndex(null); }} aria-label={`Remove image ${index + 1}`}><X size={13} /></button>
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      )}
       {recipeId && findRecipe(recipeId) && <div className="composer-recipe"><ChefHat size={15} /><span>Saved recipe <b>{findRecipe(recipeId)!.title}</b></span><button onClick={() => setRecipeId("")} aria-label="Remove saved recipe link"><X size={14} /></button></div>}
       <select value={recipeId} onChange={e => setRecipeId(e.target.value)}>
         <option value="">{savedRecipes.length ? "Add a saved recipe link (optional)" : "Save a recipe first to add it here"}</option>
@@ -112,7 +149,7 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
       </select>
       {uploadError && <p className="upload-error">{uploadError}</p>}
       <footer>
-        <label><Camera />Add photo<input type="file" accept={IMAGE_FILE_ACCEPT} onChange={e => upload(e.target.files?.[0])} /></label>
+        <label><Camera />Add photos<input type="file" accept={IMAGE_FILE_ACCEPT} multiple onChange={e => upload(e.target.files)} /></label>
         {community.ready && (
           <button type="button" className="visibility-toggle" onClick={() => setVisibility(v => v === "public" ? "connections" : "public")}>
             {visibility === "public" ? <><Globe size={14} />Public</> : <><Users size={14} />Friends</>}
@@ -186,17 +223,21 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
       {composerEl}
       <div className="feed">
         {posts.length === 0 && !composer && <div className="empty-state" style={{ margin: "24px 16px" }}><Users /><h2>Be the first to post</h2><p>Share a cook, tip, or recipe. Your psychological profile and diary stay completely private.</p></div>}
-        {posts.map(post => <article className="social-post" key={post.id}>
-          <header><Avatar name={post.author} image={post.avatar} /><div><b>{post.author}</b><span>{post.createdAt}</span></div><MoreVertical /></header>
-          <p>{post.text}</p>
-          {post.image && <img src={post.image} alt="Cooked meal" />}
-          {post.recipeId && findRecipe(post.recipeId) && <button className="linked-recipe" onClick={() => { const r = findRecipe(post.recipeId); if (r) openRecipe(r); }}><ChefHat /><span><small>SAVED RECIPE</small><b>{findRecipe(post.recipeId)?.title}</b></span><ChevronRight /></button>}
-          <ReactionBar active={localUserReaction(post)} counts={Object.fromEntries(REACTIONS.map(r => [r.kind, localReactions(post)[r.kind].length])) as Record<ReactionKind, number>} comments={post.comments.length} onReact={(reaction) => updatePost(post.id, p => toggleLocalReaction(p, reaction))} />
-          {post.comments.map((c, n) => <div className="comment" key={n}><Avatar name={c.author} image={c.avatar} /><p><b>{c.author}</b> {c.text}</p></div>)}
-          <form className="comment-form" onSubmit={e => { e.preventDefault(); if (!comment[post.id]?.trim()) return; updatePost(post.id, p => commentOnPost(p, comment[post.id])); setComment({ ...comment, [post.id]: "" }); refreshNotifications(); }}>
-            <input maxLength={500} value={comment[post.id] || ""} onChange={e => setComment({ ...comment, [post.id]: cleanText(e.target.value, 500) })} placeholder="Add a helpful comment..." /><button><Send /></button>
-          </form>
-        </article>)}
+        {posts.map(post => {
+          const linked = post.recipeId ? findRecipe(post.recipeId) : undefined;
+          const displayImages = postDisplayImages(post, linked);
+          return <article className="social-post" key={post.id}>
+            <header><Avatar name={post.author} image={post.avatar} /><div><b>{post.author}</b><span>{post.createdAt}</span></div><MoreVertical /></header>
+            <p>{post.text}</p>
+            <PostImageGallery images={displayImages} />
+            {linked && <button className="linked-recipe" onClick={() => openRecipe(linked)}><ChefHat /><span><small>SAVED RECIPE</small><b>{linked.title}</b></span><ChevronRight /></button>}
+            <ReactionBar active={localUserReaction(post)} counts={Object.fromEntries(REACTIONS.map(r => [r.kind, localReactions(post)[r.kind].length])) as Record<ReactionKind, number>} comments={post.comments.length} onReact={(reaction) => updatePost(post.id, p => toggleLocalReaction(p, reaction))} />
+            {post.comments.map((c, n) => <div className="comment" key={n}><Avatar name={c.author} image={c.avatar} /><p><b>{c.author}</b> {c.text}</p></div>)}
+            <form className="comment-form" onSubmit={e => { e.preventDefault(); if (!comment[post.id]?.trim()) return; updatePost(post.id, p => commentOnPost(p, comment[post.id])); setComment({ ...comment, [post.id]: "" }); refreshNotifications(); }}>
+              <input maxLength={500} value={comment[post.id] || ""} onChange={e => setComment({ ...comment, [post.id]: cleanText(e.target.value, 500) })} placeholder="Add a helpful comment..." /><button><Send /></button>
+            </form>
+          </article>;
+        })}
       </div>
     </div>
   );
@@ -225,7 +266,7 @@ function RealPost({ post, me, catalog, openRecipe, openMember, onReact, onCommen
     <article className="social-post">
       <header><button className="post-author" onClick={() => openMember(post.authorId)}><Avatar name={post.authorName} image={post.authorAvatar} /><div><b>{post.authorName}</b><span>{new Date(post.createdAt).toLocaleDateString()}</span></div></button><MoreVertical /></header>
       {post.body && <p>{post.body}</p>}
-      {post.image && <img src={post.image} alt="Cooked meal" />}
+      <PostImageGallery images={postDisplayImages(post, linked)} />
       {linked
         ? <button className="linked-recipe" onClick={() => openRecipe(linked)}><ChefHat /><span><small>SAVED RECIPE</small><b>{linked.title}</b></span><ChevronRight /></button>
         : post.recipeTitle && <div className="linked-recipe static"><ChefHat /><span><small>SAVED RECIPE</small><b>{post.recipeTitle}</b></span></div>}
@@ -240,6 +281,15 @@ function RealPost({ post, me, catalog, openRecipe, openMember, onReact, onCommen
         </>
       )}
     </article>
+  );
+}
+
+function PostImageGallery({ images }: { images: string[] }) {
+  if (!images.length) return null;
+  return (
+    <div className={`post-image-gallery count-${Math.min(images.length, 4)}`}>
+      {images.map((image, index) => <img src={image} alt={index === 0 ? "Shared food" : `Shared food ${index + 1}`} key={`${image}-${index}`} />)}
+    </div>
   );
 }
 
