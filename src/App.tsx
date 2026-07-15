@@ -33,6 +33,7 @@ import { useHouseholdCollections } from "./hooks/useHouseholdCollections";
 import { useRecipeCatalog } from "./hooks/useRecipeCatalog";
 import { BottomNav, DesktopNav } from "./components/AppChrome";
 import { MainMenu } from "./components/MainMenu";
+import { MoodyChat } from "./components/MoodyChat";
 import { NotificationsPanel } from "./components/NotificationsPanel";
 // Authenticated app screens: none are needed until the user is signed in and on
 // that page, so lazy-load them out of the initial (Landing/onboarding) chunk.
@@ -450,6 +451,7 @@ export default function App() {
       {page === "help" && <HelpScreen back={() => go("settings")} />}
     </main></Suspense>
     {page !== "cook" && <BottomNav page={page} go={go} />}
+    {page !== "cook" && <MoodyChat profile={profile} mood={mood} picks={ranked} candidates={safeRecipes} openRecipe={open} />}
     {notifOpen && <NotificationsPanel close={() => setNotifOpen(false)} profile={profile} save={setProfile} refresh={refreshNotifs} />}
     {menuOpen && <MainMenu profile={profile} page={page} go={go} close={() => setMenuOpen(false)} openNotifs={openNotifs} unread={unreadCount()} logout={() => { void authSignOut(); setEntry("welcome"); }} />}
   </div></MenuCtx.Provider>;
