@@ -122,8 +122,9 @@ input[type=range]{accent-color:var(--blue-deep)}
 .avatar-pick input{display:none}
 .avatar-pick em{font-size:11px;color:var(--muted);font-style:normal}
 .avatar-resize-editor{margin:12px auto 0;width:min(100%,360px);display:grid;justify-items:center;gap:12px;padding:14px;background:rgba(255,255,255,.78);border:1px solid rgba(255,255,255,.72);border-radius:22px;box-shadow:var(--shadow-sm);color:var(--ink)}
-.avatar-resize-preview{width:144px;height:144px;border-radius:50%;overflow:hidden;background:#fff;box-shadow:inset 0 0 0 4px rgba(255,255,255,.78),var(--shadow-sm)}
-.avatar-resize-preview img{width:100%;height:100%;object-fit:cover;transform-origin:center;display:block}
+.avatar-resize-preview{width:144px;height:144px;border-radius:50%;overflow:hidden;background:#fff;box-shadow:inset 0 0 0 4px rgba(255,255,255,.78),var(--shadow-sm);position:relative;touch-action:none;user-select:none;cursor:grab}
+.avatar-resize-preview:active{cursor:grabbing}
+.avatar-resize-preview img{position:absolute;max-width:none;transform-origin:center;display:block;pointer-events:none;-webkit-user-drag:none}
 .avatar-resize-editor label{width:100%;display:grid;gap:7px;font-size:11px;font-weight:800;text-align:left}
 .avatar-resize-editor label span{display:flex;justify-content:space-between;color:var(--muted)}
 .avatar-resize-editor em{font-size:11px;color:var(--coral);font-style:normal}
