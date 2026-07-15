@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Sparkles, Check, RotateCcw, ChefHat, Clock3, ShieldCheck, Play, ArrowRight, FlameKindling, Camera, Activity, Users, UserRound, Sliders } from "lucide-react";
 import { moods, type Recipe } from "../data";
 import { moodVoice } from "../moodVoice";
+import { explainPick, type LearnedSignals } from "../recommendation";
 import type { Profile, Diner } from "../store";
 import { sumNutrition, type FoodPhoto } from "../foodAnalysis";
 import { SPOON_CUISINES, SEARCH_DIETS } from "../searchFilters";
@@ -14,7 +15,7 @@ import { PickCard } from "../components/PickCard";
 import { DailySuggestionCarousel } from "../components/DailySuggestionCarousel";
 import { FoodCamera } from "../components/FoodCamera";
 
-export function HomeScreen({ profile, diary, saved, catalog, mood, setMood, energy, setEnergy, time, setTime, mealCategory, setMealCategory, cuisine, setCuisine, diet, setDiet, results, setResults, beginResults, ranked, curating, hasFetched, loadMore, live, curated, retry, open, go, diners, selectedDiners, setSelectedDiners, eaterCount, setEaterCount, openNotifs, unread, addPhoto, onPickSuggestion, toggleSave }: {
+export function HomeScreen({ profile, diary, saved, catalog, mood, setMood, energy, setEnergy, time, setTime, mealCategory, setMealCategory, cuisine, setCuisine, diet, setDiet, results, setResults, beginResults, ranked, curating, hasFetched, loadMore, live, curated, retry, open, go, diners, selectedDiners, setSelectedDiners, eaterCount, setEaterCount, openNotifs, unread, addPhoto, onPickSuggestion, toggleSave, signals }: {
   profile: Profile; diary: DiaryEntry[]; saved: string[]; catalog: Recipe[];
   mood: string; setMood: (v: string) => void; energy: number; setEnergy: (v: number) => void; time: number; setTime: (v: number) => void;
   mealCategory: string; setMealCategory: (v: string) => void;
@@ -24,6 +25,7 @@ export function HomeScreen({ profile, diary, saved, catalog, mood, setMood, ener
   diners: Diner[]; selectedDiners: string[]; setSelectedDiners: (v: string[]) => void;
   eaterCount: number; setEaterCount: (v: number) => void; openNotifs?: () => void; unread?: number;
   addPhoto: (p: FoodPhoto) => void; onPickSuggestion: (r: Recipe) => void; toggleSave: (r: Recipe) => void;
+  signals?: LearnedSignals;
 }) {
   const [rejected, setRejected] = useState<string[]>([]);
   const [shownCount, setShownCount] = useState(RESULT_BATCH_SIZE);
@@ -62,7 +64,7 @@ export function HomeScreen({ profile, diary, saved, catalog, mood, setMood, ener
       </div>
       {visible.length ? (
         <div style={{ padding: "0 16px", display: "grid", gap: 14 }}>
-          {visible.map(r => <PickCard key={r.id} recipe={r} servings={eaterCount} open={() => open(r)} reject={() => setRejected([...rejected, r.id])} save={() => toggleSave(r)} saved={saved.includes(r.id)} />)}
+          {visible.map(r => <PickCard key={r.id} recipe={r} servings={eaterCount} open={() => open(r)} reject={() => setRejected([...rejected, r.id])} save={() => toggleSave(r)} saved={saved.includes(r.id)} why={explainPick(r, profile, mood, energy, time, signals)} />)}
           {loadMore && (
             <button className="secondary" style={{ width: "100%" }} disabled={curating} onClick={showMore}>
               {curating ? "Finding more…" : <>Show me 5 more <RotateCcw size={16} /></>}

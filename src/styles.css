@@ -2260,3 +2260,13 @@ button.ghost{border:1px solid var(--line);background:transparent;color:var(--mut
 .moody-chat-input button{width:44px;height:44px;flex-shrink:0;border:0;border-radius:50%;background:var(--ink);color:#fff;display:grid;place-items:center;cursor:pointer}
 .moody-chat-input button:disabled{opacity:.4;cursor:default}
 @media(min-width:760px){.moody-chat{border-radius:26px;margin-bottom:24px;height:min(680px,82vh)}.moody-fab{bottom:26px;right:26px}}
+
+/* "Why this pick?" — the food profile made visible on each pick (Phase 4) */
+.pick-card .pick-why{background:transparent;padding:0;margin:2px 0 10px;font-size:11.5px;line-height:1.4;color:var(--blue-deep);font-weight:600;display:flex;gap:5px;align-items:flex-start;max-width:100%}
+.pick-card .pick-why svg{flex-shrink:0;margin-top:2px;color:var(--blue-deep)}
+
+/* Variety / deficit nudge on the Weekly reflection (Phase 4) */
+.insight-nudge{display:flex;gap:12px;align-items:flex-start;margin-top:12px;background:var(--white);border:1px solid var(--line);border-radius:22px;padding:16px 18px;box-shadow:var(--shadow-sm)}
+.insight-nudge>svg{flex-shrink:0;margin-top:2px;color:var(--blue-deep)}
+.insight-nudge b{display:block;font-size:14px;font-weight:800;letter-spacing:-.01em;margin-bottom:3px}
+.insight-nudge p{margin:0;font-size:12.5px;line-height:1.5;color:var(--muted)}
