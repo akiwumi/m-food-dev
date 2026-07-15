@@ -1,5 +1,11 @@
-const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
-const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const MAX_SOURCE_IMAGE_BYTES = 25 * 1024 * 1024;
+const BLOCKED_IMAGE_TYPES = new Set(["image/svg+xml"]);
+const FALLBACK_IMAGE_EXTENSIONS = new Set([
+  "avif", "bmp", "gif", "heic", "heics", "heif", "heifs", "jfif", "jpeg", "jpg",
+  "pjpeg", "png", "tif", "tiff", "webp",
+]);
+
+export const IMAGE_FILE_ACCEPT = "image/*,.avif,.bmp,.gif,.heic,.heics,.heif,.heifs,.jfif,.jpeg,.jpg,.pjpeg,.png,.tif,.tiff,.webp";
 
 export function cleanText(value: string, maxLength = 500) {
   // Intentionally strips control characters from user-supplied text (XSS/log-
@@ -60,8 +66,13 @@ const MAX_IMAGE_DIMENSION = 1024;
 const JPEG_QUALITY = 0.72;
 
 export function validateImage(file: File) {
-  if (!ALLOWED_IMAGE_TYPES.has(file.type)) throw new Error("Use a JPEG, PNG, or WebP image.");
-  if (file.size > MAX_IMAGE_BYTES) throw new Error("Images must be smaller than 4 MB.");
+  if (file.size > MAX_SOURCE_IMAGE_BYTES) throw new Error("Images must be smaller than 25 MB before compression.");
+  const type = file.type.toLowerCase();
+  if (BLOCKED_IMAGE_TYPES.has(type)) throw new Error("Use a photo image format, not SVG.");
+  if (type.startsWith("image/")) return;
+  const ext = file.name.toLowerCase().split(".").pop() ?? "";
+  if ((!type || type === "application/octet-stream") && FALLBACK_IMAGE_EXTENSIONS.has(ext)) return;
+  throw new Error("Use an image file.");
 }
 
 // Decode a file or data URL, honouring EXIF orientation where supported.
@@ -106,24 +117,11 @@ function toJpegDataUrl(source: ImageBitmap | HTMLImageElement): string {
 }
 
 // Validate, downscale, and re-encode an uploaded image as a compact JPEG data
-// URL. Falls back to the raw (already validated ≤4 MB) file only if canvas
-// processing is unavailable on this platform.
+// URL so iPhone HEIC/HEIF and other source formats become usable in the app.
 export async function readSafeImage(file: File): Promise<string> {
   validateImage(file);
-  try {
-    return toJpegDataUrl(await decodeImage(file));
-  } catch {
-    return readRawDataUrl(file);
-  }
-}
-
-function readRawDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("The image could not be read."));
-    reader.onload = () => resolve(String(reader.result));
-    reader.readAsDataURL(file);
-  });
+  try { return toJpegDataUrl(await decodeImage(file)); }
+  catch { throw new Error("The image could not be converted. Try a different photo."); }
 }
 
 // Re-compress an already-stored data URL (one-time repair of legacy oversized

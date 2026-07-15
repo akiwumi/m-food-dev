@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Plus, ChefHat, X, Camera, Send, Users, MoreVertical, ChevronRight, Heart, MessageCircle, UserPlus, Globe, ThumbsUp, Hand, type LucideIcon } from "lucide-react";
 import { TopBar } from "../components/AppChrome";
 import { Avatar } from "../components/misc";
-import { readSafeImage, cleanText } from "../security";
+import { IMAGE_FILE_ACCEPT, readSafeImage, cleanText } from "../security";
 import { useCommunity } from "../hooks/useCommunity";
 import { fetchComments, type FeedPost, type FeedComment, type PostReaction, type PostVisibility } from "../community";
 import type { Recipe } from "../data";
@@ -112,7 +112,7 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
       </select>
       {uploadError && <p className="upload-error">{uploadError}</p>}
       <footer>
-        <label><Camera />Add photo<input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => upload(e.target.files?.[0])} /></label>
+        <label><Camera />Add photo<input type="file" accept={IMAGE_FILE_ACCEPT} onChange={e => upload(e.target.files?.[0])} /></label>
         {community.ready && (
           <button type="button" className="visibility-toggle" onClick={() => setVisibility(v => v === "public" ? "connections" : "public")}>
             {visibility === "public" ? <><Globe size={14} />Public</> : <><Users size={14} />Friends</>}

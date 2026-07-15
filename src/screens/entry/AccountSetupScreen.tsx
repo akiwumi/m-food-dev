@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { ArrowLeft, Camera, ArrowRight, Lock } from "lucide-react";
-import { readSafeImage, cleanText, validateEmail } from "../../security";
+import { IMAGE_FILE_ACCEPT, readSafeImage, cleanText, validateEmail } from "../../security";
 import { signUp as authSignUp, isSupabaseConfigured } from "../../auth";
 import type { Profile } from "../../store";
 
@@ -37,7 +37,7 @@ export function AccountSetupScreen({ profile, back, submit, simulate = false }: 
     <span className="eyebrow">CREATE YOUR ACCOUNT</span>
     <h1>Save your profile.</h1>
     <p className="lede">Your food profile is ready. Create an account so it's yours on every device, we'll send a confirmation email to finish.</p>
-    <div className="avatar-pick"><label>{avatar ? <span className="ring"><img src={avatar} alt="" /></span> : <span className="ring"><span>{(name || "You").slice(0, 1).toUpperCase()}</span></span>}<span className="cam"><Camera size={16} /></span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => upload(e.target.files?.[0])} /></label><em>Add a profile photo</em></div>
+    <div className="avatar-pick"><label>{avatar ? <span className="ring"><img src={avatar} alt="" /></span> : <span className="ring"><span>{(name || "You").slice(0, 1).toUpperCase()}</span></span>}<span className="cam"><Camera size={16} /></span><input type="file" accept={IMAGE_FILE_ACCEPT} onChange={e => upload(e.target.files?.[0])} /></label><em>Add a profile photo</em></div>
     <form onSubmit={onSubmit}>
       <label>Name<input value={name} maxLength={80} onChange={e => setName(e.target.value)} placeholder="Jessica" /></label>
       <label>Email address<input type="email" value={email} onChange={e => { setEmail(e.target.value); setError(""); }} placeholder="you@example.com" /></label>

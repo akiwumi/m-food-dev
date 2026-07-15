@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { cleanText, validateImage, validateEmail } from "./security";
+import { IMAGE_FILE_ACCEPT, cleanText, validateImage, validateEmail } from "./security";
 
 describe("validateEmail (signup bounce prevention)", () => {
   it("accepts well-formed real addresses", () => {
@@ -35,7 +35,27 @@ describe("client security controls", () => {
 
   it("rejects executable and oversized image uploads", () => {
     expect(() => validateImage(new File(["<svg/>"], "attack.svg", { type: "image/svg+xml" }))).toThrow();
-    expect(() => validateImage(new File([new Uint8Array(4 * 1024 * 1024 + 1)], "large.png", { type: "image/png" }))).toThrow();
+    expect(() => validateImage(new File([new Uint8Array(25 * 1024 * 1024 + 1)], "large.png", { type: "image/png" }))).toThrow();
+  });
+
+  it("accepts iPhone and browser image sources before conversion", () => {
+    expect(IMAGE_FILE_ACCEPT).toContain("image/*");
+    expect(IMAGE_FILE_ACCEPT).toContain(".heic");
+    for (const file of [
+      new File(["x"], "camera.HEIC", { type: "image/heic" }),
+      new File(["x"], "camera.heif", { type: "image/heif" }),
+      new File(["x"], "ios-picker.HEIC", { type: "" }),
+      new File(["x"], "ios-picker.HEIC", { type: "application/octet-stream" }),
+      new File(["x"], "edited-photo.avif", { type: "image/avif" }),
+      new File(["x"], "scan.tiff", { type: "image/tiff" }),
+      new File(["x"], "photo.jpeg", { type: "image/jpeg" }),
+    ]) {
+      expect(() => validateImage(file)).not.toThrow();
+    }
+  });
+
+  it("rejects non-image files even when the picker supplies no MIME type", () => {
+    expect(() => validateImage(new File(["nope"], "notes.txt", { type: "" }))).toThrow();
   });
 
   it("keeps the service worker away from cross-origin and API responses", () => {
