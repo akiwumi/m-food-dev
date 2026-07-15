@@ -163,7 +163,7 @@ body,.app{background:linear-gradient(180deg,#dceef2 0%,#eaf4f3 30%,#f5fbfa 100%)
 
 
 /* ── App header: logo-ring + name + bell ─────────────────────────── */
-.app-header{display:flex;align-items:center;padding:18px 20px 0;gap:12px;background:transparent;border:0;margin:0}
+.app-header{display:flex;align-items:center;padding:calc(18px + env(safe-area-inset-top)) 20px 0;gap:12px;background:transparent;border:0;margin:0}
 .app-header .logo-ring{width:48px;height:48px;border-radius:50%;background:#fff;box-shadow:var(--shadow-sm);display:grid;place-items:center;overflow:hidden;flex-shrink:0}
 .app-header .logo-ring img{width:38px;height:38px;object-fit:contain}
 .app-header .user-avatar-ring{width:48px;height:48px;border-radius:50%;background:#fff;box-shadow:var(--shadow-sm);overflow:hidden;flex-shrink:0}
@@ -407,7 +407,7 @@ body,.app{background:linear-gradient(180deg,#dceef2 0%,#eaf4f3 30%,#f5fbfa 100%)
 .billing button.skip{border:0;background:transparent;color:var(--muted);font-weight:700;padding:10px;text-align:center;width:100%;display:block}
 
 /* ── Other small touches ─────────────────────────────────────────── */
-.top-bar{height:62px;display:grid;grid-template-columns:50px 1fr 50px;align-items:center;padding:0 10px}
+.top-bar{height:auto;min-height:calc(62px + env(safe-area-inset-top));display:grid;grid-template-columns:50px 1fr 50px;align-items:center;padding:env(safe-area-inset-top) 10px 0}
 .top-bar h1{text-align:center;font-size:18px;font-weight:800;margin:0}
 .top-bar button{width:42px;height:42px;border-radius:50%;background:#fff;box-shadow:var(--shadow-sm);border:0;display:grid;place-items:center}
 .top-bar button:disabled{opacity:0}
@@ -2237,15 +2237,18 @@ button.ghost{border:1px solid var(--line);background:transparent;color:var(--mut
 .moody-fab{position:fixed;right:18px;bottom:84px;z-index:60;width:56px;height:56px;border-radius:50%;display:grid;place-items:center;border:0;background:var(--ink);color:#fff;box-shadow:0 12px 28px rgba(23,26,28,.32);cursor:pointer;transition:transform .16s ease,opacity .16s ease}
 .moody-fab:hover{transform:scale(1.06)}
 .moody-fab.hidden{opacity:0;pointer-events:none;transform:scale(.8)}
-.moody-chat-scrim{position:fixed;inset:0;z-index:70;background:rgba(15,25,28,.42);backdrop-filter:blur(3px);display:flex;align-items:flex-end;justify-content:center}
-.moody-chat{width:100%;max-width:520px;max-height:82vh;height:82vh;background:var(--bg2,#eef4f3);border-radius:26px 26px 0 0;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 -18px 50px rgba(20,40,45,.28);animation:moody-rise .24s ease}
-@keyframes moody-rise{from{transform:translateY(24px);opacity:.4}to{transform:translateY(0);opacity:1}}
-.moody-chat-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;background:var(--white);border-bottom:1px solid var(--line)}
+.moody-chat-scrim{position:fixed;inset:0;z-index:70;background:rgba(15,25,28,.42);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:max(12px,env(safe-area-inset-top)) 12px max(12px,env(safe-area-inset-bottom))}
+.moody-chat{width:min(520px,calc(100vw - 24px));max-height:calc(100dvh - max(12px,env(safe-area-inset-top)) - max(12px,env(safe-area-inset-bottom)));height:min(680px,calc(100dvh - max(12px,env(safe-area-inset-top)) - max(12px,env(safe-area-inset-bottom))));background:var(--bg2,#eef4f3);border-radius:26px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 18px 54px rgba(20,40,45,.28);animation:moody-rise .2s ease;will-change:transform}
+@keyframes moody-rise{from{opacity:.4}to{opacity:1}}
+.moody-chat-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;background:var(--white);border-bottom:1px solid var(--line);cursor:grab;touch-action:none;user-select:none}
+.moody-chat.dragging .moody-chat-head{cursor:grabbing}
 .moody-chat-id{display:flex;align-items:center;gap:11px}
 .moody-chat-avatar{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(145deg,#a8dce8,#5baec5);color:#fff;box-shadow:var(--shadow-sm)}
 .moody-chat-id b{display:block;font-size:15px;font-weight:800;letter-spacing:-.01em}
 .moody-chat-id small{font-size:11.5px;color:var(--muted)}
-.moody-chat-head>button{border:0;background:transparent;color:var(--muted);display:grid;place-items:center;cursor:pointer;width:36px;height:36px;border-radius:12px}
+.moody-chat-actions{display:flex;align-items:center;gap:4px}
+.moody-chat-actions button{border:0;background:transparent;color:var(--muted);display:grid;place-items:center;cursor:pointer;width:36px;height:36px;border-radius:12px}
+.moody-chat-actions button:hover{background:var(--bg2,#eef4f3);color:var(--ink)}
 .moody-chat-body{flex:1;overflow-y:auto;padding:16px 16px 4px;display:flex;flex-direction:column;gap:12px}
 .moody-msg{display:flex;flex-direction:column;max-width:86%}
 .moody-msg.user{align-self:flex-end;align-items:flex-end}
@@ -2270,7 +2273,7 @@ button.ghost{border:1px solid var(--line);background:transparent;color:var(--mut
 .moody-chat-input input{flex:1;min-width:0;border:1px solid var(--line);background:var(--bg2,#eef4f3);border-radius:99px;padding:12px 16px;font-size:14px;outline:0}
 .moody-chat-input button{width:44px;height:44px;flex-shrink:0;border:0;border-radius:50%;background:var(--ink);color:#fff;display:grid;place-items:center;cursor:pointer}
 .moody-chat-input button:disabled{opacity:.4;cursor:default}
-@media(min-width:760px){.moody-chat{border-radius:26px;margin-bottom:24px;height:min(680px,82vh)}.moody-fab{bottom:26px;right:26px}}
+@media(min-width:760px){.moody-chat{height:min(680px,82vh)}.moody-fab{bottom:26px;right:26px}}
 
 /* "Why this pick?" — the food profile made visible on each pick (Phase 4) */
 .pick-card .pick-why{background:transparent;padding:0;margin:2px 0 10px;font-size:11.5px;line-height:1.4;color:var(--blue-deep);font-weight:600;display:flex;gap:5px;align-items:flex-start;max-width:100%}
