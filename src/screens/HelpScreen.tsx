@@ -25,9 +25,9 @@ const FAQ_DATA = [
   {
     section: "Food photo & calorie log",
     items: [
-      { q: "How do I log a meal with a photo?", a: "Tap the camera button on the Home screen, in the Diary, on a Recipe detail page, or after finishing Cook mode. Choose a photo from your camera roll, and Moody will estimate the dish, calories, and macros in about 2 seconds." },
-      { q: "How accurate are the calorie estimates?", a: "Estimates are derived from visual analysis of your photo matched against a food database. Accuracy is typically within 15–25% for single-dish meals. Results are shown with a confidence score. They are informational only, not medical or nutritional advice." },
-      { q: "Can I edit the calorie count?", a: "You can discard the result and retake the photo from a different angle or better lighting for a more accurate reading." },
+      { q: "How do I log a meal with a photo?", a: "Tap the camera button on the Home screen, in the Diary, on a Recipe detail page, or after finishing Cook mode. Add a photo, name the dish, and tap 'Look up' to pull real per-serving numbers from a food database — or type them in yourself. If you're logging a recipe you just cooked, its calories carry over automatically." },
+      { q: "Where do the calorie numbers come from?", a: "From an honest source only — never guessed from the photo. They come from a real per-serving lookup in the FatSecret food database matched to the dish you name, from the calories of the recipe you cooked, or from what you enter by hand. A blank field means unknown, never invented." },
+      { q: "Can I edit the calorie count?", a: "Yes — every number is editable. Type your own, re-run the database lookup with a more specific dish name, or leave a field blank if it's unknown. Editing a value marks it as your own." },
       { q: "Where are my logged meals stored?", a: "Photo logs are saved on your device in localStorage. They appear in the Food photo log screen (Settings → Food photo log) and feed the 'Today's calories' stat on your home screen." },
     ],
   },
