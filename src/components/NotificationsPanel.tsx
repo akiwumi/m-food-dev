@@ -1,4 +1,4 @@
-import { useState, type PointerEvent } from "react";
+import { useRef, useState, type PointerEvent } from "react";
 import { CreditCard, Bell, Sparkles, Mail, X, MessageCircle, Users, Trash2 } from "lucide-react";
 import type { Profile } from "../store";
 import { readInbox, simulateTrialEnd, cancelScheduled, dismissInboxItem, type InboxItem } from "../notifications";
@@ -9,6 +9,7 @@ const MAX_DRAG = -132;
 export function NotificationsPanel({ close, profile, save, refresh }: { close: () => void; profile: Profile; save: (p: Profile) => void; refresh: () => void }) {
   const [, force] = useState(0);
   const [dragging, setDragging] = useState<{ id: string; startX: number; x: number } | null>(null);
+  const dragRef = useRef<{ id: string; startX: number; x: number } | null>(null);
   const items = readInbox();
   const sent = items.filter(i => i.status === "sent").sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
   const scheduled = items.filter(i => i.status === "scheduled").sort((a, b) => +new Date(a.scheduledFor!) - +new Date(b.scheduledFor!));
@@ -23,17 +24,23 @@ export function NotificationsPanel({ close, profile, save, refresh }: { close: (
   };
   const beginDrag = (event: PointerEvent<HTMLDivElement>, id: string) => {
     event.currentTarget.setPointerCapture(event.pointerId);
-    setDragging({ id, startX: event.clientX, x: 0 });
+    const next = { id, startX: event.clientX, x: 0 };
+    dragRef.current = next;
+    setDragging(next);
   };
   const moveDrag = (event: PointerEvent<HTMLDivElement>, id: string) => {
     setDragging(current => {
       if (!current || current.id !== id) return current;
-      return { ...current, x: Math.max(MAX_DRAG, Math.min(16, event.clientX - current.startX)) };
+      const next = { ...current, x: Math.max(MAX_DRAG, Math.min(0, event.clientX - current.startX)) };
+      dragRef.current = next;
+      return next;
     });
   };
   const endDrag = (event: PointerEvent<HTMLDivElement>, id: string) => {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-    const x = dragging?.id === id ? dragging.x : 0;
+    const current = dragRef.current;
+    const x = current?.id === id ? current.x : 0;
+    dragRef.current = null;
     setDragging(null);
     if (x <= DISMISS_THRESHOLD) dismiss(id);
   };
@@ -45,8 +52,9 @@ export function NotificationsPanel({ close, profile, save, refresh }: { close: (
             : <Mail size={18} />;
   const Row = (i: InboxItem) => {
     const offset = dragging?.id === i.id ? dragging.x : 0;
-    return <div className="notif-swipe" key={i.id}>
-      <div className="notif-delete"><Trash2 size={16} /><span>Delete</span></div>
+    const active = offset < 0;
+    return <div className={"notif-swipe" + (active ? " active" : "")} key={i.id}>
+      {active && <div className="notif-delete"><Trash2 size={16} /><span>Delete</span></div>}
       <div
         className={"notif-card" + (i.read ? "" : " unread") + (offset < 0 ? " dragging" : "")}
         style={{ transform: `translateX(${offset}px)` }}
