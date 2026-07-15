@@ -27,6 +27,9 @@ export function useRecipeSearch(
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchOffset, setSearchOffset] = useState(0);
   const [searchRelaxed, setSearchRelaxed] = useState(false);
+  // Backend served backup results (owned cache / TheMealDB) because live
+  // Spoonacular was unavailable — usually the daily quota. Drives a distinct note.
+  const [searchDegraded, setSearchDegraded] = useState(false);
   const activeSearchId = useRef(0);
   const activeSearchAbort = useRef<AbortController | null>(null);
 
@@ -44,6 +47,7 @@ export function useRecipeSearch(
       setSearchResults([]);
       setSearchCandidates([]);
       setSearchRelaxed(false);
+      setSearchDegraded(false);
     }
     setSearchLoading(true);
     setPage("results");
@@ -97,7 +101,8 @@ export function useRecipeSearch(
 
       // Explicit search honors the filters exactly — relax:false tells the backend
       // not to silently drop cuisine/course/time to force a result.
-      const live = await fetchCuratedRecipes(sharedProfile, mood, 50, request.filters.maxReadyTime ?? 60, request.query, request.filters, foodHistory, offset, false, false, controller.signal);
+      const liveMeta: { degraded?: boolean } = {};
+      const live = await fetchCuratedRecipes(sharedProfile, mood, 50, request.filters.maxReadyTime ?? 60, request.query, request.filters, foodHistory, offset, false, false, controller.signal, liveMeta);
       if (!isActiveSearch()) return;
       const liveCandidates = finalizeSearchResults(live ?? [], sharedProfile, request.filters, Infinity);
       const strictCandidates = appendUniqueRecipes(
@@ -118,6 +123,9 @@ export function useRecipeSearch(
         : takeUniqueBatch(candidates);
       const fallbackUsed = !liveCandidates.length && (offlineCandidates.length > 0 || relaxedFallback.length > 0);
       setSearchRelaxed(isRelaxed);
+      // Backend backup results (quota-out) that DID come through — flag them so the
+      // user knows these are stand-ins, distinct from the client's diet-only relax.
+      setSearchDegraded(!isRelaxed && !!liveMeta.degraded && (live?.length ?? 0) > 0);
       setSearchCandidates(candidates);
       setSearchResults(nextResults);
       // Slice 0 telemetry: operational only, fire-and-forget (never awaited).
@@ -148,5 +156,5 @@ export function useRecipeSearch(
     setSearchLoading(false);
   }, []);
 
-  return { searchRequest, setSearchRequest, searchResults, searchLoading, searchRelaxed, runSearch, cancelSearch };
+  return { searchRequest, setSearchRequest, searchResults, searchLoading, searchRelaxed, searchDegraded, runSearch, cancelSearch };
 }

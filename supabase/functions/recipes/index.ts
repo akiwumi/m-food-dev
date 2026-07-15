@@ -30,7 +30,7 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { applyCuratedRanking, dedupeRecipes, expandProviderCuisines, fetchTheMealDbRecipes, filterOutAccessoryTypes, filterRecipesByCategory, filterRecipesByMaxTime, filterRecipesForProfile, filterRecipesWithCompleteInstructions, normalizeSpoonacularRecipe } from "./provider.ts";
-import { bumpSearchCount, dairyFreeTag, dietTagsFor, getCachedRecipes, logSearch, normalizeMoodTag, saveRecipesToCache } from "./cache.ts";
+import { dairyFreeTag, dietTagsFor, getCachedRecipes, logSearch, normalizeMoodTag, saveRecipesToCache } from "./cache.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
@@ -313,10 +313,15 @@ Deno.serve(async (request) => {
   // labeled personalized experience). Default OFF keeps AI off the hot path.
   const shouldCurate = body?.curate === true;
 
+  // Spoonacular bills per result AND per add-on. `number` and `addRecipeNutrition`
+  // are the two biggest cost multipliers, so a 100-recipe hydrated search burned
+  // ~65-100 of the daily 1000-point budget — roughly 10-15 searches/day before a
+  // 402. 40 results still leaves plenty after the safety/diet/instructions filter
+  // stack (we only ever serve 20), and nutrition is now requested only when the
+  // search actually needs it (see `needsNutrition` below).
   const params = new URLSearchParams({
     apiKey: SPOONACULAR_API_KEY,
-    number: "100",
-    addRecipeNutrition: "true",
+    number: "40",
     addRecipeInformation: "true",
     addRecipeInstructions: "true",
     instructionsRequired: "true",
@@ -387,50 +392,103 @@ Deno.serve(async (request) => {
   if (minProtein) targets.minProtein = String(minProtein);
   for (const [k, v] of Object.entries(targets)) params.set(k, v);
 
+  // Nutrition is Spoonacular's priciest add-on. Only pay for it when the search
+  // actually surfaces calories/protein — a nutrient filter/goal, or a calorie/
+  // protein/health sort. Otherwise recipes come back without a calorie badge
+  // (identical to the TheMealDB path, which the UI already handles), and the
+  // saved points roughly double how many searches fit in the daily quota.
+  const needsNutrition = Boolean(targets.minProtein || targets.maxCalories) || ["calories", "protein", "healthiness"].includes(sort);
+  if (needsNutrition) params.set("addRecipeNutrition", "true");
+
   // ── Recipe DB cache (roadmap Phase 2) ──────────────────────────────────────
-  // Canonical cache key: a normalized mood tag + diet tags (the 7×6 seed
-  // vocabulary). Allergens are per-user and NOT in the key, so cached rows are
-  // re-run through the same safety/diet filter as live results before serving.
+  // Cache key: a normalized mood tag + diet tags (the 7×6 seed vocabulary). This
+  // is used to WRITE THROUGH fresh results and as the quota-out backup source
+  // (buildBackup) — it no longer short-circuits live search. EVERY search now
+  // hits Spoonacular first; the owned cache / TheMealDB only stand in when the
+  // provider genuinely can't answer (outage or the daily 402). Allergens are
+  // per-user and NOT in the key, so any backup rows are re-run through the same
+  // safety/diet filter as live results before serving.
   const moodTag = normalizeMoodTag(mood);
   const dietTags = [...dietTagsFor(hardProfile.diet), ...dairyFreeTag(intolerances)];
-  // Only the relaxable mood feed (no free-text query, no fine-grained filters, no
-  // pagination) is cacheable — the cache can't honour cuisine/time/nutrient/
-  // ingredient filters, and serving it anyway would silently ignore them. Explicit
-  // filtered searches always go to the provider (but their results still write
-  // through to the cache below).
-  const offsetReq = num(body?.offset, 0, 900) ?? 0;
-  const hasFineFilters = Boolean(
-    query ||
-    (Array.isArray(filters.cuisines) && filters.cuisines.length) ||
-    (typeof filters.type === "string" && filters.type) ||
-    (Array.isArray(filters.includeIngredients) && filters.includeIngredients.length) ||
-    (Array.isArray(filters.excludeIngredients) && filters.excludeIngredients.length) ||
-    (Array.isArray(filters.equipment) && filters.equipment.length) ||
-    Number.isFinite(filters.minServings) || Number.isFinite(filters.maxCalories) ||
-    Number.isFinite(filters.minProtein) || Number.isFinite(filters.maxReadyTime) ||
-    offsetReq > 0,
-  );
-  const cacheable = relax && !hasFineFilters;
 
-  if (cacheable) {
-    const rows = await getCachedRecipes(moodTag, dietTags, 60);
-    if (rows.length) {
-      const candidates = rows.map(r => r.raw_data).filter(Boolean);
-      const safeCached = dedupeRecipes(filterRecipesWithCompleteInstructions(filterOutAccessoryTypes(
-        filterRecipesForProfile(safetyFilter(candidates, profile.allergies ?? []), hardProfile),
-      )));
-      if (safeCached.length >= 6) {
-        const top = safeCached.slice(0, 20);
-        const servedExternalIds = new Set(top.map((r: any) => String(r.id)));
-        const servedDbIds = rows.filter(r => servedExternalIds.has(String((r.raw_data as any)?.id))).map(r => r.id);
-        bumpSearchCount(servedDbIds);                       // fire-and-forget popularity
-        logSearch({ userId, moodTag, dietTags, query, resultIds: servedDbIds, servedFrom: "cache" });
-        console.log(`[recipes] cache hit: matched=${rows.length} safe=${safeCached.length} served=${top.length}`);
-        const curated = shouldCurate ? await curate(top, profile, mood, history) : top;
-        return Response.json({ provider: "cache", relaxed: false, curated: shouldCurate, recipes: curated }, { headers: headers(origin) });
-      }
+  // Best backup when Spoonacular yields nothing — an outage or, most commonly, the
+  // daily 1000-point 402. Owned cache first (free), then TheMealDB (free). Applied
+  // to BOTH the mood feed and explicit filtered searches, so a cuisine tap during
+  // a quota-out degrades to real food instead of a dead-end spinner. Safety, diet
+  // and course are still enforced; cuisine/nutrient limits may be approximated, so
+  // the caller flags the response `degraded`.
+  const applyBackupFilters = (list: any[]): any[] => {
+    const byProfile = filterRecipesForProfile(safetyFilter(list, profile.allergies ?? []), hardProfile);
+    const byCategory = filterRecipesByCategory(byProfile, category);
+    return dedupeRecipes(filterRecipesWithCompleteInstructions(category ? byCategory : filterOutAccessoryTypes(byCategory)));
+  };
+  // Prefer backups that actually match what the user asked for — the tapped
+  // cuisine or Moody's food query — over a generic diet-safe fill. Kept SOFT: if
+  // fewer than 3 match we fall back to the full set rather than dead-end. The
+  // response is flagged `degraded` either way, and cuisine coverage improves as
+  // the write-through cache grows from real Spoonacular results.
+  const wantCuisines = cuisines.map(c => c.toLowerCase());
+  const wantQuery = query.trim().toLowerCase();
+  const hasIntent = wantCuisines.length > 0 || wantQuery.length > 0;
+  const matchesIntent = (r: any): boolean => {
+    if (wantCuisines.length) {
+      const rc = String(r?.cuisine ?? "").toLowerCase();
+      if (!rc || !wantCuisines.some(c => rc.includes(c) || c.includes(rc))) return false;
     }
-    console.log(`[recipes] cache miss: mood=${moodTag} diets=${JSON.stringify(dietTags)} rows=${rows.length}`);
+    if (wantQuery) {
+      const text = `${r?.title ?? ""} ${(r?.ingredients ?? []).join(" ")}`.toLowerCase();
+      if (!text.includes(wantQuery)) return false;
+    }
+    return true;
+  };
+  const preferIntent = (filtered: any[], cap: number): any[] => {
+    if (!hasIntent) return filtered.slice(0, cap);
+    const matched = filtered.filter(matchesIntent);
+    return (matched.length >= 3 ? matched : filtered).slice(0, cap);
+  };
+  const buildBackup = async (): Promise<{ source: "cache" | "themealdb"; recipes: any[] }> => {
+    try {
+      const rows = await getCachedRecipes(moodTag, dietTags, 60);
+      const cached = applyBackupFilters(rows.map(r => r.raw_data).filter(Boolean));
+      if (cached.length >= 6) return { source: "cache", recipes: preferIntent(cached, 20) };
+    } catch (e) {
+      console.warn(`[recipes] backup cache read failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    const mealdb = applyBackupFilters(await fetchTheMealDbRecipes(query, mood));
+    return { source: "themealdb", recipes: preferIntent(mealdb, 8) };
+  };
+
+  // ── Middle ground: quota-friendly freshness window ─────────────────────────
+  // The plain mood feed (no query, no fine filters, first page) may serve from
+  // cache ONLY when those rows were refreshed from Spoonacular within CACHE_TTL.
+  // This collapses repeated home-feed re-opens onto a single live call, while a
+  // genuinely new mood/diet — or the same one after the window lapses — still
+  // hits Spoonacular. Filtered searches, text queries and pagination are never
+  // short-circuited. A fresh-cache hit is `degraded`-free (it IS recent live
+  // data), distinguishing it from the quota-out backup below.
+  const CACHE_TTL_MS = 30 * 60_000; // 30 minutes
+  const offsetReq = num(body?.offset, 0, 900) ?? 0;
+  const isPlainMoodFeed = relax && !query &&
+    !(Array.isArray(filters.cuisines) && filters.cuisines.length) &&
+    !(typeof filters.type === "string" && filters.type) &&
+    !(Array.isArray(filters.includeIngredients) && filters.includeIngredients.length) &&
+    !(Array.isArray(filters.excludeIngredients) && filters.excludeIngredients.length) &&
+    !(Array.isArray(filters.equipment) && filters.equipment.length) &&
+    !Number.isFinite(filters.minServings) && !Number.isFinite(filters.maxCalories) &&
+    !Number.isFinite(filters.minProtein) && !Number.isFinite(filters.maxReadyTime) &&
+    offsetReq === 0;
+  if (isPlainMoodFeed) {
+    const freshSince = new Date(Date.now() - CACHE_TTL_MS).toISOString();
+    const rows = await getCachedRecipes(moodTag, dietTags, 60, freshSince);
+    const safeCached = applyBackupFilters(rows.map(r => r.raw_data).filter(Boolean));
+    if (safeCached.length >= 6) {
+      const top = safeCached.slice(0, 20);
+      logSearch({ userId, moodTag, dietTags, query, resultIds: [], servedFrom: "cache" });
+      console.log(`[recipes] fresh-cache hit: matched=${rows.length} safe=${safeCached.length} (<=${CACHE_TTL_MS / 60_000}min old)`);
+      const curated = shouldCurate ? await curate(top, profile, mood, history) : top;
+      return Response.json({ provider: "cache", relaxed: false, curated: shouldCurate, recipes: curated }, { headers: headers(origin) });
+    }
+    console.log(`[recipes] fresh-cache miss (rows=${rows.length}) — calling Spoonacular`);
   }
 
   let spoonStatus = 0, spoonCount = 0, spoonSafeCount = 0;
@@ -485,23 +543,19 @@ Deno.serve(async (request) => {
       return Response.json({ provider: "spoonacular", relaxed, curated: shouldCurate, recipes: curated }, { headers: headers(origin) });
     }
 
-    // Both Spoonacular attempts empty (or it errored). For the mood feed (relax),
-    // fall back to TheMealDB to keep results flowing. For an explicit filtered
-    // search (relax=false) we SKIP it — TheMealDB can't honor cuisine/nutrition
-    // filters, so returning its results would silently ignore the user's filters.
-    // The client then shows "No exact matches" (or its own filtered offline set).
-    if (relax) {
-      const mealdbRecipes = await fetchTheMealDbRecipes(query, mood);
-      mealdbCount = mealdbRecipes.length;
-      const mealdbCategoryFiltered = filterRecipesByCategory(filterRecipesForProfile(safetyFilter(mealdbRecipes, profile.allergies ?? []), hardProfile), category);
-      const fallback = dedupeRecipes(filterRecipesWithCompleteInstructions(category ? mealdbCategoryFiltered : filterOutAccessoryTypes(mealdbCategoryFiltered))).slice(0, 8);
-      mealdbSafeCount = fallback.length;
-      console.log(`[recipes] themealdb: total=${mealdbCount} safe=${mealdbSafeCount}`);
-      if (fallback.length) {
-        saveRecipesToCache(fallback, moodTag, dietTags);
-        logSearch({ userId, moodTag, dietTags, query, resultIds: [], servedFrom: "themealdb" });
-        return Response.json({ provider: "themealdb", recipes: fallback }, { headers: headers(origin) });
-      }
+    // Both Spoonacular attempts came back empty (or it errored — most often the
+    // daily 402). Serve the best free backup we have — owned cache, then TheMealDB
+    // — for the mood feed AND explicit filtered searches, so a cuisine tap never
+    // dead-ends. Diet/allergens/course are still enforced; the response is flagged
+    // `degraded` so the client can note these are backup matches, not exact ones.
+    const backup = await buildBackup();
+    mealdbCount = backup.source === "themealdb" ? backup.recipes.length : 0;
+    mealdbSafeCount = backup.recipes.length;
+    console.log(`[recipes] backup: source=${backup.source} safe=${backup.recipes.length}`);
+    if (backup.recipes.length) {
+      if (backup.source !== "cache") saveRecipesToCache(backup.recipes, moodTag, dietTags);
+      logSearch({ userId, moodTag, dietTags, query, resultIds: [], servedFrom: backup.source });
+      return Response.json({ provider: backup.source, degraded: true, recipes: backup.recipes }, { headers: headers(origin) });
     }
 
     console.error(`[recipes] sources empty — relax=${relax} diet=${profile.diet} allergies=${JSON.stringify(profile.allergies)}`);
@@ -513,22 +567,19 @@ Deno.serve(async (request) => {
   } catch (e) {
     const errMsg = e instanceof Error ? e.message : String(e);
     console.error(`[recipes] exception: ${errMsg}`);
-    // Same rule as above: only substitute TheMealDB for the relaxable mood feed,
-    // never for an explicit filtered search.
-    if (relax) try {
-      const mealdbRecipes = await fetchTheMealDbRecipes(query, mood);
-      mealdbCount = mealdbRecipes.length;
-      const mealdbCategoryFiltered2 = filterRecipesByCategory(filterRecipesForProfile(safetyFilter(mealdbRecipes, profile.allergies ?? []), hardProfile), category);
-      const fallback = dedupeRecipes(filterRecipesWithCompleteInstructions(category ? mealdbCategoryFiltered2 : filterOutAccessoryTypes(mealdbCategoryFiltered2))).slice(0, 8);
-      mealdbSafeCount = fallback.length;
-      console.log(`[recipes] themealdb fallback after exception: total=${mealdbCount} safe=${mealdbSafeCount}`);
-      if (fallback.length) {
-        saveRecipesToCache(fallback, moodTag, dietTags);
-        logSearch({ userId, moodTag, dietTags, query, resultIds: [], servedFrom: "themealdb" });
-        return Response.json({ provider: "themealdb", recipes: fallback }, { headers: headers(origin) });
+    // Serve the same free backup (cache → TheMealDB) after an exception, for the
+    // mood feed AND filtered searches, so the user still gets real food.
+    try {
+      const backup = await buildBackup();
+      mealdbSafeCount = backup.recipes.length;
+      console.log(`[recipes] backup after exception: source=${backup.source} safe=${backup.recipes.length}`);
+      if (backup.recipes.length) {
+        if (backup.source !== "cache") saveRecipesToCache(backup.recipes, moodTag, dietTags);
+        logSearch({ userId, moodTag, dietTags, query, resultIds: [], servedFrom: backup.source });
+        return Response.json({ provider: backup.source, degraded: true, recipes: backup.recipes }, { headers: headers(origin) });
       }
     } catch (e2) {
-      console.error(`[recipes] themealdb also threw: ${e2 instanceof Error ? e2.message : String(e2)}`);
+      console.error(`[recipes] backup also threw: ${e2 instanceof Error ? e2.message : String(e2)}`);
     }
     logSearch({ userId, moodTag, dietTags, query, resultIds: [], servedFrom: "none" });
     return Response.json({
