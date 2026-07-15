@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
-import { UserPlus, Check, Clock, Share2, Star, ChefHat, Heart, X } from "lucide-react";
+import { UserPlus, Check, Clock, Share2, Star, ChefHat, Heart, X, Sparkles } from "lucide-react";
 import { TopBar } from "../components/AppChrome";
 import { Avatar } from "../components/misc";
 import {
   getMemberProfile, getMemberCooked, getMemberFavorites,
-  sendFriendRequest, listFriends, recommendFriend,
+  sendFriendRequest, listFriends, recommendFriend, buildFoodPersonalityCard,
   type MemberProfile, type MemberRecipe, type Friend,
 } from "../community";
+import type { Profile } from "../store";
 
 // Curated food-profile fields to surface, in order, with friendly labels.
 const FOOD_FIELDS: [string, string][] = [
@@ -16,8 +17,8 @@ const FOOD_FIELDS: [string, string][] = [
   ["nutritionGoals", "Working toward"], ["foodValues", "What drives their choices"], ["dietReligious", "Dietary practice"],
 ];
 
-export function FriendProfileScreen({ memberId, back, openRecipeRef }: {
-  memberId: string; back: () => void; openRecipeRef: (ref: string) => void;
+export function FriendProfileScreen({ memberId, back, openRecipeRef, viewerProfile }: {
+  memberId: string; back: () => void; openRecipeRef: (ref: string) => void; viewerProfile?: Profile;
 }) {
   const [profile, setProfile] = useState<MemberProfile | null>(null);
   const [cooked, setCooked] = useState<MemberRecipe[]>([]);
@@ -47,6 +48,7 @@ export function FriendProfileScreen({ memberId, back, openRecipeRef }: {
   };
 
   const food = profile?.foodProfile ?? {};
+  const personality = buildFoodPersonalityCard(food, viewerProfile ?? {});
   const arr = (k: string): string[] => (Array.isArray(food[k]) ? (food[k] as string[]).filter(Boolean) : []);
   const diet = typeof food.diet === "string" ? food.diet : "";
   const spice = typeof food.spiceTolerance === "number" ? food.spiceTolerance : undefined;
@@ -76,9 +78,22 @@ export function FriendProfileScreen({ memberId, back, openRecipeRef }: {
         </div>
       </section>
 
+      <section className="food-personality-card">
+        <div className="fpc-head">
+          <Sparkles size={17} />
+          <div><span>Shared food personality</span><h2>{personality.phenotype}</h2></div>
+        </div>
+        <div className="fpc-grid">
+          <div><small>Comfort cues</small><div className="chips">{personality.comfortCues.map(v => <span className="chip" key={v}>{v}</span>)}</div></div>
+          <div><small>Signature moods</small><div className="chips">{personality.signatureMoods.map(v => <span className="chip" key={v}>{v}</span>)}</div></div>
+        </div>
+        {personality.sharedSignals.length > 0 && <div className="fpc-overlap"><b>{personality.overlap}</b><div className="chips">{personality.sharedSignals.map(v => <span className="chip" key={v}>{v}</span>)}</div></div>}
+        <p>{personality.privacyNote}</p>
+      </section>
+
       {(diet || spice !== undefined || FOOD_FIELDS.some(([k]) => arr(k).length)) && (
         <section className="fp-block">
-          <h2>Food profile</h2>
+          <h2>Profile signals</h2>
           {diet && <div className="fp-field"><span className="fp-label">Diet</span><div className="chips"><span className="chip">{diet}</span></div></div>}
           {spice !== undefined && <div className="fp-field"><span className="fp-label">Spice tolerance</span><div className="spice-bar"><div style={{ width: `${spice}%` }} /></div></div>}
           {FOOD_FIELDS.map(([k, label]) => {

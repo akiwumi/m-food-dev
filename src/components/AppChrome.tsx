@@ -1,15 +1,18 @@
 import { memo, useContext } from "react";
 import {
-  Home, Search, Users, ShoppingCart, CalendarDays, Salad, Heart,
+  Home, Search, Users, ShoppingCart, Heart,
   UserRound, ArrowLeft, Menu, Bell,
 } from "lucide-react";
 import type { Page } from "../appTypes";
 import type { Profile } from "../store";
 import { MenuCtx } from "./MenuCtx";
 
-const nav = [
-  ["home", "Home", Home], ["search", "Search", Search], ["community", "Community", Users],
-  ["grocery", "Grocery", ShoppingCart], ["planner", "Planner", CalendarDays],
+export const CORE_NAV_ITEMS = [
+  ["home", "Home", Home],
+  ["search", "Search", Search],
+  ["community", "Community", Users],
+  ["favorites", "Saved", Heart],
+  ["grocery", "Grocery", ShoppingCart],
 ] as const;
 
 // memo'd: the nav/header chrome persists across page changes, so it should skip
@@ -17,9 +20,7 @@ const nav = [
 export const DesktopNav = memo(function DesktopNav({ page, go }: { page: Page; go: (p: Page) => void }) {
   return <aside className="desktop-nav">
     <nav>
-      {nav.map(([id, label, Icon]) => <button className={page === id ? "active" : ""} onClick={() => go(id)} key={id}><Icon size={19} />{label}</button>)}
-      <button className={page === "pantry" ? "active" : ""} onClick={() => go("pantry")}><Salad size={19} />Pantry</button>
-      <button className={page === "favorites" ? "active" : ""} onClick={() => go("favorites")}><Heart size={19} />Saved</button>
+      {CORE_NAV_ITEMS.map(([id, label, Icon]) => <button className={page === id ? "active" : ""} onClick={() => go(id)} key={id}><Icon size={19} />{label}</button>)}
     </nav>
     <button className="desktop-wordmark" onClick={() => go("home")} aria-label="MoodFood home">
       <img src="/images/logo-1.png" alt="" />
@@ -32,14 +33,7 @@ export const DesktopNav = memo(function DesktopNav({ page, go }: { page: Page; g
 });
 
 export const BottomNav = memo(function BottomNav({ page, go }: { page: Page; go: (p: Page) => void }) {
-  const items: [Page, string, typeof Home][] = [
-    ["home", "Home", Home],
-    ["search", "Search", Search],
-    ["community", "Community", Users],
-    ["favorites", "Saved", Heart],
-    ["grocery", "Grocery", ShoppingCart],
-  ];
-  return <nav className="bottom-nav">{items.map(([id, label, Icon]) => <button className={page === id ? "active" : ""} onClick={() => go(id)} key={id}><Icon size={19} /><span>{label}</span></button>)}</nav>;
+  return <nav className="bottom-nav">{CORE_NAV_ITEMS.map(([id, label, Icon]) => <button className={page === id ? "active" : ""} onClick={() => go(id)} key={id}><Icon size={19} /><span>{label}</span></button>)}</nav>;
 });
 
 export const TopBar = memo(function TopBar({ title, back }: { title: string; back?: () => void }) {

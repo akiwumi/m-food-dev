@@ -93,7 +93,7 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
 
   const intro = (
     <section className="community-intro">
-      <div><b>Cook together, from wherever.</b><p>Share recipes, photos, and tips with friends. Your private mood and psychology profile stay private.</p></div>
+      <div><b>Cook together, from wherever.</b><p>Share cooks, compare curated food personalities, and keep your private mood notes private.</p></div>
       <div className="ci-actions">
         <button className="secondary" onClick={goFriends}><UserPlus size={17} />Friends</button>
         <button className="primary" onClick={() => setComposer(c => !c)}><Plus />Post</button>

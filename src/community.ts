@@ -176,12 +176,82 @@ export async function addComment(postId: string, body: string): Promise<boolean>
 }
 
 // ── Friend suggestions (shared food profile) ───────────────────────────────
-export type Suggestion = { id: string; name: string; avatar: string; sharedCuisines: number };
+export type Suggestion = {
+  id: string; name: string; avatar: string; sharedCuisines: number;
+  sharedMoods?: number; sharedComfortCues?: number; sharedFlavors?: number; compatibilityScore?: number;
+};
 export async function suggestFriends(): Promise<Suggestion[]> {
   if (!supabase) return [];
   const { data, error } = await supabase.rpc("suggest_friends");
   if (error || !data) return [];
-  return (data as Row[]).map(r => ({ id: str(r.id), name: str(r.display_name), avatar: str(r.avatar_url), sharedCuisines: num(r.shared_cuisines) }));
+  return (data as Row[]).map(r => ({
+    id: str(r.id), name: str(r.display_name), avatar: str(r.avatar_url),
+    sharedCuisines: num(r.shared_cuisines),
+    sharedMoods: num(r.shared_moods),
+    sharedComfortCues: num(r.shared_comfort_cues),
+    sharedFlavors: num(r.shared_flavors),
+    compatibilityScore: num(r.compatibility_score),
+  }));
+}
+
+export type FoodPersonalityCard = {
+  phenotype: string;
+  comfortCues: string[];
+  signatureMoods: string[];
+  sharedSignals: string[];
+  overlap: string;
+  privacyNote: string;
+};
+
+export function buildFoodPersonalityCard(foodProfile: Record<string, unknown>, viewerProfile: Record<string, unknown> = {}): FoodPersonalityCard {
+  const flavors = arr(foodProfile, "flavorLikes");
+  const textures = arr(foodProfile, "textureLikes");
+  const cuisines = arr(foodProfile, "cuisines");
+  const comfortCues = unique([...arr(foodProfile, "comfortCues"), ...arr(foodProfile, "comfortFoods")]).slice(0, 5);
+  const signatureMoods = arr(foodProfile, "cookingMoods").slice(0, 4);
+  const phenotypeSignals = unique([...flavors.slice(0, 2), ...textures.slice(0, 1), ...cuisines.slice(0, 1)]);
+  const sharedSignals = sharedFoodSignals(foodProfile, viewerProfile).slice(0, 6);
+
+  return {
+    phenotype: phenotypeSignals.length ? phenotypeSignals.join(" + ") : "Still learning their flavour rhythm",
+    comfortCues: comfortCues.length ? comfortCues : ["Comfort style still private"],
+    signatureMoods: signatureMoods.length ? signatureMoods : ["Still calibrating"],
+    sharedSignals,
+    overlap: sharedSignals.length
+      ? `You both lean toward ${naturalList(sharedSignals.slice(0, 3))}.`
+      : "Your food rhythms look different enough to swap useful inspiration.",
+    privacyNote: "Shared from a curated public food profile; raw mood notes and diary stay private.",
+  };
+}
+
+export function suggestionCompatibility(s: Suggestion): { label: string; detail: string; signals: string[] } {
+  const mood = s.sharedMoods ?? 0;
+  const comfort = s.sharedComfortCues ?? 0;
+  const flavor = s.sharedFlavors ?? 0;
+  const cuisine = s.sharedCuisines ?? 0;
+  const profileSignals = mood + comfort + flavor;
+  const signals = [
+    mood > 0 ? `${mood} mood` : "",
+    comfort > 0 ? `${comfort} comfort` : "",
+    flavor > 0 ? `${flavor} flavour` : "",
+    cuisine > 0 ? `${cuisine} cuisine` : "",
+  ].filter(Boolean);
+
+  if (profileSignals > 0) {
+    return {
+      label: "Mood/profile match",
+      detail: `${profileSignals} shared profile signal${profileSignals === 1 ? "" : "s"}`,
+      signals,
+    };
+  }
+  if (cuisine > 0) {
+    return {
+      label: "Cuisine profile match",
+      detail: `${cuisine} shared cuisine${cuisine === 1 ? "" : "s"}`,
+      signals,
+    };
+  }
+  return { label: "Profile match", detail: "Similar food profile", signals };
 }
 
 // ── Recommend-a-friend ──────────────────────────────────────────────────────
@@ -259,3 +329,17 @@ const num = (v: unknown): number => (typeof v === "number" ? v : Number(v) || 0)
 const reaction = (v: string): PostReaction | undefined => (
   v === "like" || v === "love" || v === "applaud" ? v : undefined
 );
+const arr = (row: Record<string, unknown>, key: string): string[] => (
+  Array.isArray(row[key]) ? (row[key] as unknown[]).map(str).map(s => s.trim()).filter(Boolean) : []
+);
+const unique = (items: string[]): string[] => [...new Set(items)];
+function sharedFoodSignals(a: Record<string, unknown>, b: Record<string, unknown>): string[] {
+  const keys = ["cuisines", "flavorLikes", "textureLikes", "comfortCues", "comfortFoods", "cookingMoods"];
+  const left = new Set(keys.flatMap(k => arr(a, k)));
+  return unique(keys.flatMap(k => arr(b, k).filter(v => left.has(v))));
+}
+function naturalList(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? "";
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}

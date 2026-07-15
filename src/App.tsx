@@ -439,7 +439,7 @@ export default function App() {
       {page === "account" && <AccountScreen profile={profile} save={setProfile} posts={posts.filter(p => p.author === profile.name)} back={() => go("settings")} cancelAccount={cancelAccount} />}
       {page === "community" && <CommunityScreen profile={profile} posts={posts} setPosts={setPosts} openRecipe={open} catalog={catalog} savedRecipes={savedRecipes} initialRecipeId={pendingShare} clearInitial={() => setPendingShare(undefined)} goFriends={() => go("friends")} openMember={openMember} refreshNotifications={refreshNotifs} />}
       {page === "friends" && <FriendsScreen back={() => go("community")} openMember={openMember} />}
-      {page === "member-profile" && viewingMember && <FriendProfileScreen memberId={viewingMember} back={() => go("friends")} openRecipeRef={openRecipeRef} />}
+      {page === "member-profile" && viewingMember && <FriendProfileScreen memberId={viewingMember} back={() => go("friends")} openRecipeRef={openRecipeRef} viewerProfile={profile} />}
       {page === "health" && <HealthHub diary={diary} go={go} />}
       {page === "health-nutrition" && <HealthDetail kind="nutrition" diary={diary} back={() => go("health")} />}
       {page === "health-variety" && <HealthDetail kind="variety" diary={diary} back={() => go("health")} />}
