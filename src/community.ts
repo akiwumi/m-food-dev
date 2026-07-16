@@ -19,7 +19,7 @@ export type Friend = { id: string; name: string; avatar: string };
 export type FriendRequest = { id: string; name: string; avatar: string; direction: "incoming" | "outgoing" };
 export type FeedPost = {
   id: string; authorId: string; authorName: string; authorAvatar: string;
-  body: string; image: string; recipeRef?: string; recipeTitle?: string; visibility: string; createdAt: string;
+  body: string; image: string; images?: string[]; recipeRef?: string; recipeTitle?: string; visibility: string; createdAt: string;
   likeCount: number; likedByMe: boolean; commentCount: number;
   reactionCounts: Record<PostReaction, number>; myReaction?: PostReaction;
 };
@@ -29,6 +29,7 @@ export type PostReaction = "like" | "love" | "applaud";
 export type PostVisibility = "connections" | "public";
 const POST_IMAGES = "post-images";
 const AVATARS = "avatars";
+const MAX_POST_IMAGES = 6;
 
 // Community is only "real" (multi-user) when a Supabase client exists AND the
 // user is signed in. Otherwise callers keep the local pilot feed.
@@ -66,6 +67,10 @@ export async function uploadAvatar(dataUrl: string): Promise<string> {
 function publicUrl(path: string | null | undefined): string {
   if (!path || !supabase) return "";
   return supabase.storage.from(POST_IMAGES).getPublicUrl(path).data.publicUrl ?? "";
+}
+
+function publicUrls(paths: string[]): string[] {
+  return paths.map(publicUrl).filter(Boolean);
 }
 
 // ── People search + friends ────────────────────────────────────────────────
@@ -108,7 +113,9 @@ export async function fetchFeed(limit = 50): Promise<FeedPost[]> {
   if (error || !data) return [];
   return (data as Row[]).map(r => ({
     id: str(r.id), authorId: str(r.author_id), authorName: str(r.author_name), authorAvatar: str(r.author_avatar),
-    body: str(r.body), image: publicUrl(str(r.image_path)),
+    body: str(r.body),
+    image: publicUrl(str(r.image_path)),
+    images: publicUrls(arr(r, "image_paths").length ? arr(r, "image_paths") : str(r.image_path) ? [str(r.image_path)] : []),
     recipeRef: r.recipe_ref ? str(r.recipe_ref) : undefined, recipeTitle: r.recipe_title ? str(r.recipe_title) : undefined,
     visibility: str(r.visibility), createdAt: str(r.created_at),
     likeCount: num(r.like_count), likedByMe: !!r.liked_by_me, commentCount: num(r.comment_count),
@@ -135,25 +142,37 @@ async function uploadPostImage(dataUrl: string, uid: string): Promise<{ ok: true
   }
 }
 
-export async function createPost(input: { body: string; imageDataUrl?: string; recipeRef?: string; recipeTitle?: string; visibility?: PostVisibility }): Promise<CommunityMutationResult> {
+export async function createPost(input: { body: string; imageDataUrl?: string; imageDataUrls?: string[]; recipeRef?: string; recipeTitle?: string; visibility?: PostVisibility }): Promise<CommunityMutationResult> {
   const s = await session();
   if (!supabase || !s) return classifyCommunityError({ code: "PGRST301", message: "No active session" });
   try {
-    let image_path: string | null = null;
-    if (input.imageDataUrl) {
-      const upload = await uploadPostImage(input.imageDataUrl, s.user.id);
+    const sourceImages = (input.imageDataUrls?.length ? input.imageDataUrls : input.imageDataUrl ? [input.imageDataUrl] : []).slice(0, MAX_POST_IMAGES);
+    const imagePaths: string[] = [];
+    for (const image of sourceImages) {
+      const upload = await uploadPostImage(image, s.user.id);
       if (!upload.ok) return upload;
-      image_path = upload.path;
+      imagePaths.push(upload.path);
     }
-    const { error } = await supabase.from("community_posts").insert({
+    const image_path = imagePaths[0] ?? null;
+    const { data, error } = await supabase.from("community_posts").insert({
       user_id: s.user.id,
       body: input.body || null,
       image_path,
       recipe_ref: input.recipeRef ?? null,
       recipe_title: input.recipeTitle ?? null,
       visibility: input.visibility ?? "connections",
-    });
-    return error ? classifyCommunityError(error) : { ok: true };
+    }).select("id").single();
+    if (error) return classifyCommunityError(error);
+    if (imagePaths.length && data?.id) {
+      const { error: imageError } = await supabase.from("community_post_images").insert(imagePaths.map((path, index) => ({
+        post_id: data.id,
+        user_id: s.user.id,
+        image_path: path,
+        sort_order: index,
+      })));
+      if (imageError) return classifyCommunityError(imageError);
+    }
+    return { ok: true };
   } catch (error) {
     return classifyCommunityError(error);
   }

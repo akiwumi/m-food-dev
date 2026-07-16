@@ -10,6 +10,7 @@ import { useCommunity } from "../hooks/useCommunity";
 import { fetchComments, type FeedPost, type PostVisibility } from "../community";
 import { rankTrendingRecipes } from "../communityRanking";
 import { addDismissedRecipe, readDismissedRecipes } from "../communityPreferences";
+import { MAX_POST_IMAGES, normalizePostImages } from "../postImages";
 import type { Recipe } from "../data";
 import type { Profile, ReactionCounts, ReactionKind, SocialPost } from "../store";
 import { notifyCommunityMessage, notifyCommunityPost } from "../notifications";
@@ -40,7 +41,8 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
   const actor = profile.name || "You";
   const [composerOpen, setComposerOpen] = useState(false);
   const [text, setText] = useState("");
-  const [image, setImage] = useState("");
+  const [images, setImages] = useState<string[]>([]);
+  const [editingImageIndex, setEditingImageIndex] = useState<number | null>(null);
   const [recipeId, setRecipeId] = useState("");
   const [visibility, setVisibility] = useState<PostVisibility>("connections");
   const [publishError, setPublishError] = useState("");
@@ -101,6 +103,7 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
     authorAvatar: post.authorAvatar,
     body: post.body,
     image: post.image,
+    images: post.images,
     recipe: findRecipe(post.recipeRef),
     recipeTitle: post.recipeTitle,
     visibility: post.visibility,
@@ -116,6 +119,7 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
     authorAvatar: post.avatar,
     body: post.text,
     image: post.image,
+    images: post.images,
     recipe: findRecipe(post.recipeId),
     recipeTitle: findRecipe(post.recipeId)?.title,
     createdAt: post.createdAt,
@@ -132,6 +136,7 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
     authorAvatar: post.avatar,
     body: post.text,
     image: post.image,
+    images: post.images,
     recipeRef: post.recipeId,
     recipeTitle: findRecipe(post.recipeId)?.title,
     visibility: "connections",
@@ -145,10 +150,14 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
   const trending = useMemo(() => rankTrendingRecipes(trendingPosts, catalog, profile, dismissed), [trendingPosts, catalog, profile, dismissed]);
   const selectedPost = liveFeed.find(post => post.id === selectedPostId);
 
-  const upload = async (file?: File) => {
-    if (!file) return;
+  const upload = async (files?: FileList | null) => {
+    const selected = [...(files ?? [])].slice(0, Math.max(0, MAX_POST_IMAGES - images.length));
+    if (!selected.length) return;
     try {
-      setImage(await readSafeImage(file));
+      const converted: string[] = [];
+      for (const file of selected) converted.push(await readSafeImage(file));
+      setImages(current => normalizePostImages([...current, ...converted]));
+      setEditingImageIndex(images.length);
       setPublishError("");
     } catch (error) {
       setPublishError((error as Error).message);
@@ -157,7 +166,8 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
 
   const resetComposer = () => {
     setText("");
-    setImage("");
+    setImages([]);
+    setEditingImageIndex(null);
     setRecipeId("");
     setPublishError("");
     setComposerOpen(false);
@@ -171,18 +181,18 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
 
   const publish = async () => {
     const safeText = cleanText(text, 1000);
-    if (!safeText && !image && !recipeId) return;
+    if (!safeText && !images.length && !recipeId) return;
     const recipe = findRecipe(recipeId);
     if (community.ready) {
       setPosting(true);
-      const result = await community.publish({ body: safeText, imageDataUrl: image || undefined, recipeRef: recipeId || undefined, recipeTitle: recipe?.title, visibility });
+      const result = await community.publish({ body: safeText, imageDataUrls: images.length ? images : undefined, recipeRef: recipeId || undefined, recipeTitle: recipe?.title, visibility });
       setPosting(false);
       if (!result.ok) {
         setPublishError(result.message);
         return;
       }
     } else {
-      setPosts([{ id: crypto.randomUUID(), author: actor, avatar: profile.avatar, text: safeText, image: image || "", recipeId: recipeId || undefined, createdAt: new Date().toISOString(), reactions: { ...EMPTY_REACTIONS }, comments: [] }, ...posts.slice(0, 99)]);
+      setPosts([{ id: crypto.randomUUID(), author: actor, avatar: profile.avatar, text: safeText, image: images[0] || "", images, recipeId: recipeId || undefined, createdAt: new Date().toISOString(), reactions: { ...EMPTY_REACTIONS }, comments: [] }, ...posts.slice(0, 99)]);
     }
     if (profile.communityPostNotifications) {
       notifyCommunityPost(actor, safeText || recipe?.title || "A saved recipe was shared.");
@@ -301,8 +311,14 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
         profile={profile}
         text={text}
         setText={setText}
-        image={image}
-        removeImage={() => setImage("")}
+        images={images}
+        editingImageIndex={editingImageIndex}
+        setEditingImageIndex={setEditingImageIndex}
+        updateImage={(index, image) => setImages(current => current.map((candidate, candidateIndex) => candidateIndex === index ? image : candidate))}
+        removeImage={index => {
+          setImages(current => current.filter((_, candidateIndex) => candidateIndex !== index));
+          setEditingImageIndex(null);
+        }}
         recipeId={recipeId}
         setRecipeId={setRecipeId}
         recipes={linkOptions.filter((recipe): recipe is Recipe => !!recipe)}
@@ -311,7 +327,7 @@ export function CommunityScreen({ profile, posts, setPosts, openRecipe, catalog,
         showVisibility={community.ready === true}
         posting={posting}
         error={publishError}
-        upload={file => void upload(file)}
+        upload={files => void upload(files)}
         close={() => setComposerOpen(false)}
         publish={() => void publish()}
       />

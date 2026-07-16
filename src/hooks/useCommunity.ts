@@ -78,7 +78,7 @@ export function useCommunity() {
     return result;
   }, []);
 
-  const publish = useCallback(async (input: { body: string; imageDataUrl?: string; recipeRef?: string; recipeTitle?: string; visibility?: PostVisibility }) => {
+  const publish = useCallback(async (input: { body: string; imageDataUrl?: string; imageDataUrls?: string[]; recipeRef?: string; recipeTitle?: string; visibility?: PostVisibility }) => {
     const result = await createPost(input);
     if (result.ok) await refreshFeed();
     return result;

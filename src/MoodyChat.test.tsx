@@ -21,6 +21,36 @@ describe("MoodyChat", () => {
     cleanup();
   });
 
+  it("moves the Moody button before the chat is opened", () => {
+    render(
+      <MoodyChat
+        profile={defaultProfile}
+        mood="Tired"
+        picks={[]}
+        candidates={[]}
+        openRecipe={vi.fn()}
+      />,
+    );
+
+    const button = screen.getByLabelText("Chat with Moody");
+    vi.spyOn(button, "getBoundingClientRect").mockReturnValue({
+      left: 920,
+      top: 680,
+      right: 976,
+      bottom: 736,
+      width: 56,
+      height: 56,
+      x: 920,
+      y: 680,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.pointerDown(button, { clientX: 948, clientY: 708, pointerId: 1 });
+    fireEvent.pointerMove(window, { clientX: 848, clientY: 608, pointerId: 1 });
+
+    expect(button.style.transform).toBe("translate(-100px, -100px)");
+  });
+
   it("moves the modal when the header is dragged", () => {
     render(
       <MoodyChat

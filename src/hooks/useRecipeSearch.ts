@@ -1,7 +1,8 @@
 import { useCallback, useRef, useState } from "react";
+import { bundledRecipes } from "../bundledRecipes";
 import { finalizeSearchResults } from "../searchResults";
 import { appendUniqueRecipes, RESULT_BATCH_SIZE, takeUniqueBatch } from "../resultBatches";
-import { trackSearch, telemetrySource } from "../telemetry";
+import { trackSearch } from "../telemetry";
 import { RANKING_CONFIG_VERSION } from "../recommendation";
 import { fetchCuratedRecipes, buildFoodHistory, recipeProfilePayload } from "../recipes";
 import { callFn } from "../api/backend";
@@ -9,7 +10,7 @@ import type { Recipe } from "../data";
 import type { Profile } from "../store";
 import type { SearchRequest, Page } from "../appTypes";
 
-type MoodySearchReply = { message?: string; recipeId?: string; recipe?: Recipe | null; error?: string };
+type MoodySearchReply = { message?: string; recipeId?: string; recipe?: Recipe | null; recipes?: Recipe[]; error?: string };
 
 // Structured recipe search: request/results state, the abort-disciplined search
 // runner (H5 — runSearch stays a plain per-render function so pagination reads
@@ -26,22 +27,13 @@ export function useRecipeSearch(
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchOffset, setSearchOffset] = useState(0);
   const [searchRelaxed, setSearchRelaxed] = useState(false);
+  // Backend served backup results (owned cache / TheMealDB) because live
+  // Spoonacular was unavailable — usually the daily quota. Drives a distinct note.
+  const [searchDegraded, setSearchDegraded] = useState(false);
   const activeSearchId = useRef(0);
   const activeSearchAbort = useRef<AbortController | null>(null);
 
   const runSearch = async (request: SearchRequest, nextPage = false) => {
-    // Each provider page contains 20 recipes while the UI reveals five at a
-    // time. Use the buffered candidates first; fetch the next provider page only
-    // after all 20 have been shown.
-    if (nextPage) {
-      const bufferedResults = appendUniqueRecipes(searchResults, searchCandidates, RESULT_BATCH_SIZE);
-      if (bufferedResults.length > searchResults.length) {
-        setSearchResults(bufferedResults);
-        setPage("results");
-        return;
-      }
-    }
-
     activeSearchAbort.current?.abort();
     const searchId = activeSearchId.current + 1;
     activeSearchId.current = searchId;
@@ -55,12 +47,22 @@ export function useRecipeSearch(
       setSearchResults([]);
       setSearchCandidates([]);
       setSearchRelaxed(false);
+      setSearchDegraded(false);
     }
     setSearchLoading(true);
     setPage("results");
     window.scrollTo(0, 0);
     const startedAt = performance.now();
     try {
+      // Show bundled matches immediately so the user sees results while the live
+      // search is in flight. The spinner only appears when there are zero local
+      // matches (niche queries). Live results arrive later and are ranked first.
+      const offlineCandidates = finalizeSearchResults(bundledRecipes, sharedProfile, request.filters, Infinity);
+      if (!nextPage && offlineCandidates.length) {
+        setSearchCandidates(offlineCandidates);
+        setSearchResults(takeUniqueBatch(offlineCandidates));
+      }
+
       if (!nextPage && request.routedBy === "moody" && request.query.trim()) {
         try {
           const reply = await callFn<MoodySearchReply>("ai-gateway", {
@@ -68,13 +70,14 @@ export function useRecipeSearch(
             message: request.query,
             context: {
               profile: recipeProfilePayload(sharedProfile),
-              candidates: [],
+              candidates: offlineCandidates.slice(0, 30).map(r => ({ id: r.id, title: r.title, cuisine: r.cuisine, time: r.time, ingredients: r.ingredients })),
             },
           });
           if (!isActiveSearch()) return;
-          const moodyPick = reply.recipe ?? null;
-          if (moodyPick) {
-            const candidates = [moodyPick];
+          const single = reply.recipe ?? (reply.recipeId ? offlineCandidates.find(r => r.id === reply.recipeId) ?? null : null);
+          const moodyPicks = reply.recipes?.length ? reply.recipes : (single ? [single] : []);
+          if (moodyPicks.length) {
+            const candidates = appendUniqueRecipes(moodyPicks, offlineCandidates, Infinity);
             const nextResults = takeUniqueBatch(candidates);
             setSearchCandidates(candidates);
             setSearchResults(nextResults);
@@ -82,7 +85,7 @@ export function useRecipeSearch(
               mode: "search",
               durationMs: Math.round(performance.now() - startedAt),
               resultCount: nextResults.length,
-              source: "spoonacular",
+              source: reply.recipe || reply.recipes?.length ? "spoonacular" : "local",
               aiAttempted: true,
               aiSucceeded: true,
               fallbackUsed: false,
@@ -93,25 +96,37 @@ export function useRecipeSearch(
             return;
           }
         } catch {
-          // Backend/auth unavailable: fall through to the live recipe search.
+          // Backend/auth unavailable: fall through to the existing deterministic search.
         }
       }
 
       // Explicit search honors the filters exactly — relax:false tells the backend
       // not to silently drop cuisine/course/time to force a result.
-      const live = await fetchCuratedRecipes(sharedProfile, request.mood || mood, 50, request.filters.maxReadyTime ?? 60, request.query, request.filters, foodHistory, offset, false, false, controller.signal);
+      const liveMeta: { degraded?: boolean } = {};
+      const live = await fetchCuratedRecipes(sharedProfile, request.mood || mood, 50, request.filters.maxReadyTime ?? 60, request.query, request.filters, foodHistory, offset, false, false, controller.signal, liveMeta);
       if (!isActiveSearch()) return;
       const liveCandidates = finalizeSearchResults(live ?? [], sharedProfile, request.filters, Infinity);
       const strictCandidates = appendUniqueRecipes(
         nextPage ? searchCandidates : [],
-        liveCandidates,
+        [...liveCandidates, ...offlineCandidates],
         Infinity,
       );
-      const candidates = strictCandidates;
+      // When every strict filter combined yields nothing, fall back to a
+      // diet-only pass over the bundled catalog so the user always sees
+      // something (diet is the only safety-critical filter, so it's kept).
+      const relaxedFallback = !nextPage && !strictCandidates.length
+        ? finalizeSearchResults(bundledRecipes, sharedProfile, { diet: request.filters.diet }, Infinity)
+        : [];
+      const candidates = strictCandidates.length ? strictCandidates : relaxedFallback;
+      const isRelaxed = relaxedFallback.length > 0 && !strictCandidates.length;
       const nextResults = nextPage
         ? appendUniqueRecipes(searchResults, candidates, RESULT_BATCH_SIZE)
         : takeUniqueBatch(candidates);
-      setSearchRelaxed(false);
+      const fallbackUsed = !liveCandidates.length && (offlineCandidates.length > 0 || relaxedFallback.length > 0);
+      setSearchRelaxed(isRelaxed);
+      // Backend backup results (quota-out) that DID come through — flag them so the
+      // user knows these are stand-ins, distinct from the client's diet-only relax.
+      setSearchDegraded(!isRelaxed && !!liveMeta.degraded && (live?.length ?? 0) > 0);
       setSearchCandidates(candidates);
       setSearchResults(nextResults);
       // Slice 0 telemetry: operational only, fire-and-forget (never awaited).
@@ -119,10 +134,10 @@ export function useRecipeSearch(
         mode: nextPage ? "load_more" : "search",
         durationMs: Math.round(performance.now() - startedAt),
         resultCount: nextResults.length,
-        source: telemetrySource(live),
+        source: live?.length ? "spoonacular" : fallbackUsed && nextResults.length ? "local" : "none",
         aiAttempted: false,
         aiSucceeded: false,
-        fallbackUsed: false,
+        fallbackUsed,
         rankingConfigVersion: RANKING_CONFIG_VERSION,
         hasQuery: !!request.query,
         filterCount: Object.values(request.filters).filter(v => v !== undefined && v !== "" && !(Array.isArray(v) && v.length === 0)).length,
@@ -142,5 +157,5 @@ export function useRecipeSearch(
     setSearchLoading(false);
   }, []);
 
-  return { searchRequest, setSearchRequest, searchResults, searchLoading, searchRelaxed, runSearch, cancelSearch };
+  return { searchRequest, setSearchRequest, searchResults, searchLoading, searchRelaxed, searchDegraded, runSearch, cancelSearch };
 }

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { bundledRecipes } from "../bundledRecipes";
 import { recommend, RANKING_CONFIG_VERSION, type LearnedSignals } from "../recommendation";
 import { finalizeSearchResults } from "../searchResults";
 import { fetchCuratedRecipes, buildFoodHistory } from "../recipes";
-import { trackSearch, telemetrySource } from "../telemetry";
+import { trackSearch } from "../telemetry";
 import { recordRun } from "../behavioral";
 import type { Recipe } from "../data";
 import type { Profile } from "../store";
@@ -12,7 +13,7 @@ import type { Entry } from "../appTypes";
 // candidate state, the deterministic ranking memos, the fetch effect, and
 // "show more". Extracted verbatim (roadmap Hook F). The fetch effect's dep array
 // is copied byte-for-byte — it intentionally omits foodHistory / behavioralConsent
-// (H4); "fixing" it re-fires on every diary/save change and
+// / localFallback (H4); "fixing" it re-fires on every diary/save change and
 // recreates the 502 fetch-loop the profile memo (H2) guards against.
 export function useHomeFeed(
   entry: Entry,
@@ -32,6 +33,9 @@ export function useHomeFeed(
   const [results, setResults] = useState(false);
   const [aiRanked, setAiRanked] = useState<Recipe[] | null>(null);
   const [liveSet, setLiveSet] = useState<Recipe[] | null>(null);
+  // The live result came from the quota-out backup (owned cache / TheMealDB), so
+  // filters like cuisine may not be exactly honoured — drives a home note.
+  const [liveDegraded, setLiveDegraded] = useState(false);
   const [curating, setCurating] = useState(false);
   const [hasFetched, setHasFetched] = useState(false);
   const [moreOffset, setMoreOffset] = useState(0);
@@ -48,10 +52,11 @@ export function useHomeFeed(
   const ACCESSORY_TYPES = useMemo(() => new Set(["dessert", "desserts", "snack", "snacks", "drink", "drinks", "beverage", "beverages", "sweet", "sweets"]), []);
   // Ranks any candidate pool for the current check-in: applies the home filters as
   // hard constraints + client safety, mood-ranks what remains, and relaxes the time
-  // cap if the strict pass is empty.
-  const rankForCheckin = useCallback((pool: Recipe[]) => {
+  // cap if the strict pass is empty. Shared by the bundled fallback and the live
+  // (uncurated) provider set so both honor exactly the same hard constraints.
+  const rankPool = useCallback((pool: Recipe[], dropCuisine: boolean) => {
     const filters = {
-      cuisines: cuisine ? [cuisine] : undefined,
+      cuisines: (!dropCuisine && cuisine) ? [cuisine] : undefined,
       type: mealCategory || undefined,
       diet: homeDiet !== "Any" ? homeDiet : undefined,
     };
@@ -60,23 +65,40 @@ export function useHomeFeed(
     return strict.length ? strict : recommend(filtered, sharedProfile, mood, energy, 999, appliedSignals).map(item => item.recipe);
   }, [sharedProfile, mood, energy, time, cuisine, mealCategory, homeDiet, appliedSignals]);
 
-  // Deterministic ranking of the live, uncurated provider candidates (Slice-1
-  // default). Null until a live fetch lands.
-  const deterministicLive = useMemo(
-    () => (liveSet?.length ? rankForCheckin(liveSet) : null),
-    [liveSet, rankForCheckin],
-  );
+  // Rank respecting the chosen cuisine; if that empties the pool — an offline set
+  // or a quota-out backup with no recipes of that cuisine — relax ONLY the cuisine
+  // (diet/allergens/type stay hard) so the check-in still answers instead of
+  // dead-ending on "no results". `cuisineRelaxed` lets the UI explain what happened.
+  const rankForCheckin = useCallback((pool: Recipe[]): { recipes: Recipe[]; cuisineRelaxed: boolean } => {
+    const strict = rankPool(pool, false);
+    if (strict.length || !cuisine) return { recipes: strict, cuisineRelaxed: false };
+    return { recipes: rankPool(pool, true), cuisineRelaxed: true };
+  }, [rankPool, cuisine]);
 
-  const ranked = useMemo(() => {
-    // Search results are always from a live provider. A failed request stays
-    // empty so stale bundled data can never masquerade as a current result.
-    const base = aiRanked ?? deterministicLive ?? [];
-    if (mealCategory) return base;
-    return base.filter(r => {
+  const localFallback = useMemo(() => rankForCheckin(bundledRecipes), [rankForCheckin]);
+  // Deterministic ranking of the live, uncurated provider candidates (Slice-1
+  // default). Null until a live fetch lands — and null (not empty) when nothing
+  // survives, so the `?? localFallback` below still fires instead of dead-ending.
+  const deterministicLive = useMemo(() => {
+    if (!liveSet?.length) return null;
+    const r = rankForCheckin(liveSet);
+    return r.recipes.length ? r : null;
+  }, [liveSet, rankForCheckin]);
+
+  const rankedResult = useMemo(() => {
+    // Order of preference: AI-curated (opt-in) → deterministic ranking of live
+    // provider recipes → deterministic ranking of the bundled offline catalog.
+    const src = aiRanked != null
+      ? { recipes: aiRanked, cuisineRelaxed: false }
+      : (deterministicLive ?? localFallback);
+    if (mealCategory) return src;
+    const recipes = src.recipes.filter(r => {
       const types = (r.mealTypes ?? []).map((t: string) => t.toLowerCase());
       return !types.length || !types.every((t: string) => ACCESSORY_TYPES.has(t));
     });
-  }, [aiRanked, deterministicLive, mealCategory, ACCESSORY_TYPES]);
+    return { recipes, cuisineRelaxed: src.cuisineRelaxed };
+  }, [aiRanked, deterministicLive, localFallback, mealCategory, ACCESSORY_TYPES]);
+  const ranked = rankedResult.recipes;
 
   // When the user asks for recommendations, fetch real recipes (deterministic by
   // default; AI-curated only when opted in).
@@ -86,11 +108,14 @@ export function useHomeFeed(
     setCurating(true);
     setAiRanked(null); // clear stale results immediately so loading state shows
     setLiveSet(null);
+    setLiveDegraded(false);
     setMoreOffset(0);
     const startedAt = performance.now();
-    void fetchCuratedRecipes(sharedProfile, mood, energy, time, "", { type: mealCategory || undefined, cuisines: cuisine ? [cuisine] : undefined, diet: homeDiet !== "Any" ? homeDiet : undefined }, foodHistory, 0, true, aiCuration)
+    const meta: { degraded?: boolean } = {};
+    void fetchCuratedRecipes(sharedProfile, mood, energy, time, "", { type: mealCategory || undefined, cuisines: cuisine ? [cuisine] : undefined, diet: homeDiet !== "Any" ? homeDiet : undefined }, foodHistory, 0, true, aiCuration, undefined, meta)
       .then(list => {
         if (cancelled) return;
+        setLiveDegraded(!!meta.degraded && !!list?.length);
         if (list?.length) {
           setCatalog(prev => { const ids = new Set(list.map(r => r.id)); return [...list, ...prev.filter(r => !ids.has(r.id))]; });
           // Trust the AI order only when curation was actually requested; otherwise
@@ -100,9 +125,11 @@ export function useHomeFeed(
           // can be tied back to it. Consent-gated, best-effort, never awaited.
           if (behavioralConsent) void recordRun({ rankingConfigVersion: RANKING_CONFIG_VERSION, candidates: list.map(r => ({ id: r.id, title: r.title, cuisine: r.cuisine })), mood, energy });
         } else {
-          setAiRanked(null); setLiveSet(null);
+          setAiRanked(null); setLiveSet(null); // not signed in / configured → bundled ranking
         }
-        const resultCount = list?.length ?? 0;
+        // Telemetry: home check-in is a search. On the local-fallback path the user
+        // sees `localFallback`, so report its size as the result count.
+        const resultCount = list?.length ? list.length : localFallback.recipes.length;
         // Report time-to-first-answer only on the first answer that actually put a
         // recipe on screen this session (an empty result isn't an "answer").
         const firstAnswer = resultCount > 0 && !firstAnswerReportedRef.current;
@@ -111,10 +138,10 @@ export function useHomeFeed(
           mode: "home",
           durationMs: Math.round(performance.now() - startedAt),
           resultCount,
-          source: telemetrySource(list),
+          source: list?.length ? "spoonacular" : localFallback.recipes.length ? "local" : "none",
           aiAttempted: aiCuration,
           aiSucceeded: aiCuration && !!list?.length,
-          fallbackUsed: false,
+          fallbackUsed: !list?.length,
           rankingConfigVersion: RANKING_CONFIG_VERSION,
           moodAlone: !refineTouchedRef.current,
           ...(firstAnswer ? { timeToFirstAnswerMs: Math.round(performance.now() - appOpenedAtRef.current) } : {}),
@@ -124,10 +151,11 @@ export function useHomeFeed(
     return () => { cancelled = true; };
   }, [results, mood, energy, time, sharedProfile, entry, recipeNonce, mealCategory, cuisine, homeDiet, aiCuration]);
 
-  // "Show me 5 more", fetch a fresh live page (next offset) and append.
+  // "Show me 5 more", fetch a fresh page (next offset) and append. Falls back to
+  // simply revealing more of the local ranking when the backend isn't available.
   const loadMore = async () => {
     setCurating(true);
-    const nextOffset = moreOffset + 20;
+    const nextOffset = moreOffset + 10;
     setMoreOffset(nextOffset);
     const startedAt = performance.now();
     try {
@@ -143,7 +171,7 @@ export function useHomeFeed(
         mode: "load_more",
         durationMs: Math.round(performance.now() - startedAt),
         resultCount: list?.length ?? 0,
-        source: telemetrySource(list),
+        source: list?.length ? "spoonacular" : "none",
         aiAttempted: aiCuration,
         aiSucceeded: aiCuration && !!list?.length,
         fallbackUsed: false,
@@ -185,6 +213,10 @@ export function useHomeFeed(
     results, setResults, ranked, curating, hasFetched, loadMore,
     live: aiRanked !== null || deterministicLive !== null,
     curated: aiRanked !== null,
+    // Backup results (quota-out) and/or a cuisine we couldn't honour — the home
+    // screen surfaces a note so the user isn't confused by off-cuisine picks.
+    degraded: liveDegraded && (aiRanked !== null || deterministicLive !== null),
+    cuisineRelaxed: rankedResult.cuisineRelaxed,
     beginResults, retry,
   };
 }

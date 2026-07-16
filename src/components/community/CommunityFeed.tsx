@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { ArrowLeft, ChefHat, Hand, Heart, MessageCircle, Send, ThumbsUp } from "lucide-react";
 import type { Recipe } from "../../data";
 import type { Profile, ReactionKind } from "../../store";
+import { postDisplayImages } from "../../postImages";
 import { Avatar } from "../misc";
 
 const REACTIONS = [
@@ -17,6 +18,7 @@ export type CommunityFeedView = {
   authorAvatar: string;
   body: string;
   image: string;
+  images?: string[];
   recipe?: Recipe;
   recipeTitle?: string;
   visibility?: string;
@@ -69,7 +71,7 @@ export function CommunityFeedItem({ item, openPost, openAuthor, openRecipe, onRe
   openRecipe: (recipe: Recipe) => void;
   onReact: (reaction: ReactionKind) => void;
 }) {
-  const thumbnail = item.image;
+  const thumbnail = postDisplayImages(item, item.recipe)[0] ?? "";
   return (
     <article className="community-feed-item">
       <header>
@@ -109,7 +111,7 @@ export function CommunityPostDetail({ item, profile, comments, draft, setDraft, 
   onReact: (reaction: ReactionKind) => void;
   submit: () => void;
 }) {
-  const hero = item.image || item.recipe?.image;
+  const displayImages = postDisplayImages(item, item.recipe);
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") close(); };
     document.addEventListener("keydown", closeOnEscape);
@@ -123,7 +125,7 @@ export function CommunityPostDetail({ item, profile, comments, draft, setDraft, 
         <span />
       </header>
       <div className="community-post-detail-scroll">
-        {hero && <img className="community-post-detail-hero" src={hero} alt="" />}
+        <PostImageGallery images={displayImages} />
         <div className="community-post-detail-content">
           <button type="button" className="community-post-author" onClick={openAuthor}>
             <Avatar name={item.authorName} image={item.authorAvatar} />
@@ -160,5 +162,14 @@ export function CommunityPostDetail({ item, profile, comments, draft, setDraft, 
         {error && <div className="community-reply-error" role="alert"><span>{error}</span><button type="button" onClick={submit}>Retry</button></div>}
       </form>
     </section>
+  );
+}
+
+function PostImageGallery({ images }: { images: string[] }) {
+  if (!images.length) return null;
+  return (
+    <div className={`post-image-gallery count-${Math.min(images.length, 4)}`}>
+      {images.map((image, index) => <img src={image} alt={index === 0 ? "Shared food" : `Shared food ${index + 1}`} key={`${image}-${index}`} />)}
+    </div>
   );
 }

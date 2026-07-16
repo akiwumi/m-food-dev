@@ -1,5 +1,5 @@
 import { fileURLToPath, URL } from "node:url";
-import { defineConfig } from "vite";
+import { configDefaults, defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import { buildCsp } from "./csp.config.js";
 
@@ -23,6 +23,9 @@ function cspMeta() {
 
 export default defineConfig({
   plugins: [react(), cspMeta()],
+  test: {
+    exclude: [...configDefaults.exclude, "ios/DerivedData/**"],
+  },
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),

@@ -15,13 +15,13 @@ import { PickCard } from "../components/PickCard";
 import { DailySuggestionCarousel } from "../components/DailySuggestionCarousel";
 import { FoodCamera } from "../components/FoodCamera";
 
-export function HomeScreen({ profile, diary, saved, catalog, mood, setMood, energy, setEnergy, time, setTime, mealCategory, setMealCategory, cuisine, setCuisine, diet, setDiet, results, setResults, beginResults, ranked, curating, hasFetched, loadMore, live, curated, retry, open, go, diners, selectedDiners, setSelectedDiners, eaterCount, setEaterCount, openNotifs, unread, addPhoto, onPickSuggestion, toggleSave, signals }: {
+export function HomeScreen({ profile, diary, saved, catalog, mood, setMood, energy, setEnergy, time, setTime, mealCategory, setMealCategory, cuisine, setCuisine, diet, setDiet, results, setResults, beginResults, ranked, curating, hasFetched, loadMore, live, curated, degraded, cuisineRelaxed, retry, open, go, diners, selectedDiners, setSelectedDiners, eaterCount, setEaterCount, openNotifs, unread, addPhoto, onPickSuggestion, toggleSave, signals }: {
   profile: Profile; diary: DiaryEntry[]; saved: string[]; catalog: Recipe[];
   mood: string; setMood: (v: string) => void; energy: number; setEnergy: (v: number) => void; time: number; setTime: (v: number) => void;
   mealCategory: string; setMealCategory: (v: string) => void;
   cuisine: string; setCuisine: (v: string) => void;
   diet: string; setDiet: (v: string) => void;
-  results: boolean; setResults: (v: boolean) => void; beginResults: () => void; ranked: Recipe[]; curating?: boolean; hasFetched?: boolean; loadMore?: () => void; live?: boolean; curated?: boolean; retry?: () => void; open: (r: Recipe) => void; go: (p: Page) => void;
+  results: boolean; setResults: (v: boolean) => void; beginResults: () => void; ranked: Recipe[]; curating?: boolean; hasFetched?: boolean; loadMore?: () => void; live?: boolean; curated?: boolean; degraded?: boolean; cuisineRelaxed?: boolean; retry?: () => void; open: (r: Recipe) => void; go: (p: Page) => void;
   diners: Diner[]; selectedDiners: string[]; setSelectedDiners: (v: string[]) => void;
   eaterCount: number; setEaterCount: (v: number) => void; openNotifs?: () => void; unread?: number;
   addPhoto: (p: FoodPhoto) => void; onPickSuggestion: (r: Recipe) => void; toggleSave: (r: Recipe) => void;
@@ -31,7 +31,6 @@ export function HomeScreen({ profile, diary, saved, catalog, mood, setMood, ener
   const [shownCount, setShownCount] = useState(RESULT_BATCH_SIZE);
   const visible = ranked.filter(r => !rejected.includes(r.id)).slice(0, shownCount);
   const hero = ranked[0];
-  const providerLabel = [...new Set(visible.map(recipe => recipe.provider).filter(Boolean))].join(" + ");
   const suggestions = useMemo(
     () => deriveDailySuggestions(diary, saved, catalog, profile),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -59,8 +58,10 @@ export function HomeScreen({ profile, diary, saved, catalog, mood, setMood, ener
         <h1>{mealCategory ? `${mealCategory[0].toUpperCase()}${mealCategory.slice(1)} picks.` : "Tonight’s picks."}</h1>
         {moodVoice(mood, energy) && <p className="moody-voice"><Sparkles size={14} /> {moodVoice(mood, energy)}</p>}
         <p>{energy < 50 ? "Low-effort" : "Interesting"}, {mood.toLowerCase()}{mealCategory ? `, ${mealCategory}` : ""}{cuisine ? `, ${cuisine}` : ""}, within {time} min · {eaterCount} {eaterCount === 1 ? "person" : "people"}</p>
-        {live && curated && <p className="source-note live"><Check size={13} /> Live from {providerLabel || "the recipe provider"} — Moody chose these for you.</p>}
-        {live && !curated && <p className="source-note live"><Check size={13} /> Live from {providerLabel || "the recipe provider"}, matched to your mood.</p>}
+        {cuisineRelaxed && visible.length > 0 && <p className="source-note">No {cuisine} recipes available right now{degraded ? " — live recipe search is at its daily limit" : ""}. Showing other picks that fit your mood.</p>}
+        {degraded && !cuisineRelaxed && visible.length > 0 && <p className="source-note">Live recipe search is at its daily limit — showing backup picks for now.</p>}
+        {live && !degraded && !cuisineRelaxed && curated && <p className="source-note live"><Check size={13} /> Moody chose these for you.</p>}
+        {live && !degraded && !cuisineRelaxed && !curated && <p className="source-note live"><Check size={13} /> Live picks, matched to your mood.</p>}
         {!live && hasFetched && visible.length > 0 && <p className="source-note">Offline picks from your cookbook — live recipes are unavailable right now.</p>}
       </div>
       {visible.length ? (

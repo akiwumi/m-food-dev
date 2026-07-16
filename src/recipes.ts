@@ -101,6 +101,10 @@ export async function fetchCuratedRecipes(
   relax = true,
   curate = false,
   signal?: AbortSignal,
+  // Optional out-param: the backend sets `degraded:true` when it couldn't serve
+  // live Spoonacular results and fell back to the owned cache / TheMealDB (e.g.
+  // the daily quota is spent). Callers read it to show a "backup results" note.
+  meta?: { degraded?: boolean; provider?: string },
 ): Promise<Recipe[] | null> {
   // Playwright injects provider-shaped recipes in development so mobile flows
   // exercise the live-only client path without requiring production credentials.
@@ -145,6 +149,7 @@ export async function fetchCuratedRecipes(
         return null;
       }
       const data = await res.json();
+      if (meta) { meta.degraded = data.degraded === true; meta.provider = data.provider; }
       if (!Array.isArray(data.recipes) || !data.recipes.length) {
         console.warn("[recipes] Edge function returned no recipes:", JSON.stringify(data).slice(0, 300));
         return null;

@@ -16,11 +16,11 @@ import type { Recipe } from "../data";
 // a tappable recipe card when the gateway returns one (concept-recovery Phase 2).
 
 type ChatRecipe = Recipe | null;
-type ChatMessage = { role: "user" | "assistant"; content: string; recipe?: ChatRecipe };
+type ChatMessage = { role: "user" | "assistant"; content: string; recipe?: ChatRecipe; recipes?: Recipe[] };
 
-// The gateway responds with { message, recipeId, recipe } on success or { error }
-// on failure (401/503/502). Model both so we can degrade gracefully.
-type GatewayReply = { message?: string; recipeId?: string; recipe?: ChatRecipe; error?: string };
+// The gateway responds with { message, recipeId, recipe, recipes[] } on success
+// or { error } on failure (401/503/502). Model both so we degrade gracefully.
+type GatewayReply = { message?: string; recipeId?: string; recipe?: ChatRecipe; recipes?: Recipe[]; error?: string };
 
 // Trim the profile to just the safety-relevant fields the gateway's system prompt
 // reads — no need to ship the whole object.
@@ -45,6 +45,11 @@ function proactiveOpener(mood: string, picks: Recipe[]): string {
 
 const SUGGESTED = ["Something quick tonight", "I want comfort food", "Surprise me"];
 
+function moodyDragMargin() {
+  if (typeof window === "undefined") return 12;
+  return typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches ? 64 : 12;
+}
+
 export function MoodyChat({ profile, mood, picks, candidates, cookedCount = 0, saveProfile, openRecipe }: {
   profile: Profile;
   mood: string;
@@ -61,10 +66,19 @@ export function MoodyChat({ profile, mood, picks, candidates, cookedCount = 0, s
   const [profileDripDismissed, setProfileDripDismissed] = useState(false);
   const [dragOffset, setDragOffset] = useState<MoodyDragPoint>({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
+  const [fabOffset, setFabOffset] = useState<MoodyDragPoint>({ x: 0, y: 0 });
+  const [fabDragging, setFabDragging] = useState(false);
   const chatRef = useRef<HTMLDivElement>(null);
+  const fabRef = useRef<HTMLButtonElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const chatVersionRef = useRef(0);
+  const suppressFabClickRef = useRef(false);
   const dragRef = useRef<{
+    startOffset: MoodyDragPoint;
+    startPointer: MoodyDragPoint;
+    startRect: MoodyDragRect;
+  } | null>(null);
+  const fabDragRef = useRef<{
     startOffset: MoodyDragPoint;
     startPointer: MoodyDragPoint;
     startRect: MoodyDragRect;
@@ -98,6 +112,7 @@ export function MoodyChat({ profile, mood, picks, candidates, cookedCount = 0, s
         ...drag,
         pointer: { x: event.clientX, y: event.clientY },
         viewport: { width: window.innerWidth, height: window.innerHeight },
+        margin: moodyDragMargin(),
       }));
     };
     const end = () => {
@@ -115,6 +130,41 @@ export function MoodyChat({ profile, mood, picks, candidates, cookedCount = 0, s
     };
   }, [dragging]);
 
+  useEffect(() => {
+    if (!fabDragging) return;
+
+    const move = (event: PointerEvent) => {
+      const drag = fabDragRef.current;
+      if (!drag) return;
+      const next = nextMoodyDragOffset({
+        ...drag,
+        pointer: { x: event.clientX, y: event.clientY },
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+        margin: moodyDragMargin(),
+      });
+      if (Math.abs(next.x - drag.startOffset.x) > 3 || Math.abs(next.y - drag.startOffset.y) > 3) {
+        suppressFabClickRef.current = true;
+      }
+      setFabOffset(next);
+    };
+    const end = () => {
+      fabDragRef.current = null;
+      setFabDragging(false);
+      if (suppressFabClickRef.current) {
+        window.setTimeout(() => { suppressFabClickRef.current = false; }, 250);
+      }
+    };
+
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+    };
+  }, [fabDragging]);
+
   const beginDrag = (event: ReactPointerEvent<HTMLElement>) => {
     if ((event.target as HTMLElement).closest("button")) return;
     const rect = chatRef.current?.getBoundingClientRect();
@@ -126,6 +176,25 @@ export function MoodyChat({ profile, mood, picks, candidates, cookedCount = 0, s
       startRect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
     };
     setDragging(true);
+  };
+
+  const beginFabDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const rect = fabRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    fabDragRef.current = {
+      startOffset: fabOffset,
+      startPointer: { x: event.clientX, y: event.clientY },
+      startRect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
+    };
+    setFabDragging(true);
+  };
+
+  const openFromFab = () => {
+    if (suppressFabClickRef.current) {
+      suppressFabClickRef.current = false;
+      return;
+    }
+    setOpen(true);
   };
 
   const resetChat = () => {
@@ -158,10 +227,11 @@ export function MoodyChat({ profile, mood, picks, candidates, cookedCount = 0, s
       if (reply.error || !reply.message) {
         setMessages(prev => [...prev, { role: "assistant", content: "I couldn't think that through just now. Give me another try in a moment." }]);
       } else {
-        // Prefer the full recipe the gateway returns; otherwise resolve the id
-        // against the candidates we already have on screen.
-        const recipe = reply.recipe ?? (reply.recipeId ? candidates.find(c => c.id === reply.recipeId) ?? null : null);
-        setMessages(prev => [...prev, { role: "assistant", content: reply.message!, recipe }]);
+        // Prefer the real search-result cards from the gateway; fall back to the
+        // single recipe / id resolution for older responses.
+        const single = reply.recipe ?? (reply.recipeId ? candidates.find(c => c.id === reply.recipeId) ?? null : null);
+        const recipes = reply.recipes?.length ? reply.recipes : (single ? [single] : []);
+        setMessages(prev => [...prev, { role: "assistant", content: reply.message!, recipes }]);
       }
     } catch {
       if (chatVersion !== chatVersionRef.current) return;
@@ -179,7 +249,15 @@ export function MoodyChat({ profile, mood, picks, candidates, cookedCount = 0, s
 
   return (
     <>
-      <button className={"moody-fab" + (open ? " hidden" : "")} aria-label="Chat with Moody" onClick={() => setOpen(true)}>
+      <button
+        className={"moody-fab" + (open ? " hidden" : "") + (fabDragging ? " dragging" : "")}
+        aria-label="Chat with Moody"
+        onClick={openFromFab}
+        onPointerDown={beginFabDrag}
+        ref={fabRef}
+        style={{ transform: `translate(${fabOffset.x}px, ${fabOffset.y}px)` }}
+        title="Drag to move"
+      >
         <Sparkles size={22} />
       </button>
 
@@ -208,16 +286,16 @@ export function MoodyChat({ profile, mood, picks, candidates, cookedCount = 0, s
               {messages.map((m, i) => (
                 <div key={i} className={"moody-msg " + m.role}>
                   <div className="moody-bubble">{m.content}</div>
-                  {m.recipe && (
-                    <button className="moody-recipe-card" onClick={() => { openRecipe(m.recipe!); setOpen(false); }}>
-                      <img src={m.recipe.image || FALLBACK_FOOD} alt={m.recipe.title} />
+                  {(m.recipes ?? (m.recipe ? [m.recipe] : [])).map(r => (
+                    <button key={r.id} className="moody-recipe-card" onClick={() => { openRecipe(r); setOpen(false); }}>
+                      <img src={r.image || FALLBACK_FOOD} alt={r.title} />
                       <span className="mrc-body">
-                        <b>{m.recipe.title}</b>
-                        <span className="mrc-facts"><Clock3 size={12} /> {m.recipe.time} min <ShieldCheck size={12} /> safety checked</span>
+                        <b>{r.title}</b>
+                        <span className="mrc-facts"><Clock3 size={12} /> {r.time} min <ShieldCheck size={12} /> safety checked</span>
                       </span>
                       <ChevronRight size={18} />
                     </button>
-                  )}
+                  ))}
                 </div>
               ))}
               {loading && <div className="moody-msg assistant"><div className="moody-bubble moody-typing"><i /><i /><i /></div></div>}

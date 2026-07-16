@@ -1,7 +1,7 @@
 import type React from "react";
 import { useState } from "react";
 import { ShieldCheck, Check, Camera, Search } from "lucide-react";
-import { readSafeImage } from "../security";
+import { IMAGE_FILE_ACCEPT, readSafeImage } from "../security";
 import { makeFoodLog, flaggedAllergens, type FoodPhoto } from "../foodAnalysis";
 import { searchFoods, primaryServing, type NutritionFood } from "../nutrition";
 import { callFn } from "../api/backend";
@@ -217,7 +217,7 @@ export function FoodCamera({
     return (
       <label className="dps-add-tile" style={style}>
         <Camera size={20} />
-        <input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => pick(e.target.files?.[0])} />
+        <input type="file" accept={IMAGE_FILE_ACCEPT} onChange={e => pick(e.target.files?.[0])} />
       </label>
     );
   }
@@ -226,7 +226,7 @@ export function FoodCamera({
     return (
       <label className="food-camera-compact" style={style}>
         <Camera size={16} />{label}
-        <input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => pick(e.target.files?.[0])} />
+        <input type="file" accept={IMAGE_FILE_ACCEPT} onChange={e => pick(e.target.files?.[0])} />
       </label>
     );
   }
@@ -234,7 +234,7 @@ export function FoodCamera({
   return (
     <label className="food-camera-btn" style={style}>
       <Camera size={20} />{label}
-      <input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => pick(e.target.files?.[0])} />
+      <input type="file" accept={IMAGE_FILE_ACCEPT} onChange={e => pick(e.target.files?.[0])} />
     </label>
   );
 }

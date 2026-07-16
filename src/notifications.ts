@@ -37,6 +37,10 @@ export function unreadCount(): number { return readInbox().filter(i => !i.read &
 
 export function markAllRead() { writeInbox(readInbox().map(i => ({ ...i, read: true }))); }
 
+export function dismissInboxItem(id: string) {
+  writeInbox(readInbox().filter(i => i.id !== id));
+}
+
 // Sent the moment an account is created.
 export function sendConfirmationEmail(email: string, name: string) {
   const now = new Date().toISOString();

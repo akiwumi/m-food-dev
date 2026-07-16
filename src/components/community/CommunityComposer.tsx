@@ -1,8 +1,9 @@
 import { useEffect, useRef } from "react";
-import { Camera, ChefHat, Globe2, ImagePlus, Send, Users, X } from "lucide-react";
+import { Camera, ChefHat, Globe2, ImagePlus, Pencil, Send, Users, X } from "lucide-react";
 import type { Recipe } from "../../data";
 import type { PostVisibility } from "../../community";
 import type { Profile } from "../../store";
+import { PostImageEditor } from "../PostImageEditor";
 import { Avatar } from "../misc";
 
 type Props = {
@@ -10,8 +11,11 @@ type Props = {
   profile: Profile;
   text: string;
   setText: (value: string) => void;
-  image: string;
-  removeImage: () => void;
+  images: string[];
+  editingImageIndex: number | null;
+  setEditingImageIndex: (value: number | null) => void;
+  updateImage: (index: number, image: string) => void;
+  removeImage: (index: number) => void;
   recipeId: string;
   setRecipeId: (value: string) => void;
   recipes: Recipe[];
@@ -20,7 +24,7 @@ type Props = {
   showVisibility: boolean;
   posting: boolean;
   error: string;
-  upload: (file?: File) => void;
+  upload: (files?: FileList | null) => void;
   close: () => void;
   publish: () => void;
 };
@@ -28,7 +32,7 @@ type Props = {
 export function CommunityComposer(props: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const selectedRecipe = props.recipes.find(recipe => recipe.id === props.recipeId);
-  const canPublish = !!(props.text.trim() || props.image || props.recipeId) && !props.posting;
+  const canPublish = !!(props.text.trim() || props.images.length || props.recipeId) && !props.posting;
 
   useEffect(() => {
     if (!props.open) return;
@@ -75,10 +79,29 @@ export function CommunityComposer(props: Props) {
           aria-label="Post message"
         />
 
-        {props.image && (
-          <div className="community-composer-photo">
-            <img src={props.image} alt="Post preview" />
-            <button type="button" onClick={props.removeImage} aria-label="Remove photo"><X /></button>
+        {props.editingImageIndex !== null && props.images[props.editingImageIndex] && (
+          <PostImageEditor
+            image={props.images[props.editingImageIndex]}
+            index={props.editingImageIndex}
+            onCancel={() => props.setEditingImageIndex(null)}
+            onSave={image => {
+              props.updateImage(props.editingImageIndex!, image);
+              props.setEditingImageIndex(null);
+            }}
+          />
+        )}
+
+        {props.images.length > 0 && (
+          <div className="community-composer-images">
+            {props.images.map((src, index) => (
+              <figure key={`${src.slice(0, 32)}-${index}`}>
+                <img src={src} alt={`Post preview ${index + 1}`} />
+                <figcaption>
+                  <button type="button" onClick={() => props.setEditingImageIndex(index)} aria-label={`Edit image ${index + 1}`}><Pencil /></button>
+                  <button type="button" onClick={() => props.removeImage(index)} aria-label={`Remove image ${index + 1}`}><X /></button>
+                </figcaption>
+              </figure>
+            ))}
           </div>
         )}
 
@@ -106,7 +129,7 @@ export function CommunityComposer(props: Props) {
       </div>
 
       <footer className="community-composer-tools">
-        <label><ImagePlus /><span>Add photo</span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={event => props.upload(event.target.files?.[0])} /></label>
+        <label><ImagePlus /><span>Add photos</span><input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={event => props.upload(event.target.files)} /></label>
         <span><Camera />Photos make cooking posts easier to discover</span>
       </footer>
     </section>

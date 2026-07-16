@@ -149,6 +149,7 @@ export type ReactionCounts = Record<ReactionKind, string[]>;
 
 export type SocialPost = {
   id: string; author: string; avatar: string; text: string; image: string;
+  images?: string[];
   recipeId?: string; createdAt: string;
   likes?: string[];
   reactions?: ReactionCounts;

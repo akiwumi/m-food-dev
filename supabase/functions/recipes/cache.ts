@@ -42,6 +42,11 @@ export async function getCachedRecipes(
   moodTag: string,
   dietTags: string[],
   limit = 24,
+  // When set (ISO timestamp), only rows last refreshed from the provider AT OR
+  // AFTER this instant are returned. Used by the freshness-window short-circuit
+  // (serve cache only if recently live-fetched); omitted by the quota-out backup,
+  // which wants any cached row regardless of age.
+  freshSinceIso?: string,
 ): Promise<CachedRow[]> {
   if (!cacheEnabled()) return [];
   const params = new URLSearchParams({
@@ -52,6 +57,7 @@ export async function getCachedRecipes(
   });
   // contains([]) matches all rows, so only add the diet filter when there are tags.
   if (dietTags.length) params.set("dietary_tags", `cs.${pgArray(dietTags)}`);
+  if (freshSinceIso) params.set("last_fetched_at", `gte.${freshSinceIso}`);
   try {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/cached_recipes?${params}`, {
       headers: restHeaders(),

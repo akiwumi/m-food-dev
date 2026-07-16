@@ -15,13 +15,14 @@ function describeFilters(filters: RecipeFilters): string {
   return parts.join(" + ");
 }
 
-export function SearchResultsScreen({ results, loading, request, relaxed, more, home, search, open, saved, toggleSave }: { results: Recipe[]; loading: boolean; request: SearchRequest; relaxed?: boolean; more: () => void; home: () => void; search: () => void; open: (recipe: Recipe) => void; saved: string[]; toggleSave: (recipe: Recipe) => void }) {
+export function SearchResultsScreen({ results, loading, request, relaxed, degraded, more, home, search, open, saved, toggleSave }: { results: Recipe[]; loading: boolean; request: SearchRequest; relaxed?: boolean; degraded?: boolean; more: () => void; home: () => void; search: () => void; open: (recipe: Recipe) => void; saved: string[]; toggleSave: (recipe: Recipe) => void }) {
   const filterDesc = describeFilters(request.filters);
   const providers = [...new Set(results.map(recipe => recipe.provider).filter(Boolean))];
   return <div className="screen">
     <TopBar title="Results" />
     <div className="results-summary"><span>{request.filters.type ? `${request.filters.type.toUpperCase()} ONLY` : "FILTERED SEARCH"}</span><h1>{request.query || "Recipes matching your filters"}</h1><p>{results.length} unique options shown · up to {request.filters.maxReadyTime ?? 60} min{providers.length ? ` · Live from ${providers.join(" + ")}` : ""}</p></div>
     {relaxed && filterDesc && <div className="search-relaxed-notice"><p>No {filterDesc} recipes found — showing your closest diet-safe options instead. <button onClick={search}>Adjust filters</button></p></div>}
+    {degraded && !relaxed && <div className="search-relaxed-notice"><p>Live recipe search is at its daily limit — showing backup recipes for now{filterDesc ? `, so these may not all match ${filterDesc}` : ""}. Exact matches return once it resets. <button onClick={search}>Adjust filters</button></p></div>}
     {loading && !results.length
       ? <div className="thinking-state"><div className="thinking-orbit"><Sparkles /><i /><i /><i /></div><span>SEARCHING</span><h1>Checking every hard rule.</h1><p>Diet, course, time, ingredients, and duplicates are being verified.</p></div>
       : results.length
